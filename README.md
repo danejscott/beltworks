@@ -4,7 +4,9 @@ A 3D, Satisfactory-style factory game (rendered with Three.js; all models are bu
 
 ## Play
 
-Double-click **`Play Beltworks.html`**. It's a single self-contained file that runs offline in Chrome, Edge or Firefox (needs WebGL2). Progress auto-saves in your browser every 30 seconds. Use **☰ → Export save** to back up or move a save.
+**Play online:** https://danejscott.github.io/beltworks/ (works on any computer; phone controls coming later)
+
+Or Double-click **`Play Beltworks.html`**. It's a single self-contained file that runs offline in Chrome, Edge or Firefox (needs WebGL2). Progress auto-saves in your browser every 30 seconds. Use **☰ → Export save** to back up or move a save.
 
 ## Keys
 
