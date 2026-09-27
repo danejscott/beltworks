@@ -1,0 +1,1464 @@
+<!DOCTYPE html>
+<html lang="en">
+<head>
+<meta charset="utf-8">
+<title>Beltworks</title>
+<meta name="viewport" content="width=device-width,initial-scale=1">
+<style>
+:root{--bg:#101318;--panel:#1b2028;--panel2:#232a34;--line:#323b48;--text:#e8ebf0;--dim:#97a1b1;--accent:#f5a524;--good:#4cc38a;--bad:#ef5b5b;--warn:#f2c94c;--blue:#4ea1ff}
+*{box-sizing:border-box}
+html,body{margin:0;height:100%;overflow:hidden;background:var(--bg);color:var(--text);font:13px/1.35 "Segoe UI",system-ui,Roboto,sans-serif;user-select:none;-webkit-user-select:none}
+canvas#c{position:fixed;inset:0;display:block;touch-action:none}
+button{font:inherit;color:var(--text);background:var(--panel2);border:1px solid var(--line);border-radius:7px;padding:5px 10px;cursor:pointer}
+button:hover{border-color:#4a5566;background:#2a3240}
+button:disabled{opacity:.45;cursor:default}
+button.go{background:#2c6b4a;border-color:#3f9468}
+button.go:hover{background:#358258}
+button.danger{background:#5a2626;border-color:#7a3333}
+kbd{font:11px ui-monospace,Consolas,monospace;background:#0f1216;border:1px solid var(--line);border-bottom-width:2px;border-radius:4px;padding:0 4px;color:var(--dim)}
+.ic{vertical-align:middle;image-rendering:auto}
+.hidden{display:none!important}
+#top{position:fixed;top:0;left:0;right:0;height:46px;display:flex;align-items:center;gap:12px;padding:0 10px;background:linear-gradient(#0c0f13ee,#0c0f13cc);border-bottom:1px solid #222a35;z-index:5}
+.brand{font-weight:800;letter-spacing:2px;color:var(--accent);white-space:nowrap}
+.brand small{letter-spacing:0;color:var(--dim);font-weight:500;margin-left:6px}
+#inv{flex:1;display:flex;gap:4px;overflow:hidden;flex-wrap:nowrap;mask-image:linear-gradient(90deg,#000 92%,transparent)}
+.chip{display:inline-flex;align-items:center;gap:3px;background:#1a2029;border:1px solid #2a323e;border-radius:6px;padding:2px 6px 2px 3px;white-space:nowrap;font-variant-numeric:tabular-nums}
+.chip.bump{animation:bump .35s ease-out}
+@keyframes bump{0%{transform:scale(1.18);border-color:var(--accent)}100%{transform:scale(1)}}
+.btns{display:flex;gap:6px}
+.btns button{white-space:nowrap}
+#tracker{position:fixed;left:10px;top:56px;width:290px;z-index:4;display:flex;flex-direction:column;gap:8px;max-height:calc(100vh - 170px);overflow:auto}
+.tbox{background:#171c24ee;border:1px solid var(--line);border-radius:10px;padding:9px 10px}
+.th{font-weight:700;margin-bottom:6px;display:flex;justify-content:space-between;align-items:center;color:#fff}
+.step{padding:3px 0 3px 22px;position:relative;color:var(--dim)}
+.step:before{content:"○";position:absolute;left:4px}
+.step.done{text-decoration:line-through;opacity:.55}
+.step.done:before{content:"✓";color:var(--good)}
+.step.cur{color:#fff;font-weight:600}
+.step.cur:before{content:"▶";color:var(--accent)}
+.goal{border-top:1px solid #262e3a;padding-top:6px;margin-top:6px}
+.goal:first-of-type{border-top:0;margin-top:0;padding-top:0}
+.gname{font-weight:600;margin-bottom:3px;display:flex;justify-content:space-between;align-items:center}
+.req{display:flex;align-items:center;gap:6px;margin:2px 0;font-size:12px}
+.bar{flex:1;height:7px;background:#0e1115;border-radius:4px;overflow:hidden;border:1px solid #262e3a}
+.bar i{display:block;height:100%;background:linear-gradient(90deg,#d98a1c,var(--accent));border-radius:3px;transition:width .25s}
+.bar.full i{background:linear-gradient(90deg,#2f9c68,var(--good))}
+.num{font-variant-numeric:tabular-nums;color:var(--dim);min-width:64px;text-align:right}
+#hotbar{position:fixed;bottom:12px;left:50%;transform:translateX(-50%);display:flex;gap:6px;z-index:5;background:#0f1318dd;padding:6px;border-radius:12px;border:1px solid var(--line)}
+.slot{width:62px;height:62px;border-radius:9px;background:var(--panel);border:2px solid #2b3340;position:relative;cursor:pointer;display:flex;align-items:center;justify-content:center}
+.slot:hover{border-color:#556176}
+.slot.sel{border-color:var(--accent);box-shadow:0 0 0 2px #f5a52444,0 0 14px #f5a52455}
+.slot.locked{opacity:.35}
+.slot .k{position:absolute;top:2px;left:5px;font:11px ui-monospace,Consolas,monospace;color:var(--dim)}
+.slot .lk{position:absolute;bottom:2px;right:4px;font-size:11px}
+.slot.cant:not(.locked):after{content:"";position:absolute;right:4px;top:4px;width:7px;height:7px;border-radius:50%;background:var(--bad)}
+#hint{position:fixed;left:50%;bottom:90px;transform:translateX(-50%);z-index:4;color:var(--dim);background:#0f1318cc;padding:4px 12px;border-radius:8px;border:1px solid #232a35;white-space:nowrap;font-size:12px}
+#hint b{color:#fff}
+#insp{position:fixed;right:10px;top:56px;width:320px;z-index:6;background:#171c24f2;border:1px solid var(--line);border-radius:12px;padding:12px;max-height:calc(100vh - 170px);overflow:auto}
+.ih{display:flex;justify-content:space-between;align-items:center;margin-bottom:8px}
+.it{font-size:16px;font-weight:700}
+.x{padding:2px 8px}
+.sec{margin:10px 0 5px;font-weight:700;color:var(--dim);text-transform:uppercase;font-size:11px;letter-spacing:1px}
+.rlist{display:flex;flex-direction:column;gap:4px}
+.rbtn{display:flex;gap:8px;align-items:center;padding:5px 7px;border-radius:8px;border:1px solid #2a323e;background:#1d232c;cursor:pointer}
+.rbtn:hover{border-color:#4a5566}
+.rbtn.sel{border-color:var(--accent);background:#2b2616}
+.sm{font-size:11.5px;color:var(--dim)}
+.dim{color:var(--dim)}
+.ibtns{display:flex;gap:6px;margin-top:10px}
+.stat{display:inline-flex;align-items:center;gap:6px;font-weight:600}
+.led{width:10px;height:10px;border-radius:50%;display:inline-block;box-shadow:0 0 8px currentColor}
+.bufrow{display:flex;align-items:center;gap:6px;margin:3px 0}
+#modal{position:fixed;inset:0;background:#05070acc;z-index:20;display:flex;align-items:center;justify-content:center}
+.mbox{background:var(--panel);border:1px solid var(--line);border-radius:14px;width:min(1000px,94vw);max-height:88vh;display:flex;flex-direction:column;box-shadow:0 20px 60px #000a}
+.mhead{display:flex;justify-content:space-between;align-items:center;padding:12px 16px;border-bottom:1px solid var(--line)}
+.mhead h2{margin:0;font-size:18px}
+#mbody{padding:14px 16px;overflow:auto}
+.tier{margin-bottom:16px}
+.tier h3{margin:0 0 8px;font-size:14px;color:var(--accent)}
+.tier.locked h3{color:var(--dim)}
+.cards{display:grid;grid-template-columns:repeat(auto-fill,minmax(230px,1fr));gap:10px}
+.card{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:10px;display:flex;flex-direction:column;gap:4px}
+.card.done{border-color:#2f7a55;background:#1b2a24}
+.card.phase{border-color:#6a5bb5;background:#221f33}
+.card.locked{opacity:.45}
+.card .cn{font-weight:700}
+.unl{display:flex;flex-wrap:wrap;gap:4px;margin-top:4px}
+.tag{font-size:11px;background:#141920;border:1px solid #2c3542;border-radius:5px;padding:1px 5px;display:inline-flex;align-items:center;gap:3px}
+.cgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(250px,1fr));gap:8px}
+.ccard{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:8px;display:flex;gap:8px;align-items:center}
+.ccard .cb{display:flex;gap:4px;margin-left:auto}
+.ccard .cb button{padding:3px 7px}
+table.st{width:100%;border-collapse:collapse}
+table.st td,table.st th{padding:4px 8px;border-bottom:1px solid #262e3a;text-align:right;font-variant-numeric:tabular-nums}
+table.st td:first-child,table.st th:first-child{text-align:left}
+table.st th{color:var(--dim);font-weight:600;font-size:12px}
+.pos{color:var(--good)}.neg{color:var(--bad)}
+#toasts{position:fixed;top:56px;left:50%;transform:translateX(-50%);z-index:30;display:flex;flex-direction:column;gap:6px;align-items:center;pointer-events:none}
+.toast{background:#1d2430f2;border:1px solid var(--line);border-radius:9px;padding:7px 14px;box-shadow:0 6px 20px #0008;animation:tin .25s ease-out;display:flex;align-items:center;gap:6px}
+.toast.good{border-color:#3f9468}.toast.bad{border-color:#7a3333}.toast.big{font-size:17px;font-weight:700;border-color:var(--accent);padding:10px 20px}
+@keyframes tin{from{opacity:0;transform:translateY(-8px)}to{opacity:1}}
+#tip{position:fixed;z-index:25;pointer-events:none;background:#0d1015f2;border:1px solid var(--line);border-radius:8px;padding:6px 9px;font-size:12px;max-width:280px;display:none}
+#tip b{color:#fff}
+.help h3{color:var(--accent);margin:14px 0 6px;font-size:14px}
+.help p,.help li{color:#cfd5de}
+.help ul{margin:4px 0;padding-left:20px}
+.cols{display:grid;grid-template-columns:1fr 1fr;gap:20px}
+.menu{display:flex;flex-direction:column;gap:8px;max-width:360px}
+</style>
+</head>
+<body>
+<canvas id="c"></canvas>
+<div id="top">
+  <div class="brand">BELTWORKS<small id="tierlbl">Tier 0</small></div>
+  <div id="inv"></div>
+  <div class="btns">
+    <button data-act="open:hub">Milestones <kbd>H</kbd></button>
+    <button data-act="open:craft">Craft <kbd>C</kbd></button>
+    <button data-act="open:stats">Stats <kbd>P</kbd></button>
+    <button data-act="speed" id="speedBtn" title="Game speed">1×</button>
+    <button data-act="open:help">?</button>
+    <button data-act="open:menu">☰</button>
+  </div>
+</div>
+<div id="tracker"></div>
+<div id="hint"></div>
+<div id="hotbar"></div>
+<div id="insp" class="hidden"></div>
+<div id="modal" class="hidden"><div class="mbox"><div class="mhead"><h2 id="mtitle"></h2><button data-act="closeModal" class="x">✕</button></div><div id="mbody"></div></div></div>
+<div id="toasts"></div>
+<div id="tip"></div>
+
+<script>
+'use strict';
+/* =====================================================================
+   BELTWORKS — a small Satisfactory-style factory game
+   ===================================================================== */
+const T = 40, W = 160, H = 120, SP = 0.5;       // tile px, world size, item spacing on belts
+const DX = [1, 0, -1, 0], DY = [0, 1, 0, -1];    // 0=E 1=S 2=W 3=N
+const opp = d => (d + 2) & 3;
+const SAVE_KEY = 'beltworks-save-v1';
+const STORE_CAP = 500;
+
+/* ---------------- Items ---------------- */
+const ITEMS = {
+  iron_ore:{n:'Iron Ore',c:'#b0705a',s:'ore'},
+  copper_ore:{n:'Copper Ore',c:'#e08a48',s:'ore'},
+  limestone:{n:'Limestone',c:'#dcd5c0',s:'ore'},
+  coal:{n:'Coal',c:'#44444c',s:'ore'},
+  iron_ingot:{n:'Iron Ingot',c:'#bcc3cc',s:'ingot'},
+  copper_ingot:{n:'Copper Ingot',c:'#e8905a',s:'ingot'},
+  steel_ingot:{n:'Steel Ingot',c:'#71839a',s:'ingot'},
+  concrete:{n:'Concrete',c:'#c7c3b6',s:'block'},
+  iron_plate:{n:'Iron Plate',c:'#9aa8b5',s:'plate'},
+  iron_rod:{n:'Iron Rod',c:'#8e9aa8',s:'rod'},
+  screw:{n:'Screw',c:'#d9dee4',s:'screw'},
+  wire:{n:'Wire',c:'#f0a854',s:'coil'},
+  cable:{n:'Cable',c:'#4d535c',s:'cable'},
+  reinforced_plate:{n:'Reinforced Plate',c:'#8394a8',s:'rplate'},
+  rotor:{n:'Rotor',c:'#b8c4d1',s:'rotor'},
+  modular_frame:{n:'Modular Frame',c:'#6590bb',s:'frame'},
+  smart_plating:{n:'Smart Plating',c:'#4f9be0',s:'smart'},
+  steel_beam:{n:'Steel Beam',c:'#687686',s:'beam'},
+  steel_pipe:{n:'Steel Pipe',c:'#8fa0ad',s:'pipe'},
+  encased_beam:{n:'Encased Beam',c:'#aea696',s:'ebeam'},
+  versatile_framework:{n:'Versatile Framework',c:'#3d96d6',s:'vframe'},
+  stator:{n:'Stator',c:'#c96d40',s:'stator'},
+  motor:{n:'Motor',c:'#e4b33e',s:'motor'},
+  automated_wiring:{n:'Automated Wiring',c:'#5cc07a',s:'awire'},
+  heavy_modular_frame:{n:'Heavy Modular Frame',c:'#3f6b96',s:'hframe'},
+};
+const ITEM_KEYS = Object.keys(ITEMS);
+
+/* ---------------- Recipes (times in seconds) ---------------- */
+const RECIPES = {
+  iron_ingot:{m:'smelter',in:{iron_ore:1},out:'iron_ingot',n:1,t:1},
+  copper_ingot:{m:'smelter',in:{copper_ore:1},out:'copper_ingot',n:1,t:1},
+  iron_plate:{m:'constructor',in:{iron_ingot:3},out:'iron_plate',n:2,t:3},
+  iron_rod:{m:'constructor',in:{iron_ingot:1},out:'iron_rod',n:1,t:2},
+  screw:{m:'constructor',in:{iron_rod:1},out:'screw',n:4,t:3},
+  concrete:{m:'constructor',in:{limestone:3},out:'concrete',n:1,t:2},
+  wire:{m:'constructor',in:{copper_ingot:1},out:'wire',n:2,t:2},
+  cable:{m:'constructor',in:{wire:2},out:'cable',n:1,t:1},
+  steel_beam:{m:'constructor',in:{steel_ingot:4},out:'steel_beam',n:1,t:2},
+  steel_pipe:{m:'constructor',in:{steel_ingot:3},out:'steel_pipe',n:2,t:3},
+  reinforced_plate:{m:'assembler',in:{iron_plate:6,screw:12},out:'reinforced_plate',n:1,t:6},
+  rotor:{m:'assembler',in:{iron_rod:5,screw:25},out:'rotor',n:1,t:7.5},
+  modular_frame:{m:'assembler',in:{reinforced_plate:3,iron_rod:12},out:'modular_frame',n:2,t:20},
+  smart_plating:{m:'assembler',in:{reinforced_plate:1,rotor:1},out:'smart_plating',n:1,t:15},
+  encased_beam:{m:'assembler',in:{steel_beam:3,concrete:6},out:'encased_beam',n:1,t:5},
+  versatile_framework:{m:'assembler',in:{modular_frame:1,steel_beam:12},out:'versatile_framework',n:2,t:12},
+  stator:{m:'assembler',in:{steel_pipe:3,wire:8},out:'stator',n:1,t:6},
+  motor:{m:'assembler',in:{rotor:2,stator:2},out:'motor',n:1,t:6},
+  automated_wiring:{m:'assembler',in:{stator:1,cable:20},out:'automated_wiring',n:1,t:12},
+  steel_ingot:{m:'foundry',in:{iron_ore:3,coal:3},out:'steel_ingot',n:3,t:2},
+  heavy_modular_frame:{m:'manufacturer',in:{modular_frame:5,steel_pipe:20,encased_beam:5,screw:120},out:'heavy_modular_frame',n:1,t:15},
+};
+const HANDCRAFT = new Set(['smelter','constructor','assembler']);
+const perMin = (r, k) => (k === undefined ? r.n : r.in[k]) * 60 / r.t;
+
+/* ---------------- Buildings ---------------- */
+const BLD = {
+  belt1:{n:'Conveyor Belt Mk1',sz:1,cost:{iron_plate:1},belt:1,speed:2,col:'#e0a030',desc:'Moves items (240/min). Click-drag to lay a line; R flips the corner.'},
+  belt2:{n:'Conveyor Belt Mk2',sz:1,cost:{iron_plate:1,screw:2},belt:2,speed:4,col:'#4cc38a',desc:'Twice as fast (480/min). Drag over old belts to upgrade them.'},
+  belt3:{n:'Conveyor Belt Mk3',sz:1,cost:{steel_pipe:1},belt:3,speed:8,col:'#4ea1ff',desc:'Blazing fast (960/min). Drag over old belts to upgrade them.'},
+  miner1:{n:'Miner Mk1',sz:2,cost:{iron_plate:10,iron_rod:5},miner:1,rate:120,col:'#c77d3a',desc:'Place on a resource node. Outputs from the front (orange side). Impure 60 · Normal 120 · Pure 240 /min.'},
+  miner2:{n:'Miner Mk2',sz:2,cost:{modular_frame:5,encased_beam:10,steel_pipe:10},miner:2,rate:240,col:'#e0602f',desc:'Twice the output of Mk1. Place on a resource node.'},
+  smelter:{n:'Smelter',sz:2,cost:{iron_plate:5,iron_rod:5},machine:'smelter',col:'#c25a3c',desc:'Melts ore into ingots. Feed from any side except the front; output comes out the front.'},
+  constructor:{n:'Constructor',sz:2,cost:{iron_plate:8,iron_rod:8},machine:'constructor',col:'#3a82c2',desc:'Turns one input into a part (plates, rods, screws, wire…).'},
+  assembler:{n:'Assembler',sz:3,cost:{iron_plate:20,screw:50,cable:20},machine:'assembler',col:'#7a5cd0',desc:'Combines two inputs into an advanced part. Feed both from any non-front side.'},
+  foundry:{n:'Foundry',sz:3,cost:{modular_frame:10,rotor:10,concrete:50},machine:'foundry',col:'#c23e66',desc:'Smelts Iron Ore + Coal into Steel.'},
+  manufacturer:{n:'Manufacturer',sz:4,cost:{motor:10,modular_frame:20,cable:50},machine:'manufacturer',col:'#2fa596',desc:'Combines four inputs into heavy components.'},
+  splitter:{n:'Splitter',sz:1,cost:{iron_plate:4,cable:4},splitter:1,col:'#d6b13a',desc:'Takes items from the back and divides them evenly to front, left and right.'},
+  merger:{n:'Merger',sz:1,cost:{iron_plate:4,iron_rod:2},merger:1,col:'#d6b13a',desc:'Combines belts from back/left/right into one belt out the front, fairly.'},
+  storage:{n:'Storage Container',sz:2,cost:{iron_plate:10,iron_rod:10},storage:1,col:'#7c8c4c',desc:'Buffers up to 500 items. Inputs any non-front side, outputs front. Can dump its contents into your inventory.'},
+  elevator:{n:'Space Elevator',sz:5,cost:{concrete:200,iron_plate:100,iron_rod:50},elevator:1,col:'#dcdcf0',desc:'Belt Project Parts in to complete Phases and unlock new Tiers. Anything else goes to your inventory.'},
+  hub:{n:'HUB',sz:4,cost:{},hub:1,col:'#f5a524',desc:'Your base. Anything belted in from any side goes straight into your inventory.'},
+};
+const SLOTS = [
+  {k:'1',types:['belt3','belt2','belt1']},
+  {k:'2',types:['miner2','miner1']},
+  {k:'3',types:['smelter']},
+  {k:'4',types:['constructor']},
+  {k:'5',types:['assembler']},
+  {k:'6',types:['foundry']},
+  {k:'7',types:['manufacturer']},
+  {k:'8',types:['splitter']},
+  {k:'9',types:['merger']},
+  {k:'0',types:['storage']},
+  {k:'E',types:['elevator']},
+];
+
+/* ---------------- Progression ---------------- */
+const START_UNLOCKS = ['belt1','miner1','smelter','iron_ingot','iron_plate','iron_rod'];
+const MILESTONES = [
+  {id:'m1',tier:0,n:'Smelting Online',req:{iron_ingot:20},un:['constructor']},
+  {id:'m2',tier:0,n:'Basic Parts',req:{iron_plate:40,iron_rod:40},un:['screw','concrete','storage','merger']},
+  {id:'m3',tier:0,n:'Copper Age',req:{screw:100,concrete:30},un:['copper_ingot','wire','cable','splitter']},
+  {id:'m4',tier:1,n:'Part Assembly',req:{wire:100,cable:50,iron_plate:100},un:['assembler','reinforced_plate','rotor']},
+  {id:'m5',tier:1,n:'Faster Logistics',req:{reinforced_plate:20,screw:200},un:['belt2']},
+  {id:'m6',tier:1,n:'Frameworks',req:{rotor:20,reinforced_plate:40},un:['modular_frame','smart_plating','elevator']},
+  {id:'p1',tier:1,phase:1,n:'Elevator Phase 1',req:{smart_plating:30},unlockTier:2},
+  {id:'m7',tier:2,n:'Steel Production',req:{modular_frame:20,concrete:200},un:['foundry','steel_ingot','steel_beam','steel_pipe']},
+  {id:'m8',tier:2,n:'Advanced Steel',req:{steel_beam:100,steel_pipe:100},un:['encased_beam','versatile_framework','belt3','miner2']},
+  {id:'m9',tier:2,n:'Electromechanics',req:{encased_beam:50,wire:300},un:['stator','motor','automated_wiring']},
+  {id:'p2',tier:2,phase:2,n:'Elevator Phase 2',req:{versatile_framework:100,automated_wiring:50,smart_plating:100},unlockTier:3},
+  {id:'m10',tier:3,n:'Heavy Industry',req:{motor:50,modular_frame:50},un:['manufacturer','heavy_modular_frame']},
+  {id:'p3',tier:3,phase:3,n:'Launch Project Assembly',req:{heavy_modular_frame:25,motor:100,automated_wiring:100},win:true},
+];
+const TUT = [
+  {t:'Click an <b>Iron Ore</b> node (reddish rocks) to hand-mine it', done:()=>S.flags.mined},
+  {t:'Press <kbd>2</kbd> and place a <b>Miner</b> on an Iron node', done:()=>count('miner1')+count('miner2')>0},
+  {t:'Press <kbd>3</kbd> and place a <b>Smelter</b> nearby', done:()=>count('smelter')>0},
+  {t:'Press <kbd>1</kbd> and drag a <b>belt</b> from the Miner\'s orange front into the Smelter', done:()=>S.flags.smelted},
+  {t:'Belt the Iron Ingots from the Smelter\'s front into the <b>HUB</b>', done:()=>(S.delivered.iron_ingot||0)>0},
+  {t:'Submit <b>Smelting Online</b> (button below, or <kbd>H</kbd>)', done:()=>S.done.has('m1')},
+];
+
+/* =====================================================================
+   Utilities
+   ===================================================================== */
+const $ = s => document.querySelector(s);
+function mulberry32(a){return function(){a|=0;a=a+0x6D2B79F5|0;let t=Math.imul(a^a>>>15,1|a);t=t+Math.imul(t^t>>>7,61|t)^t;return((t^t>>>14)>>>0)/4294967296}}
+function hash2(x,y,s){let h=(Math.imul(x,374761393)+Math.imul(y,668265263)+Math.imul(s,1442695041))|0;h=Math.imul(h^(h>>>13),1274126177);return((h^(h>>>16))>>>0)/4294967296}
+function vnoise(x,y,s){const ix=Math.floor(x),iy=Math.floor(y),fx=x-ix,fy=y-iy;const a=hash2(ix,iy,s),b=hash2(ix+1,iy,s),c=hash2(ix,iy+1,s),d=hash2(ix+1,iy+1,s);const ux=fx*fx*(3-2*fx),uy=fy*fy*(3-2*fy);return a+(b-a)*ux+(c-a)*uy+(a-b-c+d)*ux*uy}
+function shade(hex,a){let n=parseInt(hex.slice(1),16),r=n>>16,g=n>>8&255,b=n&255;const f=a<0?0:255,p=Math.abs(a);r=Math.round((f-r)*p+r);g=Math.round((f-g)*p+g);b=Math.round((f-b)*p+b);return'#'+((1<<24)|(r<<16)|(g<<8)|b).toString(16).slice(1)}
+const easeOutBack = t => {const c1=1.70158,c3=c1+1;return 1+c3*Math.pow(t-1,3)+c1*Math.pow(t-1,2)};
+const clamp = (v,a,b) => v<a?a:v>b?b:v;
+const fmt = n => n>=10000 ? (n/1000).toFixed(n>=100000?0:1)+'k' : String(Math.floor(n));
+const fmtR = n => (Math.round(n*10)/10).toString();
+function rrect(g,x,y,w,h,r){g.beginPath();g.moveTo(x+r,y);g.arcTo(x+w,y,x+w,y+h,r);g.arcTo(x+w,y+h,x,y+h,r);g.arcTo(x,y+h,x,y,r);g.arcTo(x,y,x+w,y,r);g.closePath()}
+function poly(g,pts){g.beginPath();g.moveTo(pts[0][0],pts[0][1]);for(let i=1;i<pts.length;i++)g.lineTo(pts[i][0],pts[i][1]);g.closePath()}
+
+/* =====================================================================
+   Item icons (procedural, cached)
+   ===================================================================== */
+function drawItemShape(g,k,size){
+  const it=ITEMS[k], c=it.c, dk=shade(c,-0.5), lt=shade(c,0.4);
+  g.save(); g.translate(size/2,size/2); g.scale(size/64,size/64);
+  g.lineJoin='round'; g.lineCap='round'; g.lineWidth=3.5; g.strokeStyle=dk; g.fillStyle=c;
+  const circ=(x,y,r)=>{g.beginPath();g.arc(x,y,r,0,Math.PI*2)};
+  switch(it.s){
+    case 'ore': poly(g,[[-22,-8],[-10,-22],[12,-21],[25,-4],[19,18],[-4,25],[-23,12]]);g.fill();g.stroke();g.fillStyle=lt;circ(-7,-6,5);g.fill();circ(9,5,4);g.fill();g.fillStyle=dk;circ(-4,11,3);g.fill();break;
+    case 'ingot': poly(g,[[-25,12],[-16,-11],[16,-11],[25,12]]);g.fill();g.stroke();g.strokeStyle=lt;g.lineWidth=4;g.beginPath();g.moveTo(-12,-5);g.lineTo(12,-5);g.stroke();break;
+    case 'block': rrect(g,-21,-21,42,42,6);g.fill();g.stroke();g.strokeStyle=shade(c,-0.25);g.lineWidth=2.5;g.beginPath();g.moveTo(-21,0);g.lineTo(21,0);g.moveTo(0,-21);g.lineTo(0,0);g.moveTo(-8,0);g.lineTo(-8,21);g.stroke();break;
+    case 'plate': rrect(g,-23,-23,46,46,5);g.fill();g.stroke();g.strokeStyle=lt;g.lineWidth=3;g.beginPath();g.moveTo(-14,-14);g.lineTo(14,-14);g.stroke();break;
+    case 'rod': g.rotate(-Math.PI/4);rrect(g,-27,-6,54,12,5);g.fill();g.stroke();g.strokeStyle=lt;g.lineWidth=2.5;g.beginPath();g.moveTo(-20,-2);g.lineTo(20,-2);g.stroke();break;
+    case 'screw': g.rotate(-Math.PI/4);rrect(g,-24,-5,36,10,3);g.fill();g.stroke();g.strokeStyle=dk;g.lineWidth=2;g.beginPath();for(let i=-18;i<8;i+=6){g.moveTo(i,-5);g.lineTo(i+3,5)}g.stroke();poly(g,[[12,-12],[22,-12],[26,0],[22,12],[12,12]]);g.fillStyle=c;g.fill();g.lineWidth=3.5;g.stroke();break;
+    case 'coil': g.lineWidth=11;g.strokeStyle=c;circ(0,0,16);g.stroke();g.lineWidth=2.5;g.strokeStyle=dk;circ(0,0,22);g.stroke();circ(0,0,10.5);g.stroke();g.strokeStyle=lt;g.lineWidth=2;g.beginPath();g.arc(0,0,16,-2.4,-1.2);g.stroke();break;
+    case 'cable': circ(0,0,23);g.fill();g.strokeStyle='#15171a';g.stroke();g.strokeStyle='#f0a854';g.lineWidth=7;circ(0,0,12);g.stroke();g.fillStyle='#7a5a30';circ(0,0,5);g.fill();break;
+    case 'rplate': rrect(g,-23,-23,46,46,5);g.fill();g.stroke();g.fillStyle=dk;for(const[x,y]of[[-13,-13],[13,-13],[-13,13],[13,13]]){circ(x,y,4);g.fill()}g.strokeStyle=lt;g.lineWidth=3;g.beginPath();g.moveTo(-6,0);g.lineTo(6,0);g.stroke();break;
+    case 'rotor': for(let i=0;i<3;i++){g.save();g.rotate(i*Math.PI*2/3);rrect(g,-6,-28,12,22,5);g.fill();g.stroke();g.restore()}circ(0,0,11);g.fillStyle=lt;g.fill();g.stroke();break;
+    case 'frame': g.lineWidth=13;g.strokeStyle=dk;g.strokeRect(-19,-19,38,38);g.lineWidth=8;g.strokeStyle=c;g.strokeRect(-19,-19,38,38);g.lineWidth=5;g.beginPath();g.moveTo(-17,-17);g.lineTo(17,17);g.stroke();break;
+    case 'smart': rrect(g,-23,-23,46,46,7);g.fill();g.stroke();g.fillStyle='#d6eeff';rrect(g,-10,-10,20,20,3);g.fill();g.strokeStyle='#d6eeff';g.lineWidth=2.5;g.beginPath();for(const s of[-1,1]){g.moveTo(s*10,-5);g.lineTo(s*19,-5);g.moveTo(s*10,5);g.lineTo(s*19,5)}g.stroke();break;
+    case 'beam': poly(g,[[-25,-17],[25,-17],[25,-8],[7,-8],[7,8],[25,8],[25,17],[-25,17],[-25,8],[-7,8],[-7,-8],[-25,-8]]);g.fill();g.stroke();break;
+    case 'pipe': rrect(g,-26,-11,46,22,4);g.fill();g.stroke();g.fillStyle=dk;g.beginPath();g.ellipse(20,0,6,11,0,0,Math.PI*2);g.fill();g.strokeStyle=lt;g.lineWidth=3;g.beginPath();g.moveTo(-18,-5);g.lineTo(10,-5);g.stroke();break;
+    case 'ebeam': rrect(g,-24,-19,48,38,5);g.fill();g.stroke();g.fillStyle='#5a6572';poly(g,[[-15,-10],[15,-10],[15,-5],[4,-5],[4,5],[15,5],[15,10],[-15,10],[-15,5],[-4,5],[-4,-5],[-15,-5]]);g.fill();break;
+    case 'vframe': g.lineWidth=13;g.strokeStyle=dk;g.strokeRect(-19,-19,38,38);g.lineWidth=8;g.strokeStyle=c;g.strokeRect(-19,-19,38,38);g.strokeStyle=lt;g.lineWidth=5;g.beginPath();g.moveTo(-17,-17);g.lineTo(17,17);g.moveTo(17,-17);g.lineTo(-17,17);g.stroke();break;
+    case 'stator': circ(0,0,24);g.fill();g.stroke();g.fillStyle='#2b2f36';circ(0,0,10);g.fill();g.fillStyle='#f0a854';for(let i=0;i<6;i++){const a=i*Math.PI/3;circ(Math.cos(a)*17,Math.sin(a)*17,4.5);g.fill()}break;
+    case 'motor': rrect(g,-23,-17,36,34,5);g.fill();g.stroke();g.fillStyle='#b9c0c9';rrect(g,13,-5,14,10,2);g.fill();g.stroke();g.strokeStyle=dk;g.lineWidth=2.5;g.beginPath();for(let x=-15;x<10;x+=7){g.moveTo(x,-13);g.lineTo(x,13)}g.stroke();break;
+    case 'awire': rrect(g,-24,-19,48,38,8);g.fill();g.stroke();g.strokeStyle='#f0a854';g.lineWidth=3;g.beginPath();g.moveTo(-18,-8);g.bezierCurveTo(-5,-8,-5,8,18,8);g.moveTo(-18,8);g.bezierCurveTo(-5,8,-5,-8,18,-8);g.stroke();break;
+    case 'hframe': g.lineWidth=16;g.strokeStyle=dk;g.strokeRect(-18,-18,36,36);g.lineWidth=11;g.strokeStyle=c;g.strokeRect(-18,-18,36,36);g.lineWidth=7;g.beginPath();g.moveTo(-16,-16);g.lineTo(16,16);g.moveTo(16,-16);g.lineTo(-16,16);g.stroke();g.fillStyle=dk;circ(0,0,5);g.fill();break;
+  }
+  g.restore();
+}
+const ICON = {}, ICONURL = {};
+for (const k of ITEM_KEYS){const c=document.createElement('canvas');c.width=c.height=64;drawItemShape(c.getContext('2d'),k,64);ICON[k]=c;ICONURL[k]=c.toDataURL();}
+const ic = (k,s=18) => `<img class="ic" src="${ICONURL[k]}" width="${s}" height="${s}" alt="">`;
+const unlockName = k => BLD[k] ? BLD[k].n : ITEMS[k].n+' recipe';
+
+/* =====================================================================
+   Audio (synthesized, no files)
+   ===================================================================== */
+let AC=null, master=null, noiseBuf=null, soundOn=true;
+function audioInit(){
+  if (AC) return;
+  try{
+    AC=new (window.AudioContext||window.webkitAudioContext)();master=AC.createGain();master.gain.value=0.55;master.connect(AC.destination);
+    noiseBuf=AC.createBuffer(1,AC.sampleRate*0.3,AC.sampleRate);const d=noiseBuf.getChannelData(0);for(let i=0;i<d.length;i++)d[i]=Math.random()*2-1;
+  }catch(e){AC=null}
+}
+function tone(f,dur,type='sine',vol=.2,f2=0,delay=0){
+  if(!AC||!soundOn)return;const t=AC.currentTime+delay,o=AC.createOscillator(),g=AC.createGain();
+  o.type=type;o.frequency.setValueAtTime(f,t);if(f2)o.frequency.exponentialRampToValueAtTime(f2,t+dur);
+  g.gain.setValueAtTime(0.0001,t);g.gain.exponentialRampToValueAtTime(vol,t+0.008);g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  o.connect(g);g.connect(master);o.start(t);o.stop(t+dur+0.03);
+}
+function hiss(dur,vol,freq){
+  if(!AC||!soundOn)return;const t=AC.currentTime,s=AC.createBufferSource(),f=AC.createBiquadFilter(),g=AC.createGain();
+  s.buffer=noiseBuf;f.type='bandpass';f.frequency.value=freq;f.Q.value=1.2;g.gain.setValueAtTime(vol,t);g.gain.exponentialRampToValueAtTime(0.0001,t+dur);
+  s.connect(f);f.connect(g);g.connect(master);s.start(t);s.stop(t+dur);
+}
+let lastDeliverSnd=0;
+const sfx={
+  place(){tone(190,.14,'sine',.45,65);hiss(.07,.25,1800);tone(1300,.05,'triangle',.05,900,.03)},
+  belt(){tone(560,.06,'triangle',.14,380);hiss(.04,.08,3000)},
+  remove(){tone(330,.16,'triangle',.18,110);hiss(.1,.12,900)},
+  mine(){tone(620+Math.random()*260,.05,'square',.04,350);hiss(.05,.18,2600+Math.random()*1500)},
+  err(){tone(150,.12,'square',.07,110)},
+  craft(){tone(880,.07,'sine',.14,1320)},
+  click(){tone(1000,.03,'sine',.05)},
+  deliver(){const n=performance.now();if(n-lastDeliverSnd<140)return;lastDeliverSnd=n;tone(1500+Math.random()*500,.035,'sine',.025)},
+  milestone(){[523,659,784,1047,1319].forEach((f,i)=>tone(f,.4,'triangle',.16,0,i*.08));hiss(.4,.05,6000)},
+  tier(){[392,523,659,784,1047,1319,1568].forEach((f,i)=>{tone(f,.5,'triangle',.15,0,i*.09);tone(f/2,.5,'sine',.1,0,i*.09)})},
+};
+
+/* =====================================================================
+   World state
+   ===================================================================== */
+let S;                     // game state
+let ents, grid, nextId;    // entities
+let nodes, nodeGrid;       // resource nodes
+let terrain;               // background canvas
+let lists = {belts:[],order:[],machines:[],miners:[],logi:[],cnt:{}};
+let linksDirty = true;
+let HX = 78, HY = 58;
+const PURITY = [{n:'Impure',m:.5},{n:'Normal',m:1},{n:'Pure',m:2}];
+
+const inB = (x,y) => x>=0&&y>=0&&x<W&&y<H;
+function entAt(x,y){if(!inB(x,y))return null;const id=grid[y*W+x];return id?ents.get(id):null}
+function nodeAt(x,y){if(!inB(x,y))return null;const n=nodeGrid[y*W+x];return n?nodes[n-1]:null}
+const count = t => lists.cnt[t]||0;
+const isBelt = e => !!BLD[e.type].belt;
+
+function genWorld(seed){
+  const rng=mulberry32(seed);
+  nodes=[];nodeGrid=new Int32Array(W*H);
+  const free=(x,y)=>{
+    if(x<2||y<2||x>W-4||y>H-4)return false;
+    for(let j=-2;j<4;j++)for(let i=-2;i<4;i++){if(nodeGrid[(y+j)*W+x+i])return false}
+    if(x+3>HX-2&&x-1<HX+6&&y+3>HY-2&&y-1<HY+6)return false;
+    return true;
+  };
+  const add=(x,y,res,p)=>{if(!free(x,y))return false;nodes.push({x,y,res,p});const id=nodes.length;for(let j=0;j<2;j++)for(let i=0;i<2;i++)nodeGrid[(y+j)*W+x+i]=id;return true};
+  // Starter nodes close to the HUB
+  add(HX-10,HY-4,'iron_ore',1); add(HX-10,HY+5,'iron_ore',1); add(HX-3,HY-11,'iron_ore',0);
+  add(HX+11,HY-6,'copper_ore',1); add(HX+7,HY+11,'copper_ore',0);
+  add(HX+12,HY+5,'limestone',1); add(HX-4,HY+12,'limestone',1);
+  add(HX+25,HY-15,'coal',1); add(HX-27,HY+13,'coal',1);
+  const want={iron_ore:16,copper_ore:11,limestone:10,coal:10};
+  for(const res in want){
+    let placed=0,tries=0;
+    while(placed<want[res]&&tries<3000){
+      tries++;
+      const a=rng()*Math.PI*2, d=(res==='coal'?24:18)+rng()*62;
+      const x=Math.round(HX+Math.cos(a)*d), y=Math.round(HY+Math.sin(a)*d*0.8);
+      const r=rng(), pc=clamp((d-22)/90,0,.35)+.05;
+      const p = r<pc ? 2 : r<pc+.3 ? 0 : 1;
+      if(add(x,y,res,p))placed++;
+    }
+  }
+  // terrain
+  const R=4;terrain=document.createElement('canvas');terrain.width=W*R;terrain.height=H*R;
+  const g=terrain.getContext('2d'),img=g.createImageData(W*R,H*R),D=img.data;
+  for(let y=0;y<H*R;y++)for(let x=0;x<W*R;x++){
+    const n=vnoise(x/(R*16),y/(R*16),seed)*.65+vnoise(x/(R*5),y/(R*5),seed+7)*.35;
+    const m=vnoise(x/(R*30),y/(R*30),seed+3);
+    const sp=(hash2(x,y,seed+11)-.5)*6;
+    let r=20+n*16+sp, gg=29+n*20+sp, b=31+n*11+sp;
+    if(m>.62){const k=Math.min(1,(m-.62)*4);r+= (46-r)*k*.6;gg+=(42-gg)*k*.6;b+=(36-b)*k*.6}
+    if(m<.3){const k=Math.min(1,(.3-m)*4);r+=(18-r)*k*.5;gg+=(34-gg)*k*.5;b+=(44-b)*k*.5}
+    const i=(y*W*R+x)*4;D[i]=r;D[i+1]=gg;D[i+2]=b;D[i+3]=255;
+  }
+  g.putImageData(img,0,0);
+}
+
+/* Node sprites */
+const NODESPR={};
+for(const res of ['iron_ore','copper_ore','limestone','coal']){
+  const c=document.createElement('canvas');c.width=c.height=128;const g=c.getContext('2d');const rng=mulberry32(res.length*977);
+  g.fillStyle='rgba(0,0,0,.35)';rrect(g,8,12,114,112,26);g.fill();
+  g.fillStyle='#2c2f35';rrect(g,6,6,116,114,26);g.fill();g.strokeStyle='#1a1c20';g.lineWidth=4;g.stroke();
+  const col=ITEMS[res].c;
+  for(let i=0;i<11;i++){
+    const cx=22+rng()*84, cy=22+rng()*84, r=10+rng()*13, pts=[];
+    for(let k=0;k<6;k++){const a=k/6*Math.PI*2+rng()*.5;pts.push([cx+Math.cos(a)*r*(.7+rng()*.4),cy+Math.sin(a)*r*(.7+rng()*.4)])}
+    poly(g,pts);g.fillStyle=shade(col,(rng()-.6)*.4);g.fill();g.strokeStyle=shade(col,-.55);g.lineWidth=3;g.stroke();
+    g.fillStyle=shade(col,.45);g.beginPath();g.arc(cx-r*.3,cy-r*.3,r*.22,0,7);g.fill();
+  }
+  NODESPR[res]=c;
+}
+
+function newGame(seed){
+  S={seed,inv:{iron_plate:60,iron_rod:30},unlocked:new Set(START_UNLOCKS),done:new Set(),maxTier:0,elev:{},time:0,won:false,
+     flags:{mined:false,smelted:false,tutDone:false},delivered:{},speed:1};
+  ents=new Map();grid=new Int32Array(W*H);nextId=1;
+  genWorld(seed);
+  place('hub',HX,HY,0,{free:true,quiet:true});
+  cam.x=HX+2-4;cam.y=HY+2;cam.z=1;
+  statP={};statC={};statD={};
+  linksDirty=true;
+}
+
+/* =====================================================================
+   Entities
+   ===================================================================== */
+function frontTiles(e){
+  const s=BLD[e.type].sz,r=e.rot,out=[];
+  for(let i=0;i<s;i++){
+    if(r===0)out.push([e.x+s,e.y+i]);else if(r===2)out.push([e.x-1,e.y+i]);
+    else if(r===1)out.push([e.x+i,e.y+s]);else out.push([e.x+i,e.y-1]);
+  }
+  return out;
+}
+function canAfford(c){for(const k in c)if((S.inv[k]||0)<c[k])return false;return true}
+function pay(c){for(const k in c)S.inv[k]-=c[k]}
+function addInv(k,n){S.inv[k]=(S.inv[k]||0)+n}
+function refund(c){for(const k in c)addInv(k,c[k])}
+function missingText(c){return Object.keys(c).filter(k=>(S.inv[k]||0)<c[k]).map(k=>`${ITEMS[k].n} ${S.inv[k]||0}/${c[k]}`).join(', ')}
+
+function canPlace(type,x,y){
+  const d=BLD[type],s=d.sz;
+  if(!S.unlocked.has(type)&&type!=='hub')return 'Locked';
+  for(let j=0;j<s;j++)for(let i=0;i<s;i++){
+    const tx=x+i,ty=y+j;
+    if(!inB(tx,ty))return 'Out of bounds';
+    if(grid[ty*W+tx])return 'Something is in the way';
+    if(!d.miner&&nodeGrid[ty*W+tx])return 'Resource node in the way';
+  }
+  if(d.miner){const n=nodeAt(x,y);if(!n||n.x!==x||n.y!==y)return 'Miners must sit on a resource node'}
+  if(d.elevator&&count('elevator')>0)return 'You already have a Space Elevator';
+  if(!canAfford(d.cost))return 'Need: '+missingText(d.cost);
+  return null;
+}
+
+function place(type,x,y,rot,o={}){
+  const d=BLD[type];
+  if(!o.free)pay(d.cost);
+  const e={id:nextId++,type,x,y,rot,born:o.quiet?-9:performance.now()/1000,pop:0};
+  if(d.belt){e.items=[];e.curve=-1;}
+  if(d.machine){e.recipe=null;e.ib={};e.ob=0;e.prog=0;e.work=false;e.eff=0;e.st='idle';e.rr=0;}
+  if(d.miner){e.node=nodeAt(x,y);e.ob=0;e.tm=0;e.st='work';e.rr=0;}
+  if(d.storage){e.store={};e.tot=0;e.rr=0;}
+  if(d.splitter){e.buf=[];e.rr=0;}
+  if(d.merger){e.slot=[null,null,null,null];e.rr=0;}
+  for(let j=0;j<d.sz;j++)for(let i=0;i<d.sz;i++)grid[(y+j)*W+x+i]=e.id;
+  ents.set(e.id,e);
+  if(!d.belt)e.ft=frontTiles(e);
+  linksDirty=true;
+  if(!o.quiet&&!d.belt)dust(x,y,d.sz);
+  return e;
+}
+
+function remove(e){
+  const d=BLD[e.type];if(d.hub)return false;
+  refund(d.cost);
+  if(e.items&&d.belt)for(const it of e.items)addInv(it.it,1);
+  if(d.machine){for(const k in e.ib)addInv(k,e.ib[k]);if(e.recipe&&e.ob)addInv(RECIPES[e.recipe].out,e.ob);}
+  if(d.miner&&e.ob)addInv(e.node.res,e.ob);
+  if(d.storage)for(const k in e.store)addInv(k,e.store[k]);
+  if(d.splitter)for(const k of e.buf)addInv(k,1);
+  if(d.merger)for(const k of e.slot)if(k)addInv(k,1);
+  for(let j=0;j<d.sz;j++)for(let i=0;i<d.sz;i++)grid[(e.y+j)*W+e.x+i]=0;
+  ents.delete(e.id);linksDirty=true;
+  for(let i=0;i<(d.sz>1?14:4);i++)spawn(e.x+Math.random()*d.sz,e.y+Math.random()*d.sz,{vx:(Math.random()-.5)*3,vy:-Math.random()*3,life:.5,col:d.col,size:.12,grav:8});
+  if(insp===e)closeInsp();
+  return true;
+}
+
+function rotateEnt(e,dir=1){
+  const d=BLD[e.type];if(d.hub||d.elevator)return;
+  e.rot=(e.rot+dir+4)&3;if(!d.belt)e.ft=frontTiles(e);e.pop=1;linksDirty=true;sfx.click();
+}
+
+function rebuildLinks(){
+  const L={belts:[],order:[],machines:[],miners:[],logi:[],cnt:{}};
+  for(const e of ents.values()){
+    const d=BLD[e.type];L.cnt[e.type]=(L.cnt[e.type]||0)+1;
+    if(d.belt)L.belts.push(e);else if(d.machine)L.machines.push(e);else if(d.miner)L.miners.push(e);
+    else if(d.splitter||d.merger||d.storage)L.logi.push(e);
+  }
+  for(const b of L.belts){b.nb=null;b.nbld=null;b.back=false;b.sides=0;b.side=-1}
+  const feed=(b,dir)=>{if(b.rot===dir)b.back=true;else if(dir!==opp(b.rot)){b.sides++;b.side=dir}};
+  for(const b of L.belts){
+    const t=entAt(b.x+DX[b.rot],b.y+DY[b.rot]);
+    if(!t)continue;
+    if(BLD[t.type].belt){if(t.rot!==opp(b.rot)){b.nb=t;feed(t,b.rot)}}else b.nbld=t;
+  }
+  for(const e of ents.values()){
+    const d=BLD[e.type];if(d.belt||d.hub||d.elevator)continue;
+    if(d.splitter){for(const dd of [e.rot,(e.rot+3)&3,(e.rot+1)&3]){const t=entAt(e.x+DX[dd],e.y+DY[dd]);if(t&&isBelt(t))feed(t,dd)}}
+    else for(const [x,y] of e.ft){const t=entAt(x,y);if(t&&isBelt(t))feed(t,e.rot)}
+  }
+  for(const b of L.belts){
+    b.curve=(!b.back&&b.sides===1)?b.side:-1;
+    const cx=b.x+.5,cy=b.y+.5,f=b.curve>=0?b.curve:b.rot;
+    b.pts=[cx-DX[f]*.5,cy-DY[f]*.5,cx,cy,cx+DX[b.rot]*.5,cy+DY[b.rot]*.5];
+  }
+  // downstream-first processing order
+  const seen=new Set();
+  for(const b of L.belts){
+    if(seen.has(b))continue;const path=[];let c=b;
+    while(c&&!seen.has(c)){seen.add(c);path.push(c);c=c.nb}
+    for(let i=path.length-1;i>=0;i--)L.order.push(path[i]);
+  }
+  lists=L;linksDirty=false;
+}
+
+/* ---------------- Item transfer ---------------- */
+function deliverTo(tx,ty,dir,item){
+  const t=entAt(tx,ty);if(!t)return false;
+  if(BLD[t.type].belt){
+    if(t.rot===opp(dir))return false;
+    const l=t.items[t.items.length-1];if(l&&l.pos<SP)return false;
+    t.items.push({it:item,pos:0});return true;
+  }
+  return acceptInto(t,item,dir);
+}
+function autoRecipe(e,item){
+  const m=BLD[e.type].machine;
+  for(const k in RECIPES){const r=RECIPES[k];if(r.m===m&&r.in[item]&&S.unlocked.has(k))return k}
+  return null;
+}
+const inCap = (r,k) => Math.max(r.in[k]*2,4);
+const outCap = r => Math.max(r.n*2,4);
+function acceptInto(e,item,dir){
+  const d=BLD[e.type],side=opp(dir);
+  if(d.hub){addInv(item,1);delivered(e,item);return true}
+  if(d.elevator){elevatorAccept(item);delivered(e,item);return true}
+  if(d.machine){
+    if(side===e.rot)return false;
+    if(!e.recipe){const k=autoRecipe(e,item);if(!k)return false;setRecipe(e,k,true)}
+    const r=RECIPES[e.recipe],need=r.in[item];if(!need)return false;
+    const have=e.ib[item]||0;if(have>=inCap(r,item))return false;
+    e.ib[item]=have+1;return true;
+  }
+  if(d.storage){if(side===e.rot||e.tot>=STORE_CAP)return false;e.store[item]=(e.store[item]||0)+1;e.tot++;return true}
+  if(d.splitter){if(side!==opp(e.rot)||e.buf.length>=2)return false;e.buf.push(item);return true}
+  if(d.merger){if(side===e.rot||e.slot[side])return false;e.slot[side]=item;return true}
+  return false;
+}
+function pushOut(e,item){
+  const n=e.ft.length;
+  for(let k=0;k<n;k++){const i=(e.rr+k)%n,[x,y]=e.ft[i];if(deliverTo(x,y,e.rot,item)){e.rr=(i+1)%n;return true}}
+  return false;
+}
+let deliverFx=0;
+function delivered(e,item){
+  S.delivered[item]=(S.delivered[item]||0)+1;stat(statD,item,1);
+  sfx.deliver();
+  const now=performance.now();
+  if(now-deliverFx>90){deliverFx=now;const s=BLD[e.type].sz;spawn(e.x+s/2+(Math.random()-.5)*s*.6,e.y+s/2,{vy:-1.6,vx:(Math.random()-.5)*.4,life:1,icon:item,size:.5})}
+}
+
+function setRecipe(e,k,silent){
+  if(e.recipe===k)return;
+  for(const i in e.ib)if(e.ib[i])addInv(i,e.ib[i]);
+  if(e.recipe&&e.ob)addInv(RECIPES[e.recipe].out,e.ob);
+  e.recipe=k;e.ib={};e.ob=0;e.prog=0;e.work=false;e.pop=1;
+  if(!silent)sfx.click();
+  if(insp===e)renderInsp();
+}
+
+/* ---------------- Simulation ---------------- */
+const STAT_N=60;let statP={},statC={},statD={},statIdx=0,statSec=0;
+function stat(m,item,n){let a=m[item];if(!a)a=m[item]=new Float32Array(STAT_N);a[statIdx]+=n}
+function rate(m,item){const a=m[item];if(!a)return 0;let s=0;for(let i=0;i<STAT_N;i++)s+=a[i];const el=Math.min(STAT_N,Math.max(1,S.time));return s*60/el}
+
+function update(dt){
+  if(linksDirty)rebuildLinks();
+  S.time+=dt;
+  const sec=Math.floor(S.time);
+  if(sec!==statSec){statSec=sec;statIdx=(statIdx+1)%STAT_N;for(const m of [statP,statC,statD])for(const k in m)m[k][statIdx]=0}
+
+  for(const e of lists.miners){
+    const d=BLD[e.type],res=e.node.res;
+    e.tm+=dt*d.rate*PURITY[e.node.p].m/60;
+    while(e.tm>=1&&e.ob<10){e.tm-=1;e.ob++;stat(statP,res,1)}
+    if(e.ob>=10)e.tm=Math.min(e.tm,1);
+    if(e.ob>0&&pushOut(e,res))e.ob--;
+    e.st=e.ob>=10?'block':'work';
+  }
+  for(const e of lists.machines){
+    const r=e.recipe&&RECIPES[e.recipe];
+    if(!r){e.st='idle';e.eff+=(0-e.eff)*Math.min(1,dt/8);continue}
+    if(e.work){
+      e.prog+=dt/r.t;
+      if(e.prog>=1){e.prog=0;e.work=false;e.ob+=r.n;e.pop=1;stat(statP,r.out,r.n);
+        if(r.m==='smelter')S.flags.smelted=true;}
+    }
+    if(!e.work&&e.ob+r.n<=outCap(r)){
+      let ok=true;for(const k in r.in)if((e.ib[k]||0)<r.in[k]){ok=false;break}
+      if(ok){for(const k in r.in){e.ib[k]-=r.in[k];stat(statC,k,r.in[k])}e.work=true}
+    }
+    if(e.ob>0&&pushOut(e,r.out))e.ob--;
+    e.st=e.work?'work':(e.ob+r.n>outCap(r)?'block':'starve');
+    e.eff+=((e.work?1:0)-e.eff)*Math.min(1,dt/8);
+  }
+  for(const e of lists.logi){
+    const d=BLD[e.type];
+    if(d.splitter){
+      if(e.buf.length){
+        const dirs=[e.rot,(e.rot+3)&3,(e.rot+1)&3];
+        for(let k=0;k<3;k++){const i=(e.rr+k)%3,dd=dirs[i];if(deliverTo(e.x+DX[dd],e.y+DY[dd],dd,e.buf[0])){e.buf.shift();e.rr=(i+1)%3;break}}
+      }
+    }else if(d.merger){
+      for(let k=0;k<4;k++){const s=(e.rr+k)&3;const it=e.slot[s];if(it&&deliverTo(e.x+DX[e.rot],e.y+DY[e.rot],e.rot,it)){e.slot[s]=null;e.rr=(s+1)&3;break}}
+    }else if(d.storage){
+      if(e.tot>0){
+        const keys=Object.keys(e.store).filter(k=>e.store[k]>0);
+        if(keys.length){const k=keys[e.rr%keys.length];if(pushOut(e,k)){e.store[k]--;e.tot--;e.rr++;if(!e.store[k])delete e.store[k]}else e.rr++}
+      }
+    }
+  }
+  // belts, downstream first
+  for(const b of lists.order){
+    const items=b.items;if(!items.length)continue;
+    const nb=b.nb;let limit;
+    if(nb){const l=nb.items[nb.items.length-1];limit=l?l.pos+1-SP:1.99}else limit=1;
+    const mv=BLD[b.type].speed*dt;
+    for(let i=0;i<items.length;i++){
+      const it=items[i];let np=it.pos+mv;const cap=i===0?limit:items[i-1].pos-SP;
+      if(np>cap)np=cap;if(np>it.pos)it.pos=np;
+    }
+    while(items.length&&items[0].pos>=1){
+      const it=items[0];
+      if(nb){it.pos-=1;items.shift();nb.items.push(it)}
+      else if(b.nbld&&acceptInto(b.nbld,it.it,b.rot))items.shift();
+      else{it.pos=1;break}
+    }
+  }
+  // hand crafting
+  if(craftQ.length){
+    const r=RECIPES[craftQ[0]];
+    if(!crafting){
+      if(canAfford(r.in)){pay(r.in);crafting=true;craftT=0}
+      else{toast(`Can't craft ${ITEMS[r.out].n}: need ${missingText(r.in)}`,'bad');craftQ.shift()}
+    }else{
+      craftT+=dt;
+      if(craftT>=handTime(r)){addInv(r.out,r.n);craftQ.shift();crafting=false;sfx.craft()}
+    }
+  }
+}
+let craftQ=[],crafting=false,craftT=0;
+const handTime = r => Math.max(.3,r.t*.5);
+
+/* ---------------- Milestones ---------------- */
+function curPhase(){return MILESTONES.find(m=>m.phase&&!S.done.has(m.id)&&m.tier<=S.maxTier)}
+function elevatorAccept(item){
+  const ph=curPhase();
+  if(ph&&ph.req[item]&&(S.elev[item]||0)<ph.req[item]){S.elev[item]=(S.elev[item]||0)+1;checkPhase(ph)}
+  else addInv(item,1);
+}
+function checkPhase(ph){for(const k in ph.req)if((S.elev[k]||0)<ph.req[k])return;S.elev={};completeMilestone(ph)}
+function loadElevator(){
+  const ph=curPhase();if(!ph)return;
+  if(!count('elevator')){toast('Build a Space Elevator first (unlocked by "Frameworks")','bad');sfx.err();return}
+  let moved=0;
+  for(const k in ph.req){const n=Math.min(S.inv[k]||0,ph.req[k]-(S.elev[k]||0));if(n>0){S.inv[k]-=n;S.elev[k]=(S.elev[k]||0)+n;moved+=n}}
+  if(moved){sfx.click();toast(`Loaded ${moved} parts into the Space Elevator`,'good');checkPhase(ph)}
+  else{toast('Nothing in your inventory that this phase needs','bad');sfx.err()}
+}
+function milestoneReady(m){
+  if(m.tier>S.maxTier||S.done.has(m.id))return false;
+  if(m.phase)return false;
+  return canAfford(m.req);
+}
+function submitMilestone(id){
+  const m=MILESTONES.find(x=>x.id===id);if(!m)return;
+  if(m.phase){loadElevator();return}
+  if(!milestoneReady(m)){sfx.err();toast('Need: '+missingText(m.req),'bad');return}
+  pay(m.req);completeMilestone(m);
+}
+function completeMilestone(m){
+  S.done.add(m.id);
+  if(m.un)for(const k of m.un)S.unlocked.add(k);
+  sfx.milestone();
+  toast(`✔ ${m.n} complete!`,'big');
+  if(m.un)m.un.forEach((k,i)=>setTimeout(()=>{const sl=SLOTS.find(s=>s.types.includes(k));toast(`${BLD[k]?'🔓':ic(k,18)} Unlocked: <b>${unlockName(k)}</b>${sl?` <kbd>${sl.k}</kbd>`:''}`,'good')},250+i*220));
+  const hub=[...ents.values()].find(e=>e.type==='hub');
+  const src=m.phase?[...ents.values()].find(e=>e.type==='elevator')||hub:hub;
+  confetti(src.x+BLD[src.type].sz/2,src.y+BLD[src.type].sz/2,m.phase?160:80);
+  if(m.unlockTier&&S.maxTier<m.unlockTier){S.maxTier=m.unlockTier;tierUp()}
+  if(S.maxTier===0&&MILESTONES.filter(x=>x.tier===0).every(x=>S.done.has(x.id))){S.maxTier=1;tierUp()}
+  if(m.win&&!S.won){S.won=true;setTimeout(()=>openModal('win'),1200)}
+  renderHotbar();if(modalKind==='hub')renderModal();
+  save();
+}
+function tierUp(){setTimeout(()=>{sfx.tier();toast(`🚀 TIER ${S.maxTier} UNLOCKED — new milestones available (H)`,'big')},900)}
+
+/* =====================================================================
+   Particles
+   ===================================================================== */
+let parts=[];
+function spawn(x,y,o){if(parts.length>600)return;parts.push({x,y,vx:o.vx||0,vy:o.vy||0,life:o.life||1,max:o.life||1,col:o.col||'#fff',size:o.size||.1,icon:o.icon,grav:o.grav||0,rot:Math.random()*6,vr:(Math.random()-.5)*10})}
+function dust(x,y,s){for(let i=0;i<16;i++){const a=Math.random()*Math.PI*2;spawn(x+s/2+Math.cos(a)*s*.55,y+s/2+Math.sin(a)*s*.55,{vx:Math.cos(a)*1.6,vy:Math.sin(a)*1.6,life:.45,col:'#b9b2a0',size:.09})}}
+function confetti(x,y,n){const cols=['#f5a524','#4cc38a','#4ea1ff','#ef5b5b','#c77dff','#fff'];for(let i=0;i<n;i++){const a=Math.random()*Math.PI*2,v=2+Math.random()*7;spawn(x,y,{vx:Math.cos(a)*v,vy:Math.sin(a)*v-5,life:1.4+Math.random(),col:cols[i%cols.length],size:.13,grav:9})}}
+function updParts(dt){for(const p of parts){p.x+=p.vx*dt;p.y+=p.vy*dt;p.vy+=p.grav*dt;p.vx*=1-dt*1.5;p.life-=dt;p.rot+=p.vr*dt}parts=parts.filter(p=>p.life>0)}
+
+/* =====================================================================
+   Rendering
+   ===================================================================== */
+const cv=$('#c'),ctx=cv.getContext('2d');
+let cw=0,ch=0,dpr=1;
+const cam={x:80,y:60,z:1};
+function resize(){dpr=Math.min(2,window.devicePixelRatio||1);cw=innerWidth;ch=innerHeight;cv.width=cw*dpr;cv.height=ch*dpr;cv.style.width=cw+'px';cv.style.height=ch+'px'}
+function wt(){const k=T*cam.z*dpr;ctx.setTransform(k,0,0,k,dpr*(cw/2-cam.x*T*cam.z),dpr*(ch/2-cam.y*T*cam.z))}
+function st(){ctx.setTransform(dpr,0,0,dpr,0,0)}
+const w2s=(x,y)=>[(x-cam.x)*T*cam.z+cw/2,(y-cam.y)*T*cam.z+ch/2];
+const s2w=(x,y)=>[(x-cw/2)/(T*cam.z)+cam.x,(y-ch/2)/(T*cam.z)+cam.y];
+const STCOL={work:'#4cc38a',starve:'#f2c94c',block:'#ef5b5b',idle:'#6b7482'};
+
+function bez(p,t){const u=1-t;return[u*u*p[0]+2*u*t*p[2]+t*t*p[4],u*u*p[1]+2*u*t*p[3]+t*t*p[5]]}
+function bezA(p,t){const u=1-t;return Math.atan2(2*u*(p[3]-p[1])+2*t*(p[5]-p[3]),2*u*(p[2]-p[0])+2*t*(p[4]-p[2]))}
+
+function beltPath(g,p){g.beginPath();g.moveTo(p[0],p[1]);g.quadraticCurveTo(p[2],p[3],p[4],p[5])}
+function drawBeltBase(g,b,now,ghostCol){
+  const d=BLD[b.type],p=b.pts;
+  g.lineCap='butt';
+  beltPath(g,p);g.lineWidth=.84;g.strokeStyle=ghostCol||shade(d.col,-.35);g.stroke();
+  beltPath(g,p);g.lineWidth=.66;g.strokeStyle=ghostCol?'rgba(20,24,30,.6)':'#23272e';g.stroke();
+  if(cam.z>.38){
+    g.strokeStyle=ghostCol?'#fff':d.col;g.globalAlpha=ghostCol?.9:.4;g.lineWidth=.06;g.lineCap='round';
+    const ph=ghostCol?.5:(now*d.speed)%1;
+    for(let k=0;k<2;k++){
+      const t=(ph+k*.5)%1,[x,y]=bez(p,t),a=bezA(p,t),c=Math.cos(a),s=Math.sin(a);
+      g.beginPath();g.moveTo(x-c*.1+s*.14,y-s*.1-c*.14);g.lineTo(x+c*.06,y+s*.06);g.lineTo(x-c*.1-s*.14,y-s*.1+c*.14);g.stroke();
+    }
+    g.globalAlpha=1;
+  }
+}
+function drawBeltItems(g,b){
+  const p=b.pts,s=.44;
+  for(const it of b.items){const[x,y]=bez(p,Math.min(1,it.pos));g.drawImage(ICON[it.it],x-s/2,y-s/2,s,s)}
+}
+function gear(g,r,teeth,a,col){
+  g.save();g.rotate(a);g.fillStyle=col;g.beginPath();
+  for(let i=0;i<teeth*2;i++){const ang=i*Math.PI/teeth,rr=i%2?r*.78:r;g.lineTo(Math.cos(ang)*rr,Math.sin(ang)*rr)}
+  g.closePath();g.fill();g.fillStyle='rgba(0,0,0,.45)';g.beginPath();g.arc(0,0,r*.32,0,7);g.fill();g.restore();
+}
+
+function drawBuilding(g,e,now,ghost,labels){
+  const d=BLD[e.type],s=d.sz,cx=e.x+s/2,cy=e.y+s/2;
+  let sc=1;
+  if(!ghost){const a=(now-e.born)/.3;if(a<1)sc=easeOutBack(Math.max(0,a));if(e.pop>0)sc*=1+.05*e.pop}
+  g.save();g.translate(cx,cy);g.scale(sc,sc);
+  if(ghost)g.globalAlpha=.62;
+  const h=s/2-.05, bad=ghost&&!ghost.ok;
+  const col=bad?'#d04040':d.col;
+  // shadow + body
+  g.fillStyle='rgba(0,0,0,.4)';rrect(g,-h+.06,-h+.12,2*h,2*h,.18);g.fill();
+  g.fillStyle=shade(col,-.55);rrect(g,-h,-h,2*h,2*h,.18);g.fill();
+  const grd=g.createLinearGradient(0,-h,0,h);grd.addColorStop(0,shade(col,-.12));grd.addColorStop(1,shade(col,-.38));
+  g.fillStyle=grd;rrect(g,-h+.07,-h+.07,2*h-.14,2*h-.14,.13);g.fill();
+  g.strokeStyle=shade(col,.25);g.lineWidth=.04;g.stroke();
+  // output side
+  const hasOut=!(d.hub||d.elevator);
+  if(hasOut){
+    g.save();g.rotate(e.rot*Math.PI/2);
+    g.fillStyle='#ffb347';
+    if(d.splitter){for(const r of [0,-Math.PI/2,Math.PI/2]){g.save();g.rotate(r);poly(g,[[.18,-.14],[.36,0],[.18,.14]]);g.fill();g.restore()}}
+    else{
+      g.fillRect(h-.14,-h+.18,.08,2*h-.36);
+      if(d.sz>1||ghost)for(let i=0;i<s;i++){const y=-s/2+.5+i;poly(g,[[h+.08,y-.16],[h+.3,y],[h+.08,y+.16]]);g.fill()}
+      else{poly(g,[[.12,-.15],[.34,0],[.12,.15]]);g.fill()}
+    }
+    if(d.merger){g.fillStyle='#fff';g.globalAlpha*=.6;for(const r of [Math.PI,-Math.PI/2,Math.PI/2]){g.save();g.rotate(r);poly(g,[[.36,-.1],[.2,0],[.36,.1]]);g.fill();g.restore()}}
+    g.restore();
+  }
+  // content
+  const r=d.machine&&e.recipe?RECIPES[e.recipe]:null;
+  if(d.machine){
+    const working=e.st==='work'&&!ghost;
+    const gr=Math.min(1.1,s*.34);
+    gear(g,gr,d.sz>=3?10:8,working?now*1.6:0,'rgba(255,255,255,.10)');
+    if(r){const is=Math.min(1.25,s*.44);g.drawImage(ICON[r.out],-is/2,-is/2-.04,is,is)}
+    else{gear(g,gr*.55,6,0,'rgba(255,255,255,.35)')}
+    if(!ghost){
+      g.fillStyle='rgba(0,0,0,.5)';rrect(g,-h+.25,h-.3,2*h-.5,.12,.05);g.fill();
+      g.fillStyle=STCOL[e.st];rrect(g,-h+.25,h-.3,Math.max(.001,(2*h-.5)*e.prog),.12,.05);g.fill();
+      led(g,h-.26,-h+.26,e.st,now);
+    }
+  }else if(d.miner){
+    const n=e.node||nodeAt(e.x,e.y),col2=n?ITEMS[n.res].c:'#888';
+    g.fillStyle=shade(col2,-.3);g.beginPath();g.arc(0,0,.62,0,7);g.fill();
+    const a=ghost?0:now*(e.st==='work'?7*PURITY[n?n.p:1].m:0);
+    g.save();g.rotate(a);g.fillStyle='#d9dde3';for(let i=0;i<3;i++){g.rotate(Math.PI*2/3);poly(g,[[0,-.08],[.55,0],[0,.08]]);g.fill()}g.restore();
+    g.fillStyle='#2a2d33';g.beginPath();g.arc(0,0,.16,0,7);g.fill();
+    if(!ghost)led(g,h-.26,-h+.26,e.st,now);
+  }else if(d.hub){
+    g.fillStyle='#2a2116';g.beginPath();g.arc(0,0,1.35,0,7);g.fill();
+    g.strokeStyle='#f5a524';g.lineWidth=.12;g.setLineDash([.4,.25]);g.lineDashOffset=-now*.6;g.beginPath();g.arc(0,0,1.15,0,7);g.stroke();g.setLineDash([]);
+    gear(g,.75,10,now*.4,'#f5a524');
+    g.fillStyle='#fff3';for(let i=0;i<4;i++){g.save();g.rotate(i*Math.PI/2);poly(g,[[h-.35,-.3],[h-.1,0],[h-.35,.3]]);g.fill();g.restore()}
+  }else if(d.elevator){
+    g.fillStyle='#2b2c3a';g.beginPath();g.arc(0,0,2.15,0,7);g.fill();
+    const ph=curPhase();let frac=0;
+    if(ph&&!ghost){let a=0,b=0;for(const k in ph.req){a+=Math.min(S.elev[k]||0,ph.req[k]);b+=ph.req[k]}frac=a/b}
+    g.strokeStyle='#3a3b52';g.lineWidth=.22;g.beginPath();g.arc(0,0,1.85,0,7);g.stroke();
+    g.strokeStyle='#b69cff';g.beginPath();g.arc(0,0,1.85,-Math.PI/2,-Math.PI/2+Math.PI*2*frac);g.stroke();
+    g.fillStyle='#c9cbe0';g.beginPath();g.arc(0,0,1.1,0,7);g.fill();
+    g.fillStyle='#8f92b5';g.beginPath();g.arc(0,0,.7,0,7);g.fill();
+    g.fillStyle='#e9eaff';g.beginPath();g.arc(0,0,.35+.05*Math.sin(now*3),0,7);g.fill();
+  }else if(d.storage){
+    g.strokeStyle='rgba(0,0,0,.35)';g.lineWidth=.06;for(let i=-1;i<=1;i++){g.beginPath();g.moveTo(-h+.2,i*.35);g.lineTo(h-.2,i*.35);g.stroke()}
+    if(!ghost){g.fillStyle='rgba(0,0,0,.5)';rrect(g,-h+.25,h-.3,2*h-.5,.12,.05);g.fill();g.fillStyle='#c7d97a';rrect(g,-h+.25,h-.3,Math.max(.001,(2*h-.5)*e.tot/STORE_CAP),.12,.05);g.fill();
+      const k=Object.keys(e.store).find(k=>e.store[k]>0);if(k){g.drawImage(ICON[k],-.35,-.45,.7,.7)}}
+  }else if(d.splitter||d.merger){
+    if(!ghost){const it=d.splitter?e.buf[0]:e.slot.find(x=>x);if(it)g.drawImage(ICON[it],-.2,-.2,.4,.4)}
+  }
+  g.restore();
+  if(labels&&cam.z>.45&&!ghost){
+    if(d.sz>=2){
+      const nm=d.hub?'HUB':d.elevator?'SPACE ELEVATOR':d.n.replace('Storage Container','Storage');
+      labels.push([e.x+.14,e.y+.12,nm,d.hub||d.elevator?12:10,'rgba(255,255,255,.75)','left']);
+    }
+  }
+}
+function led(g,x,y,st,now){
+  const c=STCOL[st];g.fillStyle=c;
+  const pulse=st==='block'?(.6+.4*Math.sin(now*8)):1;
+  g.globalAlpha*=pulse;g.beginPath();g.arc(x,y,.1,0,7);g.fill();g.globalAlpha/=pulse;
+  g.fillStyle=c+'44';g.beginPath();g.arc(x,y,.18,0,7);g.fill();
+}
+
+let lastFrame=performance.now()/1000;
+function render(now){
+  st();ctx.fillStyle='#0b0d10';ctx.fillRect(0,0,cw,ch);
+  wt();
+  ctx.imageSmoothingEnabled=true;
+  ctx.drawImage(terrain,0,0,W,H);
+  const[ax,ay]=s2w(0,0),[bx,by]=s2w(cw,ch);
+  const x0=Math.max(0,Math.floor(ax)-1),y0=Math.max(0,Math.floor(ay)-1),x1=Math.min(W,Math.ceil(bx)+1),y1=Math.min(H,Math.ceil(by)+1);
+  if(cam.z>.5){
+    ctx.strokeStyle='rgba(255,255,255,.035)';ctx.lineWidth=1/(T*cam.z);ctx.beginPath();
+    for(let x=x0;x<=x1;x++){ctx.moveTo(x,y0);ctx.lineTo(x,y1)}for(let y=y0;y<=y1;y++){ctx.moveTo(x0,y);ctx.lineTo(x1,y)}ctx.stroke();
+  }
+  ctx.strokeStyle='#000a';ctx.lineWidth=.3;ctx.strokeRect(0,0,W,H);
+  const labels=[];
+  for(const n of nodes){
+    if(n.x+2<x0||n.x>x1||n.y+2<y0||n.y>y1)continue;
+    ctx.drawImage(NODESPR[n.res],n.x+.02,n.y+.02,1.96,1.96);
+    if(!grid[n.y*W+n.x]&&cam.z>.5){
+      ctx.fillStyle='rgba(0,0,0,.55)';rrect(ctx,n.x+1.08,n.y+1.55,.84,.34,.12);ctx.fill();
+      for(let i=0;i<=n.p;i++){ctx.fillStyle=n.p===2?'#ffd24a':'#fff';ctx.beginPath();ctx.arc(n.x+1.25+i*.25,n.y+1.72,.075,0,7);ctx.fill()}
+    }
+  }
+  // hovered-tile highlight for no-tool
+  const hb=[];
+  for(const b of lists.belts){if(b.x<x0||b.x>x1||b.y<y0||b.y>y1)continue;hb.push(b);drawBeltBase(ctx,b,now)}
+  for(const b of hb)drawBeltItems(ctx,b);
+  for(const e of ents.values()){
+    const d=BLD[e.type];if(d.belt)continue;
+    if(e.x+d.sz<x0||e.x>x1||e.y+d.sz<y0||e.y>y1)continue;
+    drawBuilding(ctx,e,now,null,labels);
+  }
+  // hover highlight
+  const he=!tool?entAt(mouse.tx,mouse.ty):null;
+  if(he&&!mouse.pan){const d=BLD[he.type];ctx.strokeStyle='rgba(255,255,255,.6)';ctx.lineWidth=.05;rrect(ctx,he.x+.02,he.y+.02,d.sz-.04,d.sz-.04,.15);ctx.stroke()}
+  if(insp){const d=BLD[insp.type];ctx.strokeStyle='#f5a524';ctx.lineWidth=.08;ctx.setLineDash([.3,.15]);ctx.lineDashOffset=-now;rrect(ctx,insp.x-.05,insp.y-.05,d.sz+.1,d.sz+.1,.2);ctx.stroke();ctx.setLineDash([])}
+  drawGhosts(now);
+  // particles
+  for(const p of parts){
+    const a=clamp(p.life/p.max*1.5,0,1);ctx.globalAlpha=a;
+    if(p.icon){const s=p.size;ctx.drawImage(ICON[p.icon],p.x-s/2,p.y-s/2,s,s)}
+    else{ctx.fillStyle=p.col;ctx.save();ctx.translate(p.x,p.y);ctx.rotate(p.rot);ctx.fillRect(-p.size/2,-p.size/2,p.size,p.size*.6);ctx.restore()}
+  }
+  ctx.globalAlpha=1;
+  // labels (screen space)
+  st();
+  for(const[x,y,t,px,col,al]of labels){
+    const[sx,sy]=w2s(x,y);const size=Math.round(clamp(px*cam.z,8,16));
+    ctx.font=`600 ${size}px Segoe UI,system-ui,sans-serif`;ctx.textAlign=al;ctx.textBaseline='top';ctx.fillStyle='rgba(0,0,0,.6)';ctx.fillText(t,sx+1,sy+1);ctx.fillStyle=col;ctx.fillText(t,sx,sy);
+  }
+}
+
+/* =====================================================================
+   Input & tools
+   ===================================================================== */
+let tool=null, rot=0, beltDrag=null, mining=null, lastPlaced=null;
+const mouse={sx:0,sy:0,wx:0,wy:0,tx:0,ty:0,l:false,pan:false,px:0,py:0,cx:0,cy:0,moved:false,btn:-1};
+const keys=new Set();
+
+function ghostPos(type){
+  const d=BLD[type],s=d.sz;
+  if(d.miner){
+    for(let j=0;j<2;j++)for(let i=0;i<2;i++){const n=nodeAt(Math.floor(mouse.wx-.5)+i,Math.floor(mouse.wy-.5)+j);if(n)return[n.x,n.y]}
+  }
+  return[Math.round(mouse.wx-s/2),Math.round(mouse.wy-s/2)];
+}
+function computeBeltPath(){
+  const{sx,sy}=beltDrag,ex=mouse.tx,ey=mouse.ty,dx=ex-sx,dy=ey-sy;
+  if(dx===0&&dy===0)return[{x:sx,y:sy,d:rot}];
+  const axis=beltDrag.axis||(Math.abs(dx)>=Math.abs(dy)?'h':'v');
+  const hd=dx>0?0:2,vd=dy>0?1:3,sgx=Math.sign(dx),sgy=Math.sign(dy),pts=[];
+  if(axis==='h'){
+    for(let i=0;i<=Math.abs(dx);i++)pts.push({x:sx+sgx*i,y:sy,d:(i<Math.abs(dx)||dy===0)?hd:vd});
+    for(let j=1;j<=Math.abs(dy);j++)pts.push({x:ex,y:sy+sgy*j,d:vd});
+  }else{
+    for(let j=0;j<=Math.abs(dy);j++)pts.push({x:sx,y:sy+sgy*j,d:(j<Math.abs(dy)||dx===0)?vd:hd});
+    for(let i=1;i<=Math.abs(dx);i++)pts.push({x:sx+sgx*i,y:ey,d:hd});
+  }
+  return pts;
+}
+function beltTileOK(x,y){if(!inB(x,y))return false;const e=entAt(x,y);if(e)return isBelt(e);return!nodeGrid[y*W+x]}
+function beltPlanCost(path,type){let n=0;for(const p of path){if(!beltTileOK(p.x,p.y))continue;const e=entAt(p.x,p.y);if(!e||e.type!==type)n++}const c={};for(const k in BLD[type].cost)c[k]=BLD[type].cost[k]*n;return[n,c]}
+
+function drawGhosts(now){
+  if(!tool)return;
+  if(tool.k==='x'){
+    const e=entAt(mouse.tx,mouse.ty);
+    ctx.strokeStyle='#ef5b5b';ctx.lineWidth=.08;
+    if(e&&!BLD[e.type].hub){const d=BLD[e.type];ctx.fillStyle='rgba(239,91,91,.25)';rrect(ctx,e.x,e.y,d.sz,d.sz,.15);ctx.fill();ctx.stroke()}
+    else{ctx.strokeRect(mouse.tx+.1,mouse.ty+.1,.8,.8)}
+    return;
+  }
+  const d=BLD[tool.type];
+  if(d.belt){
+    const path=beltDrag?computeBeltPath():[{x:mouse.tx,y:mouse.ty,d:rot}];
+    for(const p of path){
+      const ok=beltTileOK(p.x,p.y);
+      const fake={type:tool.type,x:p.x,y:p.y,rot:p.d};const cx=p.x+.5,cy=p.y+.5;
+      fake.pts=[cx-DX[p.d]*.5,cy-DY[p.d]*.5,cx,cy,cx+DX[p.d]*.5,cy+DY[p.d]*.5];
+      ctx.globalAlpha=.75;drawBeltBase(ctx,fake,now,ok?d.col:'#d04040');ctx.globalAlpha=1;
+    }
+    return;
+  }
+  const[x,y]=ghostPos(tool.type);
+  const reason=canPlace(tool.type,x,y);
+  drawBuilding(ctx,{type:tool.type,x,y,rot,recipe:tool.recipe},now,{ok:!reason});
+  if(tool.recipe){ctx.globalAlpha=.8;const is=Math.min(1.25,d.sz*.44);ctx.drawImage(ICON[RECIPES[tool.recipe].out],x+d.sz/2-is/2,y+d.sz/2-is/2,is,is);ctx.globalAlpha=1}
+}
+
+function setTool(t){
+  tool=t;beltDrag=null;lastPlaced=null;
+  if(t&&t.k==='b'){const d=BLD[t.type];if(!t.recipe)t.recipe=null;void d}
+  renderHotbar();updateHint();
+}
+function selectSlot(i){
+  const sl=SLOTS[i];if(!sl)return;
+  const type=sl.types.find(t=>S.unlocked.has(t));
+  if(!type){const m=MILESTONES.find(m=>m.un&&m.un.some(u=>sl.types.includes(u)));sfx.err();toast(`🔒 Locked — unlocks with milestone "${m?m.n:'?'}"`,'bad');return}
+  if(tool&&tool.k==='b'&&tool.type===type){setTool(null);return}
+  sfx.click();setTool({k:'b',type});
+}
+function cancel(){if(beltDrag){beltDrag=null;return}if(tool){setTool(null);return}if(insp){closeInsp();return}}
+
+function tryPlaceTool(loud){
+  const[x,y]=ghostPos(tool.type);
+  if(lastPlaced&&lastPlaced[0]===x&&lastPlaced[1]===y)return;
+  const reason=canPlace(tool.type,x,y);
+  if(reason){if(loud){toast(reason,'bad');sfx.err()}return}
+  const e=place(tool.type,x,y,rot);lastPlaced=[x,y];
+  if(tool.recipe&&BLD[tool.type].machine&&S.unlocked.has(tool.recipe))setRecipe(e,tool.recipe,true);
+  sfx.place();
+}
+function commitBelt(){
+  const path=computeBeltPath(),type=tool.type,d=BLD[type];
+  let placed=0,upgraded=0,out=false;
+  for(const p of path){
+    if(!beltTileOK(p.x,p.y))continue;
+    const e=entAt(p.x,p.y);
+    if(e){
+      if(e.type===type){if(e.rot!==p.d){e.rot=p.d;linksDirty=true;placed++}}
+      else{refund(BLD[e.type].cost);if(!canAfford(d.cost)){pay(BLD[e.type].cost);out=true;break}pay(d.cost);e.type=type;linksDirty=true;upgraded++}
+    }else{
+      if(!canAfford(d.cost)){out=true;break}
+      const b=place(type,p.x,p.y,p.d);b.born=performance.now()/1000;placed++;
+    }
+  }
+  if(path.length>1)rot=path[path.length-1].d;
+  if(placed||upgraded)sfx.belt();
+  if(out){toast(`Out of materials: ${missingText(d.cost)}`,'bad');sfx.err()}
+  beltDrag=null;
+}
+function deconAt(x,y){const e=entAt(x,y);if(e&&remove(e))sfx.remove()}
+function handMine(n){
+  addInv(n.res,1);S.flags.mined=true;sfx.mine();stat(statP,n.res,1);
+  for(let i=0;i<5;i++)spawn(n.x+1,n.y+1,{vx:(Math.random()-.5)*4,vy:-1-Math.random()*3,life:.45,col:ITEMS[n.res].c,size:.12,grav:10});
+  spawn(n.x+1,n.y+.7,{vy:-1.8,life:.8,icon:n.res,size:.5});
+}
+
+function updMouse(ev){
+  mouse.sx=ev.clientX;mouse.sy=ev.clientY;
+  const[wx,wy]=s2w(mouse.sx,mouse.sy);mouse.wx=wx;mouse.wy=wy;mouse.tx=Math.floor(wx);mouse.ty=Math.floor(wy);
+}
+function startPan(ev){mouse.pan=true;mouse.px=ev.clientX;mouse.py=ev.clientY;mouse.cx=cam.x;mouse.cy=cam.y;mouse.moved=false;cv.style.cursor='grabbing'}
+
+cv.addEventListener('pointerdown',ev=>{
+  audioInit();updMouse(ev);cv.setPointerCapture(ev.pointerId);mouse.btn=ev.button;
+  if(ev.button===1||ev.button===2){startPan(ev);return}
+  if(ev.button!==0)return;
+  mouse.l=true;
+  if(tool&&tool.k==='x'){deconAt(mouse.tx,mouse.ty);return}
+  if(tool&&tool.k==='b'){if(BLD[tool.type].belt)beltDrag={sx:mouse.tx,sy:mouse.ty,axis:null};else tryPlaceTool(true);return}
+  const e=entAt(mouse.tx,mouse.ty);
+  if(e&&!isBelt(e)){openInsp(e);sfx.click();return}
+  const n=nodeAt(mouse.tx,mouse.ty);
+  if(n&&!e){mining={n,t:0};handMine(n);return}
+  startPan(ev);
+});
+cv.addEventListener('pointermove',ev=>{
+  updMouse(ev);
+  if(mouse.pan){const dx=ev.clientX-mouse.px,dy=ev.clientY-mouse.py;if(Math.abs(dx)+Math.abs(dy)>4)mouse.moved=true;cam.x=mouse.cx-dx/(T*cam.z);cam.y=mouse.cy-dy/(T*cam.z);clampCam();return}
+  if(mouse.l){
+    if(tool&&tool.k==='x')deconAt(mouse.tx,mouse.ty);
+    else if(tool&&tool.k==='b'&&!BLD[tool.type].belt)tryPlaceTool(false);
+    else if(beltDrag&&!beltDrag.axis&&(mouse.tx!==beltDrag.sx||mouse.ty!==beltDrag.sy))beltDrag.axis=Math.abs(mouse.tx-beltDrag.sx)>=Math.abs(mouse.ty-beltDrag.sy)?'h':'v';
+    if(mining){const n=nodeAt(mouse.tx,mouse.ty);if(n!==mining.n)mining=null}
+  }
+});
+cv.addEventListener('pointerup',ev=>{
+  updMouse(ev);
+  if(mouse.pan){mouse.pan=false;cv.style.cursor='';if(ev.button===2&&!mouse.moved)cancel();return}
+  if(ev.button===0){if(beltDrag&&tool)commitBelt();mouse.l=false;mining=null;lastPlaced=null}
+});
+cv.addEventListener('contextmenu',e=>e.preventDefault());
+cv.addEventListener('wheel',ev=>{
+  ev.preventDefault();
+  const[wx,wy]=s2w(ev.clientX,ev.clientY);
+  cam.z=clamp(cam.z*Math.exp(-ev.deltaY*.0015),.22,2.6);
+  const[nx,ny]=s2w(ev.clientX,ev.clientY);cam.x+=wx-nx;cam.y+=wy-ny;clampCam();updMouse(ev);
+},{passive:false});
+function clampCam(){cam.x=clamp(cam.x,0,W);cam.y=clamp(cam.y,0,H)}
+
+addEventListener('keydown',ev=>{
+  if(ev.target.tagName==='INPUT')return;
+  const k=ev.key.toLowerCase();
+  if(['w','a','s','d','arrowup','arrowdown','arrowleft','arrowright'].includes(k)){keys.add(k);ev.preventDefault();return}
+  if(ev.repeat)return;
+  audioInit();
+  if(k==='escape'){if(modalKind)closeModal();else cancel();return}
+  if(modalKind&&k!=='h'&&k!=='c'&&k!=='p')return;
+  const si=SLOTS.findIndex(s=>s.k.toLowerCase()===k);
+  if(si>=0){selectSlot(si);return}
+  if(k==='r'){
+    if(beltDrag){beltDrag.axis=beltDrag.axis==='v'?'h':'v';sfx.click();return}
+    if(tool&&tool.k==='b'){rot=(rot+(ev.shiftKey?3:1))&3;sfx.click();return}
+    const e=entAt(mouse.tx,mouse.ty);if(e)rotateEnt(e,ev.shiftKey?-1:1);return;
+  }
+  if(k==='q'){const e=entAt(mouse.tx,mouse.ty);if(e&&!BLD[e.type].hub&&!BLD[e.type].elevator){rot=e.rot;setTool({k:'b',type:e.type,recipe:e.recipe||null});sfx.click()}else setTool(null);return}
+  if(k==='x'||k==='delete'){setTool(tool&&tool.k==='x'?null:{k:'x'});sfx.click();return}
+  if(k==='h'){toggleModal('hub');return}
+  if(k==='c'){toggleModal('craft');return}
+  if(k==='p'){toggleModal('stats');return}
+  if(k==='f1'||k==='?'){ev.preventDefault();toggleModal('help');return}
+  if(k==='home'||k===' '){const hub=[...ents.values()].find(e=>e.type==='hub');cam.x=hub.x+2;cam.y=hub.y+2;ev.preventDefault();return}
+  if(k==='='||k==='+')cam.z=clamp(cam.z*1.2,.22,2.6);
+  if(k==='-')cam.z=clamp(cam.z/1.2,.22,2.6);
+});
+addEventListener('keyup',ev=>keys.delete(ev.key.toLowerCase()));
+addEventListener('blur',()=>keys.clear());
+
+/* =====================================================================
+   UI
+   ===================================================================== */
+function toast(html,kind=''){
+  const d=document.createElement('div');d.className='toast '+kind;d.innerHTML=html;$('#toasts').appendChild(d);
+  while($('#toasts').children.length>6)$('#toasts').firstChild.remove();
+  setTimeout(()=>{d.style.transition='opacity .4s';d.style.opacity='0';setTimeout(()=>d.remove(),400)},kind==='big'?4200:3000);
+}
+
+/* inventory bar */
+const chipEls={},chipPrev={};
+function renderInv(){
+  const box=$('#inv');
+  for(const k of ITEM_KEYS){
+    const n=Math.floor(S.inv[k]||0);let el=chipEls[k];
+    if(n<=0){if(el&&el.parentNode)el.remove();chipPrev[k]=0;continue}
+    if(!el){el=chipEls[k]=document.createElement('span');el.className='chip';el.title=ITEMS[k].n;el.innerHTML=ic(k,18)+'<span></span>'}
+    if(!el.parentNode){
+      let nextEl=null;for(const k2 of ITEM_KEYS.slice(ITEM_KEYS.indexOf(k)+1)){if(chipEls[k2]&&chipEls[k2].parentNode){nextEl=chipEls[k2];break}}
+      box.insertBefore(el,nextEl);
+    }
+    el.lastChild.textContent=fmt(n);
+    if(n>(chipPrev[k]||0)){el.classList.remove('bump');void el.offsetWidth;el.classList.add('bump')}
+    chipPrev[k]=n;
+  }
+  $('#tierlbl').textContent=`Tier ${S.maxTier}`;
+}
+
+/* hotbar */
+const BICON={};
+function buildingIcon(type){
+  if(BICON[type])return BICON[type];
+  const c=document.createElement('canvas');c.width=c.height=96;const g=c.getContext('2d');const d=BLD[type];
+  const sz=Math.max(d.sz,1.35),sc=96/(sz+.9);
+  g.setTransform(sc,0,0,sc,(96-d.sz*sc)/2-(d.sz===1?0:.15*sc),(96-d.sz*sc)/2);
+  if(d.belt){const cx=.5,cy=.5;drawBeltBase(g,{type,pts:[0,cy,cx,cy,1,cy]},0.25)}
+  else{const fake={type,x:0,y:0,rot:0,st:'idle',prog:0,born:-9,pop:0,node:{res:'iron_ore',p:1},store:{},tot:0,buf:[],slot:[null,null,null,null]};drawBuilding(g,fake,0,{ok:true})}
+  return BICON[type]=c.toDataURL();
+}
+function renderHotbar(){
+  let h='';
+  SLOTS.forEach((sl,i)=>{
+    const type=sl.types.find(t=>S.unlocked.has(t))||sl.types[sl.types.length-1];
+    const locked=!S.unlocked.has(type),sel=tool&&tool.k==='b'&&tool.type===type;
+    const cant=!locked&&!canAfford(BLD[type].cost);
+    h+=`<div class="slot ${locked?'locked':''} ${sel?'sel':''} ${cant?'cant':''}" data-act="slot:${i}" data-tip="slot:${i}"><span class="k">${sl.k}</span><img src="${buildingIcon(type)}" width="46" height="46" alt="">${locked?'<span class="lk">🔒</span>':''}</div>`;
+  });
+  h+=`<div class="slot ${tool&&tool.k==='x'?'sel':''}" data-act="decon" data-tip="decon"><span class="k">X</span><span style="font-size:24px;color:#ef5b5b">✖</span></div>`;
+  $('#hotbar').innerHTML=h;
+}
+function slotTip(i){
+  const sl=SLOTS[i],type=sl.types.find(t=>S.unlocked.has(t))||sl.types[sl.types.length-1],d=BLD[type];
+  if(!S.unlocked.has(type)){const m=MILESTONES.find(m=>m.un&&m.un.includes(type));return `<b>${d.n}</b> 🔒<br><span class="dim">Unlocks with milestone "${m?m.n:'?'}" (Tier ${m?m.tier:'?'})</span>`}
+  let c='';for(const k in d.cost){const have=S.inv[k]||0;c+=`<div>${ic(k,16)} <span style="color:${have>=d.cost[k]?'#cfd5de':'#ef5b5b'}">${d.cost[k]} ${ITEMS[k].n}</span> <span class="dim">(have ${fmt(have)})</span></div>`}
+  return `<b>${d.n}</b> <kbd>${sl.k}</kbd> <span class="dim">${d.sz}×${d.sz}</span><div class="sm" style="margin:3px 0 5px">${d.desc}</div>${c}`;
+}
+
+/* hint line */
+function updateHint(){
+  let h;
+  if(!tool)h='<b>Drag</b> pan · <b>Wheel</b> zoom · <b>Click node</b> hand-mine · <b>Click building</b> inspect · <b>R</b> rotate hovered · <b>Q</b> copy · <b>1–0</b> build';
+  else if(tool.k==='x')h='<b>Deconstruct:</b> click or drag over things to remove them (100% refund) · <b>X</b>/<b>Right-click</b> to exit';
+  else{
+    const d=BLD[tool.type];
+    if(d.belt){
+      if(beltDrag){const[n,c]=beltPlanCost(computeBeltPath(),tool.type);h=`Laying <b>${n}</b> belts · cost ${Object.keys(c).map(k=>`${ic(k,14)}${c[k]}`).join(' ')||'—'} · <b>R</b> flip corner · release to build`}
+      else h=`<b>${d.n}</b> · click-drag to lay belts · <b>R</b> rotate · <b>Right-click</b> cancel · drag over existing belts to re-route/upgrade`;
+    }else h=`<b>${d.n}</b>${tool.recipe?' ('+ITEMS[RECIPES[tool.recipe].out].n+')':''} · <b>R</b> rotate (orange = output) · drag to place a row · <b>Right-click</b> cancel`;
+  }
+  const el=$('#hint');if(el.dataset.h!==h){el.innerHTML=h;el.dataset.h=h}
+}
+
+/* tracker */
+function reqRows(req,haveFn){
+  let h='';
+  for(const k in req){const have=Math.min(haveFn(k),req[k]),p=have/req[k]*100;h+=`<div class="req">${ic(k,18)}<div class="bar ${p>=100?'full':''}"><i style="width:${p}%"></i></div><span class="num">${fmt(have)}/${req[k]}</span></div>`}
+  return h;
+}
+function renderTracker(){
+  let h='';
+  if(!S.flags.tutDone){
+    const firstOpen=TUT.findIndex(s=>!s.done());
+    if(firstOpen<0){S.flags.tutDone=true;toast('🎉 Tutorial complete — the factory must grow!','big');sfx.tier()}
+    else{h+='<div class="tbox"><div class="th">Getting Started</div>';TUT.forEach((s,i)=>{h+=`<div class="step ${s.done()?'done':i===firstOpen?'cur':''}">${s.t}</div>`});h+='</div>'}
+  }
+  const goals=MILESTONES.filter(m=>m.tier<=S.maxTier&&!S.done.has(m.id));
+  if(goals.length){
+    h+=`<div class="tbox"><div class="th">Tier ${S.maxTier} Goals <button data-act="open:hub" style="padding:1px 7px;font-size:11px">All <kbd>H</kbd></button></div>`;
+    for(const m of goals){
+      const ready=milestoneReady(m);
+      h+=`<div class="goal"><div class="gname"><span>${m.phase?'🚀 ':''}${m.n}</span>${m.phase?`<button data-act="submit:${m.id}" style="padding:1px 7px;font-size:11px">Load</button>`:`<button class="${ready?'go':''}" data-act="submit:${m.id}" ${ready?'':'disabled'} style="padding:1px 8px;font-size:11px">Submit</button>`}</div>`;
+      h+=reqRows(m.req,k=>m.phase?(S.elev[k]||0):(S.inv[k]||0));
+      if(m.phase)h+=`<div class="sm">Belt these into the Space Elevator${count('elevator')?'':' (build it first: <kbd>E</kbd>)'}</div>`;
+      else if(m.un)h+=`<div class="sm">Unlocks: ${m.un.map(unlockName).join(', ')}</div>`;
+      h+='</div>';
+    }
+    h+='</div>';
+  }else if(S.won){h+='<div class="tbox"><div class="th">🏆 Project Assembly launched!</div><div class="sm">Everything is unlocked. Keep optimizing — the factory must grow.</div></div>'}
+  if(craftQ.length){
+    const r=RECIPES[craftQ[0]],p=crafting?craftT/handTime(r)*100:0;
+    h+=`<div class="tbox"><div class="th">Hand crafting <span class="sm">${craftQ.length} queued</span></div><div class="req">${ic(r.out,20)}<div class="bar"><i style="width:${p}%"></i></div><button data-act="clearq" style="padding:1px 6px;font-size:11px">✕</button></div></div>`;
+  }
+  const el=$('#tracker');if(el.dataset.h!==h){el.innerHTML=h;el.dataset.h=h}
+}
+
+/* inspector */
+let insp=null;
+function openInsp(e){insp=e;$('#insp').classList.remove('hidden');renderInsp()}
+function closeInsp(){insp=null;$('#insp').classList.add('hidden')}
+function renderInsp(){
+  const e=insp;if(!e)return;const d=BLD[e.type];
+  let h=`<div class="ih"><div class="it">${d.n}</div><button class="x" data-act="closeInsp">✕</button></div><div id="idyn"></div>`;
+  if(d.machine){
+    const rs=Object.keys(RECIPES).filter(k=>RECIPES[k].m===d.machine),un=rs.filter(k=>S.unlocked.has(k));
+    h+='<div class="sec">Recipe</div><div class="rlist">';
+    for(const k of un){const r=RECIPES[k];
+      h+=`<div class="rbtn ${e.recipe===k?'sel':''}" data-act="recipe:${k}">${ic(r.out,28)}<div><b>${ITEMS[r.out].n}</b> <span class="dim">×${r.n}</span><div class="sm">${Object.keys(r.in).map(i=>`${ic(i,14)}${fmtR(perMin(r,i))}`).join(' + ')} → ${fmtR(perMin(r))}/min</div></div></div>`}
+    if(!un.length)h+='<div class="sm">No recipes unlocked yet.</div>';
+    if(rs.length>un.length)h+=`<div class="sm">🔒 ${rs.length-un.length} more recipe${rs.length-un.length>1?'s':''} unlock later</div>`;
+    h+='</div>';
+  }
+  if(d.storage)h+='<div class="ibtns"><button class="go" data-act="collect">Move all to inventory</button></div>';
+  if(d.elevator)h+='<div class="ibtns"><button class="go" data-act="loadElev">Load parts from inventory</button></div>';
+  h+=`<div class="ibtns">${!d.hub&&!d.elevator?'<button data-act="rot">Rotate <kbd>R</kbd></button><button data-act="copy">Copy <kbd>Q</kbd></button>':''}${!d.hub?'<button class="danger" data-act="del">Deconstruct</button>':''}</div>`;
+  h+=`<div class="sm" style="margin-top:10px">${d.desc}</div>`;
+  $('#insp').innerHTML=h;renderInspDyn();
+}
+function statusHTML(st){const t={work:'Working',starve:'Waiting for input',block:'Output backed up',idle:'No recipe yet'}[st];return `<span class="stat"><span class="led" style="color:${STCOL[st]};background:${STCOL[st]}"></span>${t}</span>`}
+function renderInspDyn(){
+  const e=insp,el=$('#idyn');if(!e||!el)return;const d=BLD[e.type];let h='';
+  if(d.machine){
+    h+=`<div style="display:flex;justify-content:space-between">${statusHTML(e.st)}<span class="dim">Productivity ${Math.round(e.eff*100)}%</span></div>`;
+    if(e.recipe){
+      const r=RECIPES[e.recipe];
+      h+='<div class="sec">Inputs</div>';
+      for(const k in r.in){const have=e.ib[k]||0,cap=inCap(r,k);h+=`<div class="bufrow">${ic(k,20)}<span style="width:110px">${ITEMS[k].n}</span><div class="bar"><i style="width:${have/cap*100}%"></i></div><span class="num">${have}/${cap}</span></div><div class="sm" style="margin-left:26px">needs ${fmtR(perMin(r,k))}/min</div>`}
+      h+=`<div class="sec">Output</div><div class="bufrow">${ic(r.out,20)}<span style="width:110px">${ITEMS[r.out].n}</span><div class="bar"><i style="width:${e.ob/outCap(r)*100}%"></i></div><span class="num">${e.ob}/${outCap(r)}</span></div><div class="sm" style="margin-left:26px">makes ${fmtR(perMin(r))}/min at 100%</div>`;
+      h+=`<div class="bar" style="margin-top:8px;height:9px"><i style="width:${e.prog*100}%;transition:none"></i></div>`;
+      if(e.st==='starve')h+=`<div class="sm" style="color:var(--warn);margin-top:6px">Tip: belt ingredients in from any side except the orange front.</div>`;
+      if(e.st==='block')h+=`<div class="sm" style="color:var(--bad);margin-top:6px">Tip: add a belt leaving the orange front, or the line downstream is full.</div>`;
+    }else h+='<div class="sm" style="margin-top:6px">Pick a recipe below — or just belt an ingredient in and it will choose one automatically.</div>';
+  }else if(d.miner){
+    const n=e.node,rpm=d.rate*PURITY[n.p].m;
+    h+=`${statusHTML(e.st)}<div class="bufrow" style="margin-top:8px">${ic(n.res,22)}<b>${ITEMS[n.res].n}</b><span class="dim">· ${PURITY[n.p].n} node</span></div><div>Output: <b>${rpm}/min</b> <span class="dim">(buffer ${e.ob}/10)</span></div><div class="sm">Feeds ≈ ${fmtR(rpm/60)} smelter${rpm/60===1?'':'s'} at full speed.</div>`;
+  }else if(d.storage){
+    h+=`<div>${e.tot}/${STORE_CAP} items</div><div style="display:flex;flex-wrap:wrap;gap:4px;margin-top:6px">`;
+    for(const k in e.store)if(e.store[k])h+=`<span class="chip">${ic(k,18)}${e.store[k]}</span>`;
+    h+='</div>';
+  }else if(d.hub){
+    h+='<div class="sm">Items delivered per minute:</div>';
+    const ks=ITEM_KEYS.filter(k=>rate(statD,k)>0);
+    h+=ks.length?ks.map(k=>`<div class="bufrow">${ic(k,18)}${ITEMS[k].n}<span class="num" style="margin-left:auto">${fmtR(rate(statD,k))}/min</span></div>`).join(''):'<div class="dim">Nothing yet — belt something in!</div>';
+  }else if(d.elevator){
+    const ph=curPhase();
+    if(ph){h+=`<div class="sec">${ph.n}</div>`+reqRows(ph.req,k=>S.elev[k]||0)}
+    else h+=S.won?'<div>🏆 Project Assembly launched!</div>':'<div class="dim">No phase available yet — complete this tier\'s milestones.</div>';
+  }else if(d.splitter)h+='<div class="sm">Items in from the back → split evenly out front / left / right (only to outputs that have somewhere to go).</div>';
+  else if(d.merger)h+='<div class="sm">Items in from back / left / right → one belt out the front, taking turns fairly.</div>';
+  if(el.dataset.h!==h){el.innerHTML=h;el.dataset.h=h}
+}
+
+/* modals */
+let modalKind=null;
+function openModal(k){modalKind=k;$('#modal').classList.remove('hidden');renderModal()}
+function closeModal(){modalKind=null;$('#modal').classList.add('hidden')}
+function toggleModal(k){if(modalKind===k)closeModal();else openModal(k)}
+function renderModal(){
+  const k=modalKind;let t='',h='';
+  if(k==='hub'){
+    t='Milestones & Space Elevator';
+    for(let tier=0;tier<=3;tier++){
+      const locked=tier>S.maxTier;
+      h+=`<div class="tier ${locked?'locked':''}"><h3>Tier ${tier} ${locked?'🔒 (complete the previous tier)':''}</h3><div class="cards">`;
+      for(const m of MILESTONES.filter(m=>m.tier===tier)){
+        const done=S.done.has(m.id),ready=milestoneReady(m);
+        h+=`<div class="card ${done?'done':''} ${m.phase?'phase':''} ${locked?'locked':''}"><div class="cn">${m.phase?'🚀 ':''}${m.n} ${done?'✔':''}</div>`;
+        if(!done)h+=reqRows(m.req,k=>m.phase?(S.elev[k]||0):(S.inv[k]||0));
+        else h+=`<div class="sm">${Object.keys(m.req).map(k=>`${ic(k,14)}${m.req[k]}`).join(' ')}</div>`;
+        if(m.un)h+=`<div class="unl">${m.un.map(u=>`<span class="tag">${BLD[u]?'🏭':ic(u,14)} ${unlockName(u)}</span>`).join('')}</div>`;
+        if(m.unlockTier)h+=`<div class="unl"><span class="tag">⬆ Unlocks Tier ${m.unlockTier}</span></div>`;
+        if(m.win)h+='<div class="unl"><span class="tag">🏆 Win the game</span></div>';
+        if(!done&&!locked){
+          if(m.phase)h+=`<div class="sm">Belt parts into the Space Elevator, or:</div><button data-act="submit:${m.id}">Load from inventory</button>`;
+          else h+=`<button class="${ready?'go':''}" data-act="submit:${m.id}" ${ready?'':'disabled'}>Submit</button>`;
+        }
+        h+='</div>';
+      }
+      h+='</div></div>';
+    }
+  }else if(k==='craft'){
+    t='Craft Bench (hand crafting)';
+    h='<p class="sm" style="margin-top:0">Slow, but it gets you started. Automate anything you need a lot of! Foundry and Manufacturer recipes can\'t be hand-crafted.</p><div class="cgrid">';
+    for(const rk in RECIPES){
+      const r=RECIPES[rk];if(!HANDCRAFT.has(r.m)||!S.unlocked.has(rk))continue;
+      const ok=canAfford(r.in);
+      h+=`<div class="ccard">${ic(r.out,34)}<div><b>${ITEMS[r.out].n}</b> ×${r.n}<div class="sm">${Object.keys(r.in).map(i=>`${ic(i,14)}${r.in[i]}`).join(' ')} · ${fmtR(handTime(r))}s</div></div><div class="cb"><button data-act="craft:${rk}:1" ${ok?'':'disabled'}>1</button><button data-act="craft:${rk}:5" ${ok?'':'disabled'}>5</button><button data-act="craft:${rk}:20" ${ok?'':'disabled'}>20</button></div></div>`;
+    }
+    h+='</div>';
+  }else if(k==='stats'){
+    t='Production Stats (last 60s, per minute)';
+    let w=0,s=0,b=0,i=0;for(const e of lists.machines){if(e.st==='work')w++;else if(e.st==='starve')s++;else if(e.st==='block')b++;else i++}
+    h=`<div style="display:flex;gap:18px;margin-bottom:10px;flex-wrap:wrap">${statusHTML('work')} ${w} ${statusHTML('starve')} ${s} ${statusHTML('block')} ${b} ${statusHTML('idle')} ${i}</div>`;
+    h+='<p class="sm">Yellow machines are starved (upstream is too slow). Red machines are backed up (downstream is too slow, or nothing takes their output). Balancing these is the whole game!</p>';
+    h+='<table class="st"><tr><th>Item</th><th>Produced/min</th><th>Consumed/min</th><th>Delivered to HUB/min</th><th>Inventory</th></tr>';
+    for(const k of ITEM_KEYS){
+      const p=rate(statP,k),c=rate(statC,k),dl=rate(statD,k),inv=S.inv[k]||0;
+      if(!p&&!c&&!dl&&!inv)continue;
+      h+=`<tr><td>${ic(k,18)} ${ITEMS[k].n}</td><td class="${p?'pos':''}">${fmtR(p)}</td><td class="${c?'neg':''}">${fmtR(c)}</td><td>${fmtR(dl)}</td><td>${fmt(inv)}</td></tr>`;
+    }
+    h+='</table>';
+  }else if(k==='help'){
+    t='How to play';
+    h=`<div class="help cols"><div>
+<h3>The loop</h3><p>Mine ore → smelt it → build parts → belt them into the <b>HUB</b> → submit <b>Milestones</b> → unlock new machines → build bigger. Finish all three <b>Space Elevator</b> phases to win.</p>
+<h3>The one rule of machines</h3><p>Every machine outputs from its <b style="color:#ffb347">orange front</b>. Inputs can come in from <b>any other side</b>. Belts pointing into a machine feed it; belts leaving the front carry its output. Machines even pass items straight into a neighbour.</p>
+<h3>Easy mode touches</h3><ul><li>Machines auto-pick a recipe from the first item you feed them.</li><li>Deconstructing refunds 100%, including anything inside.</li><li>The HUB accepts belts on every side.</li><li>Storage Containers can dump into your inventory.</li></ul>
+<h3>Ratios (the satisfying part)</h3><ul><li>Miner Mk1 on a normal node = 120 ore/min</li><li>Smelter uses 60/min → <b>1 miner feeds 2 smelters</b></li><li>Iron Plate constructor: 60 ingots → 40 plates/min</li><li>Screw constructor: 20 rods → 80 screws/min</li><li>Belt Mk1 = 240/min, Mk2 = 480, Mk3 = 960</li></ul><p>Click any machine to see exact rates. Use <b>Stats (P)</b> to find bottlenecks.</p>
+</div><div>
+<h3>Controls</h3><ul>
+<li><kbd>1</kbd>–<kbd>0</kbd>, <kbd>E</kbd> pick a building · <kbd>R</kbd> rotate (Shift+R back)</li>
+<li><b>Belts:</b> click-drag to lay a line, <kbd>R</kbd> while dragging flips the corner. Drag over old belts to re-route or upgrade.</li>
+<li><b>Machines:</b> click to place, drag to place a row</li>
+<li><kbd>Q</kbd> copy the hovered building (with its recipe)</li>
+<li><kbd>X</kbd> deconstruct mode (click/drag)</li>
+<li><kbd>R</kbd> with nothing selected rotates the hovered building</li>
+<li>Right-click / <kbd>Esc</kbd> cancel</li>
+<li>Drag empty ground, right-drag or <kbd>WASD</kbd> to pan · wheel to zoom · <kbd>Space</kbd> jump to HUB</li>
+<li><kbd>H</kbd> milestones · <kbd>C</kbd> craft · <kbd>P</kbd> stats</li>
+<li>Click a resource node to hand-mine it (hold to keep mining)</li></ul>
+<h3>Machine lights</h3><p>${statusHTML('work')} &nbsp; ${statusHTML('starve')}<br>${statusHTML('block')} &nbsp; ${statusHTML('idle')}</p>
+<h3>Node purity</h3><p>White pips under a node: 1 = Impure (×0.5), 2 = Normal, 3 gold = Pure (×2). Better nodes are further from the HUB.</p>
+</div></div>`;
+  }else if(k==='menu'){
+    t='Menu';
+    h=`<div class="menu"><button data-act="save">💾 Save now <span class="dim">(auto-saves every 20s)</span></button><button data-act="export">⬇ Export save to file</button><button data-act="import">⬆ Import save from file</button><button data-act="sound">${soundOn?'🔊 Sound: on':'🔇 Sound: off'}</button><button class="danger" data-act="newgame">Start a new world</button><p class="sm">Play time: ${Math.floor(S.time/60)} min · Seed ${S.seed}</p></div>`;
+  }else if(k==='win'){
+    t='🏆 Project Assembly launched!';
+    let tot=0;for(const k in S.delivered)tot+=S.delivered[k];
+    h=`<div style="text-align:center;padding:20px"><div style="font-size:48px">🚀</div><h2>You did it.</h2><p>Your factory built and launched Project Assembly in <b>${Math.floor(S.time/60)} minutes</b>, delivering <b>${fmt(tot)}</b> items to the HUB and Elevator along the way.</p><p class="dim">Everything is unlocked. Keep building — optimize, go bigger, make it beautiful.</p><button class="go" data-act="closeModal">Keep building</button></div>`;
+  }
+  $('#mtitle').textContent=t;const mb=$('#mbody');if(mb.dataset.h!==h){mb.innerHTML=h;mb.dataset.h=h}
+}
+
+/* tooltip */
+function renderTip(){
+  const tip=$('#tip');
+  let h='';
+  const hov=document.elementFromPoint(mouse.sx,mouse.sy);
+  const tipEl=hov&&hov.closest&&hov.closest('[data-tip]');
+  if(tipEl){
+    const tp=tipEl.dataset.tip;
+    if(tp.startsWith('slot:'))h=slotTip(+tp.slice(5));
+    else if(tp==='decon')h='<b>Deconstruct</b> <kbd>X</kbd><div class="sm">Remove buildings & belts. Full refund, contents returned to inventory.</div>';
+  }else if(hov===cv&&!mouse.pan&&(!tool||tool.k==='x')){
+    const e=entAt(mouse.tx,mouse.ty),n=nodeAt(mouse.tx,mouse.ty);
+    if(e){
+      const d=BLD[e.type];
+      if(d.belt)h=`<b>${d.n}</b><div class="sm">Max ${d.speed/SP*60}/min · carrying ${e.items.length}</div>${e.items.length?`<div>${[...new Set(e.items.map(i=>i.it))].map(k=>ic(k,16)+' '+ITEMS[k].n).join('<br>')}</div>`:''}`;
+      else if(d.machine)h=`<b>${d.n}</b>${e.recipe?' — '+ITEMS[RECIPES[e.recipe].out].n:''}<div>${statusHTML(e.st)}</div><div class="sm">Click to inspect</div>`;
+      else if(d.miner)h=`<b>${d.n}</b> — ${ITEMS[e.node.res].n}<div class="sm">${d.rate*PURITY[e.node.p].m}/min</div>`;
+      else h=`<b>${d.n}</b><div class="sm">Click to inspect</div>`;
+    }else if(n){
+      h=`<b>${ITEMS[n.res].n}</b> node — ${PURITY[n.p].n}<div class="sm">Miner Mk1: ${120*PURITY[n.p].m}/min · click to hand-mine</div>`;
+    }
+  }
+  if(h){tip.innerHTML=h;tip.style.display='block';const r=tip.getBoundingClientRect();let x=mouse.sx+16,y=mouse.sy+16;if(x+r.width>cw-8)x=mouse.sx-r.width-12;if(y+r.height>ch-8)y=mouse.sy-r.height-12;tip.style.left=x+'px';tip.style.top=y+'px'}
+  else tip.style.display='none';
+}
+addEventListener('pointermove',ev=>{if(ev.target!==cv){mouse.sx=ev.clientX;mouse.sy=ev.clientY}});
+
+/* action delegation (pointerdown so re-renders never eat clicks) */
+document.addEventListener('pointerdown',ev=>{
+  const a=ev.target.closest&&ev.target.closest('[data-act]');if(!a||a.disabled)return;
+  audioInit();
+  const[cmd,arg,arg2]=a.dataset.act.split(':');
+  switch(cmd){
+    case 'open':toggleModal(arg);break;
+    case 'closeModal':closeModal();break;
+    case 'closeInsp':closeInsp();break;
+    case 'slot':selectSlot(+arg);break;
+    case 'decon':setTool(tool&&tool.k==='x'?null:{k:'x'});sfx.click();break;
+    case 'recipe':if(insp)setRecipe(insp,arg);break;
+    case 'rot':if(insp)rotateEnt(insp);break;
+    case 'copy':if(insp){rot=insp.rot;setTool({k:'b',type:insp.type,recipe:insp.recipe||null});closeInsp()}break;
+    case 'del':if(insp){const e=insp;if(remove(e))sfx.remove()}break;
+    case 'collect':if(insp&&insp.store){let n=0;for(const k in insp.store){addInv(k,insp.store[k]);n+=insp.store[k]}insp.store={};insp.tot=0;sfx.craft();toast(`Moved ${n} items to inventory`,'good')}break;
+    case 'loadElev':loadElevator();break;
+    case 'submit':submitMilestone(arg);break;
+    case 'craft':{const n=+arg2;for(let i=0;i<n;i++)craftQ.push(arg);sfx.click();break}
+    case 'clearq':craftQ=[];if(crafting){refund(RECIPES[craftQ[0]||'iron_ingot'].in);}crafting=false;break;
+    case 'speed':S.speed=S.speed===1?2:S.speed===2?4:1;$('#speedBtn').textContent=S.speed+'×';sfx.click();break;
+    case 'save':save();toast('Saved','good');break;
+    case 'export':exportSave();break;
+    case 'import':importSave();break;
+    case 'sound':soundOn=!soundOn;try{localStorage.setItem('beltworks-sound',soundOn?'1':'0')}catch(e){}renderModal();break;
+    case 'newgame':if(confirm('Start a brand new world? Your current factory will be lost (export it first if you want to keep it).')){newGame((Math.random()*1e9)|0);closeModal();closeInsp();save();renderHotbar()}break;
+  }
+  if(modalKind&&cmd!=='closeModal'&&cmd!=='open')setTimeout(renderModal,0);
+});
+
+/* =====================================================================
+   Save / load
+   ===================================================================== */
+function serialize(){
+  const E=[];
+  for(const e of ents.values()){
+    const d=BLD[e.type],o={t:e.type,x:e.x,y:e.y,r:e.rot};
+    if(d.belt&&e.items.length)o.i=e.items.map(i=>[i.it,+i.pos.toFixed(3)]);
+    if(d.machine){o.rc=e.recipe;o.ib=e.ib;o.ob=e.ob;o.pg=+e.prog.toFixed(3);o.wk=e.work}
+    if(d.miner)o.ob=e.ob;
+    if(d.storage)o.st=e.store;
+    if(d.splitter)o.bf=e.buf;
+    if(d.merger)o.sl=e.slot;
+    E.push(o);
+  }
+  return{v:1,seed:S.seed,inv:S.inv,un:[...S.unlocked],done:[...S.done],mt:S.maxTier,elev:S.elev,time:S.time,won:S.won,flags:S.flags,deliv:S.delivered,speed:S.speed,cam:{x:cam.x,y:cam.y,z:cam.z},E};
+}
+function deserialize(o){
+  S={seed:o.seed,inv:o.inv||{},unlocked:new Set(o.un),done:new Set(o.done),maxTier:o.mt||0,elev:o.elev||{},time:o.time||0,won:!!o.won,flags:o.flags||{},delivered:o.deliv||{},speed:o.speed||1};
+  ents=new Map();grid=new Int32Array(W*H);nextId=1;genWorld(S.seed);statP={};statC={};statD={};
+  for(const q of o.E){
+    const e=place(q.t,q.x,q.y,q.r,{free:true,quiet:true});
+    if(q.i)e.items=q.i.map(([it,pos])=>({it,pos}));
+    if(BLD[q.t].machine){e.recipe=q.rc||null;e.ib=q.ib||{};e.ob=q.ob||0;e.prog=q.pg||0;e.work=!!q.wk}
+    if(BLD[q.t].miner)e.ob=q.ob||0;
+    if(q.st){e.store=q.st;e.tot=Object.values(q.st).reduce((a,b)=>a+b,0)}
+    if(q.bf)e.buf=q.bf;if(q.sl)e.slot=q.sl;
+  }
+  if(o.cam){cam.x=o.cam.x;cam.y=o.cam.y;cam.z=o.cam.z}
+  $('#speedBtn').textContent=S.speed+'×';
+  linksDirty=true;
+}
+function save(){try{localStorage.setItem(SAVE_KEY,JSON.stringify(serialize()))}catch(e){}}
+function exportSave(){
+  const blob=new Blob([JSON.stringify(serialize())],{type:'application/json'});
+  const a=document.createElement('a');a.href=URL.createObjectURL(blob);a.download=`beltworks-save-${new Date().toISOString().slice(0,10)}.json`;a.click();setTimeout(()=>URL.revokeObjectURL(a.href),2000);
+}
+function importSave(){
+  const inp=document.createElement('input');inp.type='file';inp.accept='.json,application/json';
+  inp.onchange=()=>{const f=inp.files[0];if(!f)return;f.text().then(t=>{try{deserialize(JSON.parse(t));save();closeModal();closeInsp();renderHotbar();toast('Save imported','good')}catch(e){toast('That file is not a valid Beltworks save','bad')}})};
+  inp.click();
+}
+
+/* =====================================================================
+   Main loop
+   ===================================================================== */
+let uiT=0,saveT=0,mineT=0;
+function frame(ms){
+  const now=ms/1000;let dt=now-lastFrame;lastFrame=now;if(dt>.1)dt=.1;if(dt<0)dt=0;
+  // keyboard panning
+  const ps=14/cam.z*dt;
+  if(keys.has('w')||keys.has('arrowup'))cam.y-=ps;if(keys.has('s')||keys.has('arrowdown'))cam.y+=ps;
+  if(keys.has('a')||keys.has('arrowleft'))cam.x-=ps;if(keys.has('d')||keys.has('arrowright'))cam.x+=ps;
+  if(keys.size){clampCam();const[wx,wy]=s2w(mouse.sx,mouse.sy);mouse.wx=wx;mouse.wy=wy;mouse.tx=Math.floor(wx);mouse.ty=Math.floor(wy)}
+  // simulate
+  for(let s=0;s<S.speed;s++){let rem=dt;while(rem>1e-6){const h=Math.min(rem,1/60);update(h);rem-=h}}
+  if(linksDirty)rebuildLinks();
+  // hand mining (hold)
+  if(mining){mineT+=dt;if(mineT>=.22){mineT=0;handMine(mining.n)}}else mineT=0;
+  updParts(dt);
+  for(const e of ents.values())if(e.pop>0)e.pop=Math.max(0,e.pop-dt*5);
+  render(now);
+  uiT+=dt;
+  if(uiT>.2){uiT=0;renderInv();renderTracker();renderInspDyn();updateHint();if(modalKind==='stats'||modalKind==='hub'||modalKind==='craft')renderModal();
+    const cantNow=SLOTS.map(sl=>{const t=sl.types.find(t=>S.unlocked.has(t));return t&&!canAfford(BLD[t].cost)}).join();if(cantNow!==renderHotbar.last){renderHotbar.last=cantNow;renderHotbar()}}
+  renderTip();
+  saveT+=dt;if(saveT>20){saveT=0;save()}
+  requestAnimationFrame(frame);
+}
+
+/* boot */
+resize();addEventListener('resize',resize);
+try{soundOn=localStorage.getItem('beltworks-sound')!=='0'}catch(e){}
+let loaded=false;
+try{const raw=localStorage.getItem(SAVE_KEY);if(raw){deserialize(JSON.parse(raw));loaded=true}}catch(e){console.warn('Save load failed',e)}
+if(!loaded){newGame((Math.random()*1e9)|0);setTimeout(()=>openModal('help'),400)}
+rebuildLinks();renderHotbar();renderInv();updateHint();
+addEventListener('beforeunload',save);
+requestAnimationFrame(t=>{lastFrame=t/1000;requestAnimationFrame(frame)});
+</script>
+</body>
+</html>

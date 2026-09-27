@@ -1,0 +1,224 @@
+import { audioInit, sfx } from './audio';
+import { BLD, ITEMS, Milestone, RECIPES } from './data';
+import { buildAtlas, iconHooks } from './atlas';
+import { applyDayNight, C, initCore, resizeCore, rotateCamera, updateCamera } from './r3/core';
+import { initDiscovery, tickExplore } from './explore';
+import { tickAchievements } from './achievements';
+import * as TK from './trucks';
+import * as EX from './explore';
+import { buildTerrain, T3, terrainTick, terrainTileChanged } from './r3/terrain3d';
+import { icon3D, init3D, Label3, reset3D, update3D } from './r3/world3d';
+import { hexCol, rgba } from './gl';
+import { chopFx, initInput, tickInput, updateGhosts } from './input';
+import { setDeliverFx, setOnMilestone, unlockName } from './progress';
+import { loadWorld, newSlotId, saveGame, slot } from './save';
+import { hideTitle, initTitle, NewWorldOpts, showTitle, title } from './title';
+import { ensureFresh, resetStats, update } from './sim';
+import { HX, HY } from './terrain';
+import * as UI from './ui';
+import { $ } from './util';
+import { parts, spawn, updParts, view, w2s } from './view';
+import { Ent, G, newWorld } from './world';
+import * as W_ from './world';
+import * as SIM from './sim';
+import * as TR from './trains';
+import * as INP from './input';
+import * as PR from './progress';
+import * as DR from './r3/world3d';
+import * as CORE from './r3/core';
+
+const canvas = document.getElementById('c') as HTMLCanvasElement;
+const ov = document.getElementById('ov') as HTMLCanvasElement;
+const octx = ov.getContext('2d')!;
+
+function resize() {
+  view.dpr = Math.min(2, window.devicePixelRatio || 1);
+  view.cw = innerWidth; view.ch = innerHeight;
+  resizeCore(view.cw, view.ch, view.dpr);
+  canvas.style.width = view.cw + 'px'; canvas.style.height = view.ch + 'px';
+  ov.width = Math.round(view.cw * view.dpr); ov.height = Math.round(view.ch * view.dpr);
+  ov.style.width = view.cw + 'px'; ov.style.height = view.ch + 'px';
+}
+
+function setupFx() {
+  G.fx.toast = UI.toast;
+  G.fx.sfx = sfx;
+  G.fx.chop = chopFx;
+  G.fx.tile = (x, y) => terrainTileChanged(x, y);
+  G.fx.placed = (e: Ent) => {
+    const s = Math.max(e.w, e.h);
+    if (s < 2) return;
+    for (let i = 0; i < 16; i++) { const a = Math.random() * Math.PI * 2; spawn(e.x + e.w / 2 + Math.cos(a) * s * 0.55, e.y + e.h / 2 + Math.sin(a) * s * 0.55, { vx: Math.cos(a) * 1.6, vy: Math.sin(a) * 1.6, life: 0.45, col: hexCol('#b9b2a0'), size: 0.1 }); }
+  };
+  G.fx.removed = (e: Ent) => {
+    const c = hexCol(BLD[e.type].col);
+    for (let i = 0; i < (e.w > 1 ? 14 : 4); i++) spawn(e.x + Math.random() * e.w, e.y + Math.random() * e.h, { vx: (Math.random() - 0.5) * 3, vy: (Math.random() - 0.5) * 3, vz: 2 + Math.random() * 3, z: 0.5, life: 0.7, col: c, size: 0.12, grav: 12 });
+  };
+  let lastDel = 0;
+  setDeliverFx((e: Ent, item: string) => {
+    sfx('deliver');
+    const now = performance.now();
+    if (now - lastDel < 90) return;
+    lastDel = now;
+    spawn(e.x + e.w / 2 + (Math.random() - 0.5) * e.w * 0.6, e.y + e.h / 2, { z: 1.2, vz: 1.6, vx: (Math.random() - 0.5) * 0.4, life: 1, spr: 'i:' + item, size: 0.5, vr: 0, rot: 0 });
+  });
+  let shownTier = -1;
+  setOnMilestone((m: Milestone) => {
+    sfx('milestone');
+    if (shownTier < 0) shownTier = G.S.flags.shownTier ?? 0;
+    const tierUp = G.S.maxTier > (G.S.flags.shownTier ?? 0);
+    G.S.flags.shownTier = G.S.maxTier;
+    if (tierUp) setTimeout(() => sfx('tier'), 500);
+    UI.showUnlocks(m, tierUp);
+    const src = (m.phase ? G.L.elevator : null) || G.L.hub;
+    if (src) {
+      const cols = ['#f5a524', '#4cc38a', '#4ea1ff', '#ef5b5b', '#c77dff', '#ffffff'].map(c => hexCol(c));
+      for (let i = 0; i < (m.phase ? 180 : 90); i++) { const a = Math.random() * Math.PI * 2, v = 2 + Math.random() * 8; spawn(src.x + src.w / 2, src.y + src.h / 2, { vx: Math.cos(a) * v, vy: Math.sin(a) * v, z: 1.5, vz: 5 + Math.random() * 6, life: 1.6 + Math.random(), col: cols[i % cols.length], size: 0.14, grav: 9 }); }
+    }
+    if (m.win) setTimeout(() => UI.openModal('win'), 1500);
+    UI.renderHotbar();
+    saveGame();
+  });
+}
+
+const loadingEl = () => $('#loading');
+function setLoading(msg: string | null) {
+  const el = loadingEl();
+  if (msg === null) { el.classList.add('hidden'); return; }
+  el.innerHTML = `<div class="logo">BELTWORKS</div><div>${msg}</div>`;
+  el.classList.remove('hidden');
+}
+function afterWorldReady() {
+  resetStats();
+  view.level = 0; C.focusY = 0;
+  initDiscovery();
+  buildTerrain(); reset3D();
+  UI.buildMapBase();
+  ensureFresh();
+  UI.closeInspect(); UI.closeModal();
+  UI.renderHotbar();
+}
+async function enterWorld(fn: () => Promise<boolean> | boolean, isNew: boolean, msg: string) {
+  hideTitle(); document.body.classList.remove('intitle');
+  setLoading(msg);
+  await new Promise(r => setTimeout(r, 40));
+  let ok = false;
+  try { ok = await fn(); } catch (e) { console.error(e); }
+  if (!ok) { setLoading(null); UI.toast('Could not load that world', 'bad'); openTitle(); return; }
+  afterWorldReady();
+  setLoading(null);
+  if (isNew) UI.startOnboarding();
+  else UI.toast(`Welcome back to <b>${G.S.name}</b>`, 'good');
+}
+function createWorld(o: NewWorldOpts) {
+  enterWorld(async () => {
+    newWorld((Math.random() * 1e9) | 0, o);
+    view.cam.x = HX + 2; view.cam.y = HY + 2; view.cam.s = 30;
+    slot.id = newSlotId();
+    await saveGame();
+    return true;
+  }, true, o.size > 1500 ? 'Generating a huge world… (this takes a few seconds)' : 'Generating your world…');
+}
+function openTitle() {
+  document.body.classList.add('intitle');
+  view.marker = null; view.ghosts = [];
+  UI.closeInspect(); UI.closeModal();
+  showTitle({
+    play: (id) => enterWorld(() => loadWorld(id), false, 'Loading world…'),
+    create: createWorld,
+    imported: () => { afterWorldReady(); hideTitle(); document.body.classList.remove('intitle'); UI.toast('Save imported as a new world', 'good'); },
+  });
+}
+async function exitToTitle() {
+  if (slot.id) await saveGame();
+  slot.id = null;
+  openTitle();
+}
+
+let last = 0, acc = 0, saveT = 0, dbgT = 1e7, simErr = false;
+let fly: null | { x0: number; y0: number; x1: number; y1: number; t: number } = null;
+function flyTo(x: number, y: number) { fly = { x0: view.cam.x, y0: view.cam.y, x1: x, y1: y, t: 0 }; if (view.cam.s < 22) view.cam.s = 26; }
+function frame(ms: number) {
+  const now = ms / 1000;
+  let dt = now - last; last = now;
+  if (dt > 0.1) dt = 0.1; if (dt < 0) dt = 0;
+  G.realNow = now;
+  tickInput(dt);
+  if (fly) { fly.t = Math.min(1, fly.t + dt * 1.6); const e = fly.t < 0.5 ? 2 * fly.t * fly.t : 1 - Math.pow(-2 * fly.t + 2, 2) / 2; view.cam.x = fly.x0 + (fly.x1 - fly.x0) * e; view.cam.y = fly.y0 + (fly.y1 - fly.y0) * e; if (fly.t >= 1) fly = null; }
+  // fixed-step simulation
+  const step = 1 / 60;
+  if (title.open) { rotateCamera(dt * 0.04); acc = 0; }
+  acc += title.open ? 0 : dt * G.S.speed;
+  let n = 0;
+  while (acc >= step && n < 8 * G.S.speed) {
+    try { update(step); } catch (err) { if (!simErr) { simErr = true; console.error('simulation error', err); } }
+    acc -= step; n++;
+  }
+  if (n >= 8 * G.S.speed) acc = 0;
+  updParts(dt);
+  for (const e of G.L.machines) if (e.pop > 0) e.pop = Math.max(0, e.pop - dt * 5);
+  if (view.inspect && view.inspect.pop > 0) view.inspect.pop = Math.max(0, view.inspect.pop - dt * 5);
+  updateGhosts();
+  const labels: Label3[] = [];
+  applyDayNight();
+  updateCamera();
+  if (!title.open) { tickExplore(dt, C.dist); tickAchievements(dt, a => { UI.toast(`🏆 Achievement unlocked: <b>${a.n}</b> — ${a.d}`, 'big'); sfx('tier'); }); }
+  update3D(G.S.time, now, dt, labels);
+  terrainTick(dt, now);
+  C.renderer.render(C.scene, C.camera);
+  // text overlay
+  octx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
+  octx.clearRect(0, 0, view.cw, view.ch);
+  for (const L of labels) {
+    const [sx, sy] = w2s(L.x, L.y, L.z), t = L.t, c = L.c;
+    if (sx < -200 || sy < -50 || sx > view.cw + 200 || sy > view.ch + 50) continue;
+    const size = 13;
+    octx.font = `600 ${size}px Segoe UI, system-ui, sans-serif`;
+    octx.textAlign = 'center';
+    octx.textBaseline = 'bottom';
+    octx.fillStyle = 'rgba(0,0,0,.7)'; octx.fillText(t, sx + 1, sy + 1);
+    octx.fillStyle = c; octx.fillText(t, sx, sy);
+  }
+  if (!title.open) UI.uiTick(dt);
+  saveT += dt;
+  if (saveT > 30) { saveT = 0; if (slot.id && !title.open) saveGame(); }
+  requestAnimationFrame(frame);
+}
+
+async function boot() {
+  const load = $('#loading');
+  try {
+    initCore(canvas);
+    buildAtlas();
+    init3D();
+    iconHooks.building = icon3D;
+  } catch (e) {
+    console.error(e);
+    load.innerHTML = '<div>Sorry — this game needs WebGL2 (any modern Chrome, Edge or Firefox).</div>';
+    return;
+  }
+  resize();
+  addEventListener('resize', resize);
+  setupFx();
+  await new Promise(r => setTimeout(r, 30));
+  // a small scenic world behind the title screen (never saved)
+  slot.id = null;
+  newWorld(424242, { size: 512, mode: 'easy', name: 'Backdrop' });
+  view.cam.x = HX + 2; view.cam.y = HY + 2; view.cam.s = 14;
+  afterWorldReady();
+  UI.setNewGameHandler(exitToTitle);
+  UI.setFlyTo(flyTo);
+  UI.setOnLoaded(() => { afterWorldReady(); });
+  initInput(canvas);
+  UI.initUI();
+  initTitle();
+  load.classList.add('hidden');
+  openTitle();
+  addEventListener('beforeunload', () => { if (slot.id) saveGame(); });
+  document.addEventListener('visibilitychange', () => { if (document.hidden && slot.id) saveGame(); });
+  requestAnimationFrame(t => { last = t / 1000; requestAnimationFrame(frame); });
+  (window as any).G = G; // debugging aid
+  (window as any).BW = { frame: (n = 1, dt = 1 / 60) => { for (let i = 0; i < n; i++) { dbgT += dt * 1000; frame(dbgT); } }, T3, G, W: W_, SIM, TR, TK, EX, INP, PR, UI, view, DR, CORE };
+}
+boot();
+export { audioInit, ITEMS, parts, rgba };
