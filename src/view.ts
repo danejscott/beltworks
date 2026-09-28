@@ -12,6 +12,7 @@ export const view = {
   inspect: null as any,
   inspectTrain: null as any,
   inspectTruck: null as any,
+  inspectShip: null as any,
   level: 0,                     // active floor (0 = ground)
   hover: null as any,
   marker: null as null | { x: number; y: number; z: number },

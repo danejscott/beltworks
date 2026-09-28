@@ -6,6 +6,7 @@ import { addPoints, delivered, elevatorAccept } from './progress';
 import { updateTrains } from './trains';
 import { updateDrones } from './drones';
 import { updateTrucks } from './trucks';
+import { updateShips } from './ships';
 import { solarFactor } from './daynight';
 
 export const SP = 0.5; // min spacing between items on a belt (tiles)
@@ -28,6 +29,18 @@ export function rate(m: Record<string, Float32Array>, item: string) {
   return s * 60 / el;
 }
 export function resetStats() { stats.P = {}; stats.C = {}; stats.D = {}; stats.elapsed = 0; }
+/** long history for the graphs: one sample every 30 s of game time, the last hour kept */
+export interface HistSample { t: number; cap: number; dem: number; p: Record<string, number>; c: Record<string, number> }
+export const hist = { s: [] as HistSample[], every: 30, keep: 120 };
+function sampleHistory() {
+  const p: Record<string, number> = {}, c: Record<string, number> = {};
+  for (const k in stats.P) { const v = rate(stats.P, k); if (v > 0.01) p[k] = Math.round(v * 10) / 10; }
+  for (const k in stats.C) { const v = rate(stats.C, k); if (v > 0.01) c[k] = Math.round(v * 10) / 10; }
+  let cap = 0, dem = 0; for (const n of G.pnets) { cap += n.cap; dem += n.lastDemand; }
+  hist.s.push({ t: Math.round(G.S.time), cap: Math.round(cap), dem: Math.round(dem), p, c });
+  if (hist.s.length > hist.keep) hist.s.shift();
+  if (cap > (G.S.flags.peakMW || 0)) G.S.flags.peakMW = Math.round(cap);
+}
 
 // ---------------------------------------------------------------------------
 // Rebuild caches
@@ -38,7 +51,7 @@ export function ensureFresh() {
 }
 
 export function rebuildLinks() {
-  const L: any = { outposts: [], belts: [], order: [], machines: [], miners: [], extractors: [], harvesters: [], logi: [], gens: [], bats: [], poles: [], stations: [], tstations: [], drones: [], sinks: [], pipes: [], rails: [], cnt: Object.create(null), powered: [] };
+  const L: any = { outposts: [], ports: [], belts: [], order: [], machines: [], miners: [], extractors: [], harvesters: [], logi: [], gens: [], bats: [], poles: [], stations: [], tstations: [], drones: [], sinks: [], pipes: [], rails: [], cnt: Object.create(null), powered: [] };
   for (const e of G.ents.values()) {
     const d = BLD[e.type];
     L.cnt[e.type] = (L.cnt[e.type] || 0) + 1;
@@ -58,6 +71,7 @@ export function rebuildLinks() {
       case 'outpost': L.poles.push(e); L.outposts.push(e); break;
       case 'station': L.stations.push(e); break;
       case 'tstation': L.tstations.push(e); break;
+      case 'port': L.ports.push(e); break;
       case 'drone': L.drones.push(e); break;
       case 'pipe': case 'ptunnel': case 'tank': L.pipes.push(e); break;
       case 'rail': L.rails.push(e); break;
@@ -119,7 +133,7 @@ export function rebuildLinks() {
     if (k === 'splitter' || k === 'sorter') for (const dd of [e.rot, (e.rot + 3) & 3, (e.rot + 1) & 3]) checkFeed(e.x, e.y, e.z || 0, dd, e);
     else if (k === 'merger') checkFeed(e.x, e.y, e.z || 0, e.rot, e);
   }
-  L.powered = [...L.machines, ...L.miners, ...L.extractors, ...L.harvesters, ...L.sinks, ...L.stations, ...L.tstations, ...L.drones];
+  L.powered = [...L.machines, ...L.miners, ...L.extractors, ...L.harvesters, ...L.sinks, ...L.stations, ...L.tstations, ...L.ports, ...L.drones];
   G.L = L;
   G.dirty.links = false;
 }
@@ -191,6 +205,7 @@ function genAvail(g: Ent) {
   if (d.kind === 'hub') return d.mw;
   if (g.type === 'geothermal') return d.mw * (g.node ? PURITY[g.node.p].m : 1) * g.clock;
   if (d.solar) return d.mw * solarFactor();
+  if (d.waste && g.ob) { for (const k in g.ob) if (g.ob[k] >= 100) return 0; }   // waste backed up: shut down
   let fueled = g.fuelT > 0;
   if (!fueled) for (const k in d.fuels) if ((g.fbuf[k] || 0) >= (isFluid(k) ? 0.5 : 1)) { fueled = true; break; }
   if (!fueled) return 0;
@@ -229,13 +244,17 @@ function updatePower(dt: number) {
       if (g.fuelT <= 0) {
         for (const k in d.fuels) {
           const unit = isFluid(k) ? 1 : 1;
-          if ((g.fbuf[k] || 0) >= unit) { g.fbuf[k] -= unit; g.fuelT += d.fuels[k]; stat(stats.C, k, unit); break; }
+          if ((g.fbuf[k] || 0) >= unit) {
+            g.fbuf[k] -= unit; g.fuelT += d.fuels[k]; stat(stats.C, k, unit);
+            const w = d.waste && d.waste[k]; if (w) { g.ob = g.ob || {}; g.ob[w[0]] = (g.ob[w[0]] || 0) + w[1]; stat(stats.P, w[0], w[1]); }
+            break;
+          }
         }
       }
       g.fuelT -= burn;
       if (d.water) { const w = d.water / 60 * burn; g.water = Math.max(0, g.water - w); stat(stats.C, 'water', w); }
     }
-    g.st = g.avail > 0 ? (load > 0 ? 'work' : 'idle') : 'starve';
+    g.st = g.avail > 0 ? (load > 0 ? 'work' : 'idle') : d.waste && g.ob && Object.values(g.ob).some((v: any) => v >= 100) ? 'block' : 'starve';
   }
 }
 
@@ -392,13 +411,14 @@ export function acceptInto(e: Ent, item: string, dir: number, fx?: number, fy?: 
       if (have >= inCap(r, item)) return false;
       e.ib[item] = have + 1; return true;
     }
-    case 'storage': case 'station': case 'tstation':
+    case 'storage': case 'station': case 'tstation': case 'port':
       if (e.tot >= d.cap) return false;
       e.store[item] = (e.store[item] || 0) + 1; e.tot++; return true;
     case 'drone':
       if (e.obTot >= d.cap) return false;
       e.outbox[item] = (e.outbox[item] || 0) + 1; e.obTot++; return true;
     case 'sink':
+      if (item === 'uranium_waste') return false;
       addPoints(ITEMS[item].val || 1); e.sunk++; e.sinkT = 1; stat(stats.C, item, 1); return true;
     case 'splitter': case 'sorter':
       if (side !== opp(e.rot) || e.buf.length >= 2) return false;
@@ -418,7 +438,7 @@ export function acceptInto(e: Ent, item: string, dir: number, fx?: number, fy?: 
 export function pushOut(e: Ent, item: string) {
   const ft = e.ft, n = ft.length;
   for (let k = 0; k < n; k++) {
-    const i = (e.rr + k) % n, p = ft[i];
+    const i = ((e.rr || 0) + k) % n, p = ft[i];
     if (deliverTo(p[0], p[1], e.rot, item, e.z || 0)) { e.rr = (i + 1) % n; return true; }
   }
   return false;
@@ -452,6 +472,7 @@ export function update(dt: number) {
     for (const n of G.pnets) { n.hist.push([n.cap, n.lastDemand, n.batFlow]); if (n.hist.length > 90) n.hist.shift(); }
     for (const n of G.fnets) { n.flowEMA = n.flowEMA * 0.5 + n.flow * 0.5; n.flow = 0; }
     tickRegrow();
+    if (sec % hist.every === 0 && stats.elapsed > 3) sampleHistory();
   }
   for (const n of G.fnets) n.budget = n.rate * dt;
   updatePower(dt);
@@ -513,9 +534,10 @@ export function update(dt: number) {
   }
   // machines
   for (const e of L.machines) updateMachine(e, dt);
-  // generators: fluid intake
+  // generators: fluid intake (and waste out)
   for (const g of L.gens) {
     const d = BLD[g.type];
+    if (d.waste && g.ob) for (const k in g.ob) if (g.ob[k] >= 1 && g.ft && pushOut(g, k)) g.ob[k]--;
     if (d.water && g.water < 60) g.water += pullFluid(g, 'water', 60 - g.water);
     if (d.fuels) for (const k in d.fuels) if (isFluid(k)) { const have = g.fbuf[k] || 0; if (have < 30) g.fbuf[k] = have + pullFluid(g, k, 30 - have); }
   }
@@ -543,7 +565,7 @@ export function update(dt: number) {
     e.req = e.sinkT > 0 ? BLD.sink.power : 0;
     if (e.pnet) e.pnet.demand += e.req;
   }
-  for (const e of [...L.stations, ...L.tstations]) {
+  for (const e of [...L.stations, ...L.tstations, ...L.ports]) {
     e.req = BLD[e.type].power; if (e.pnet) e.pnet.demand += e.req;
     if (e.mode === 'unload' && e.tot > 0) {
       const k = takeFromStore(e);
@@ -574,6 +596,7 @@ export function update(dt: number) {
   }
   updateTrains(dt);
   updateTrucks(dt);
+  updateShips(dt);
   updateDrones(dt);
   // hand crafting
   if (craft.q.length) {

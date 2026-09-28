@@ -1,9 +1,10 @@
 // Title screen: pick a saved world or create a new one (name, size, difficulty).
-import { audioInit, sfx } from './audio';
+import { audioInit, sfx, startMusic } from './audio';
 import { deleteWorld, importSave, listWorlds, WorldMeta } from './save';
 import { SIZES } from './terrain';
 import { TIER_NAMES } from './data';
 import { DIFF } from './difficulty';
+import { loadRecords } from './progress';
 import { $, esc } from './util';
 
 export const title = { open: false };
@@ -43,7 +44,7 @@ export async function showTitle(h: typeof handlers) {
     <div class="tlogo">BELTWORKS</div><div class="ttag">Build it. Belt it. Automate everything.</div>
     <div class="tcols">
       <div class="tcol"><h3>Your worlds</h3><div class="wlist">${list}</div>
-        <div class="row" style="margin-top:10px"><button data-tact="import">⬆ Import a save file</button></div></div>
+        <div class="row" style="margin-top:10px"><button data-tact="import">⬆ Import a save file</button></div>${bestsHTML()}</div>
       <div class="tcol"><h3>New world</h3>
         <label class="flabel">World name</label>
         <div class="row"><input id="wname" type="text" maxlength="28" value="${esc(randName())}" style="flex:1;font-size:15px"><button class="mini" data-tact="dice" title="Random name">🎲</button></div>
@@ -57,13 +58,19 @@ export async function showTitle(h: typeof handlers) {
       </div>
     </div></div>`;
 }
+function bestsHTML() {
+  const rec = loadRecords(), keys = Object.keys(rec);
+  if (!keys.length) return '';
+  const size = (n: number) => Object.values(SIZES).find(s => s.n === n)?.label || n;
+  return `<h3 style="margin-top:14px">🏆 Personal bests</h3><div class="bests">${keys.map(k => { const [mode, sz] = k.split('|'); const r = rec[k]; const m = MODES[mode]; const h = Math.floor(r.t / 3600), mm = Math.floor(r.t / 60) % 60; return `<div>${m ? m.icon + ' ' + m.label : mode} · ${size(+sz)} <b>${h}h ${String(mm).padStart(2, '0')}m</b> <span class="dim">${esc(r.name)}</span></div>`; }).join('')}</div>`;
+}
 export function hideTitle() { title.open = false; $('#title').classList.add('hidden'); }
 
 export function initTitle() {
   $('#title').addEventListener('pointerdown', async ev => {
     const a = (ev.target as HTMLElement).closest('[data-tact]') as HTMLElement | null;
     if (!a) return;
-    audioInit();
+    audioInit(); startMusic();
     const [cmd, arg] = a.dataset.tact!.split(':');
     if (cmd === 'play') { sfx('click'); handlers.play(arg); }
     else if (cmd === 'del') {

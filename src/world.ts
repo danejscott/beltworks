@@ -2,6 +2,7 @@ import { applyGameLength, BLD, BDef, Cost, ITEMS, RECIPES, START_UNLOCKS } from 
 import { diffOf, tierMult } from './difficulty';
 import { genTerrain, H, HX, HY, isLand, isWater, ResNode, setWorldSize, TT, W } from './terrain';
 import { Feat, genFeatures } from './features';
+import { shoreTiles } from './ships';
 import { DX, DY, opp } from './util';
 
 export interface Ent { id: number; type: string; x: number; y: number; rot: number; w: number; h: number; born: number; pop: number; [k: string]: any }
@@ -20,9 +21,11 @@ export interface State {
   ach: Record<string, number>;  // achievement id -> game time unlocked
   made: Record<string, number>; // total produced by machines, ever
   discN: number[]; discF: number[]; // discovered node / feature indices
-  truckSeq: number; lineSeq: number;
+  truckSeq: number; lineSeq: number; shipSeq?: number;
   genV?: number;                // terrain generator version (2 = randomized)
   portsV?: number;              // 1 = world uses single input/output ports
+  playT?: number;               // real seconds played in this world
+  msT?: Record<string, number>; tierT?: Record<string, number>; wonT?: number;
   lenV?: number;                // 1 = milestone amounts scale with difficulty (game length)
 }
 export interface Line { id: number; a: number; b: number; cells: number[]; split: number }
@@ -41,7 +44,7 @@ export interface Train {
 /** floors: 0 = ground, 1..3 = on foundations; LH = height of one floor in world units */
 export const NL = 4, LH = 4;
 const TALL: Record<string, number> = { elevator: 13, tower: 5, hub: 4.5 };
-const GROUND_ONLY = new Set(['miner', 'extractor', 'harvester', 'rail', 'train', 'wagon', 'station', 'tstation', 'hub', 'elevator', 'drone', 'foundation', 'outpost']);
+const GROUND_ONLY = new Set(['miner', 'extractor', 'harvester', 'rail', 'train', 'wagon', 'station', 'tstation', 'hub', 'elevator', 'drone', 'foundation', 'outpost', 'port']);
 export const groundOnly = (type: string) => { const d = BLD[type]; return GROUND_ONLY.has(d.kind) || !!(d.on && d.on !== 'water'); };
 export const G = {
   S: null as State,
@@ -59,13 +62,14 @@ export const G = {
   trains: [] as Train[],
   trainOcc: new Map<number, number>(),
   trucks: [] as Truck[],
+  ships: [] as any[],
   feats: [] as Feat[],
   featGrid: null as Int32Array,
   disc: null as Uint8Array,      // per node: discovered?
   fdisc: null as Uint8Array,     // per feature: discovered?
   pings: [] as { x: number; y: number; t: number; col: string; label: string }[],
   dirty: { links: true, power: true, fluid: true },
-  rev: 1, treeRev: 1,
+  rev: 1, treeRev: 1, railRev: 1,
   L: null as any,
   pnets: [] as any[],
   fnets: [] as any[],
@@ -155,7 +159,7 @@ export function inPort(e: { x: number; y: number; w: number; h: number; rot: num
   return [x + k, y + h];
 }
 /** building kinds that take items through a single input port */
-export const PORTED = new Set(['machine', 'storage', 'station', 'tstation', 'drone', 'sink', 'gen']);
+export const PORTED = new Set(['machine', 'storage', 'station', 'tstation', 'port', 'drone', 'sink', 'gen']);
 /** all tiles bordering the footprint, with the side of the building they touch */
 export function borderTiles(e: { x: number; y: number; w: number; h: number }): number[][] {
   const out: number[][] = [];
@@ -217,6 +221,7 @@ export function canPlace(type: string, x: number, y: number, rot: number, o: { f
     if (d.on === 'geyser' && node.res !== 'geyser') return 'Needs a geyser';
   }
   if (d.kind === 'elevator' && count('elevator') > 0) return 'Only one Space Elevator';
+  if (d.kind === 'port' && shoreTiles(x, y, w, h) < 2) return 'Build it on the shore — it must touch a lake or the sea';
   if (TALL[type] && G.floorN) for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) for (let zz = z + 1; zz < NL; zz++)
     if (hasFloor(x + i, y + j, zz) && (zz - z) * LH - 0.3 < TALL[type]) return 'Too tall to fit under the foundations above';
   if (!o.free && !canAfford(d.cost)) return 'Need: ' + missingText(d.cost);
@@ -253,6 +258,7 @@ export function place(type: string, x: number, y: number, rot: number, o: { free
     case 'station': e.store = {}; e.tot = 0; e.mode = 'load'; e.name = 'Station ' + (++G.S.stationSeq); e.rr = 0; e.req = 0; break;
     case 'tstation': e.store = {}; e.tot = 0; e.mode = 'load'; e.name = 'Truck Stop ' + (++G.S.stationSeq); e.rr = 0; e.req = 0; break;
     case 'outpost': e.name = 'Outpost ' + (++G.S.stationSeq); break;
+    case 'port': e.store = {}; e.tot = 0; e.mode = 'load'; e.name = 'Harbor ' + (++G.S.stationSeq); e.rr = 0; e.req = 0; break;
     case 'drone': e.target = 0; e.outbox = {}; e.obTot = 0; e.inbox = {}; e.ibTot = 0; e.rr = 0; e.req = 0; e.dr = { s: 'home', t: 0, cargo: {}, n: 0 }; e.name = 'Port ' + (++G.S.stationSeq); break;
   }
   const g = gridOf(z);
@@ -289,6 +295,7 @@ export function setFloor(x: number, y: number, z: number, on: boolean) {
 }
 export function markDirty(kind: string) {
   G.rev++;
+  if (kind === 'rail') G.railRev++;
   G.dirty.links = true;
   if (kind !== 'belt' && kind !== 'rail' && kind !== 'decor') G.dirty.power = true;
   if (kind === 'pipe' || kind === 'ptunnel' || kind === 'tank' || kind === 'machine' || kind === 'extractor' || kind === 'gen') G.dirty.fluid = true;
@@ -343,9 +350,10 @@ export function remove(e: Ent, o: { quiet?: boolean } = {}): boolean {
   for (let j = 0; j < e.h; j++) for (let i = 0; i < e.w; i++) g[(e.y + j) * W + e.x + i] = 0;
   if (e.z2 !== undefined) gridOf(e.z2)[e.y * W + e.x] = 0;
   G.ents.delete(e.id);
-  if (d.kind === 'station' || d.kind === 'drone' || d.kind === 'tstation') {
+  if (d.kind === 'station' || d.kind === 'drone' || d.kind === 'tstation' || d.kind === 'port') {
     for (const t of G.trains) t.sched = t.sched.filter(s => s !== e.id);
     for (const t of G.trucks) t.sched = t.sched.filter(s => s !== e.id);
+    for (const t of G.ships) t.sched = t.sched.filter((s: number) => s !== e.id);
     for (const p of G.ents.values()) if (p.target === e.id) p.target = 0;
   }
   markDirty(d.kind);
@@ -401,7 +409,7 @@ export function newState(seed: number, o: { name?: string; mode?: string; size?:
     seed, inv, unlocked: new Set(START_UNLOCKS), done: new Set(), maxTier: 0, elev: {}, time: 0, won: false,
     flags: {}, delivered: {}, speed: 1, points: 0, coupons: 0, couponsEarned: 0, shop: {}, stationSeq: 0, trainSeq: 0,
     name: o.name || 'New World', mode, size: o.size || 1024, regrow: [],
-    dayNight: o.dayNight !== false, genV: 3, portsV: 1, lenV: 1, lines: [], looted: [], alts: [], altOffer: null, ach: {}, made: {}, discN: null, discF: null, truckSeq: 0, lineSeq: 0,
+    dayNight: o.dayNight !== false, genV: 4, portsV: 1, lenV: 1, lines: [], looted: [], alts: [], altOffer: null, ach: {}, made: {}, discN: null, discF: null, truckSeq: 0, lineSeq: 0,
   };
   if (mode === 'creative') {
     for (const k in BLD) S.unlocked.add(k);
@@ -440,7 +448,7 @@ export function resetWorld(seed: number, S?: State) {
   if (!S.made) S.made = {};
   if (S.discN === undefined) S.discN = null;
   if (S.discF === undefined) S.discF = null;
-  S.truckSeq = S.truckSeq || 0; S.lineSeq = S.lineSeq || 0;
+  S.truckSeq = S.truckSeq || 0; S.lineSeq = S.lineSeq || 0; S.shipSeq = S.shipSeq || 0;
   setWorldSize(S.size);
   const mode = S.mode;
   applyGameLength(tier => tierMult(mode, tier), !S.lenV);
@@ -450,7 +458,7 @@ export function resetWorld(seed: number, S?: State) {
   for (const id of S.looted) { const fe = G.feats[id - 1]; if (fe) for (let j = 0; j < fe.w; j++) for (let i = 0; i < fe.w; i++) G.featGrid[(fe.y + j) * W + fe.x + i] = 0; }
   G.disc = new Uint8Array(t.nodes.length); G.fdisc = new Uint8Array(G.feats.length); G.pings = [];
   G.tiles = t.tiles; G.trees = t.trees; G.trees0 = t.trees.slice(); G.nodes = t.nodes; G.nodeGrid = t.nodeGrid;
-  G.ents = new Map(); G.grid = new Int32Array(W * H); G.up = [null, null, null, null]; G.floor = new Uint8Array(W * H); G.floorN = 0; G.nextId = 1; G.trains = []; G.trainOcc = new Map(); G.trucks = [];
+  G.ents = new Map(); G.grid = new Int32Array(W * H); G.up = [null, null, null, null]; G.floor = new Uint8Array(W * H); G.floorN = 0; G.nextId = 1; G.trains = []; G.trainOcc = new Map(); G.trucks = []; G.ships = [];
   G.covGrid = null;
   G.S = S;
   G.dirty = { links: true, power: true, fluid: true };

@@ -29,6 +29,7 @@ export const RES_BIOMES: Record<string, Biome[]> = {
   crude_oil: ['desert'],
   geyser: ['highlands'],
   sulfur: ['highlands', 'desert'],
+  uranium: ['highlands', 'desert'],
 };
 export function biomeAtTiles(tiles: Uint8Array, x: number, y: number): Biome {
   const c = [0, 0, 0, 0, 0];
@@ -71,7 +72,7 @@ function genParams(seed: number, v: number) {
   return P;
 }
 export function genTerrain(seed: number, mode = 'easy', v = 1): Terrain {
-  if (v >= 3) return genTerrainV3(seed, mode);
+  if (v >= 3) return genTerrainV3(seed, mode, v);
   const tiles = new Uint8Array(W * H), trees = new Uint8Array(W * H);
   const P = genParams(seed, v);
   HX = P.hx; HY = P.hy;
@@ -207,9 +208,10 @@ export const RINGS: Record<string, [number, number]> = {
   iron_ore: [0.04, 0.9], copper_ore: [0.04, 0.9], limestone: [0.04, 0.9],
   coal: [0.2, 0.9], geyser: [0.3, 0.9],
   caterium_ore: [0.38, 0.92], raw_quartz: [0.42, 0.92], crude_oil: [0.4, 0.92], sulfur: [0.45, 0.92],
-  bauxite: [0.6, 0.9],
+  bauxite: [0.6, 0.9], uranium: [0.7, 0.92],
 };
-function genTerrainV3(seed: number, mode: string): Terrain {
+/** v3 = big regions + rings; v4 adds uranium and keeps the desert away from big water */
+function genTerrainV3(seed: number, mode: string, v = 3): Terrain {
   const tiles = new Uint8Array(W * H), trees = new Uint8Array(W * H);
   const r = mulberry32(seed * 31 + 11);
   const D = diffOf(mode);
@@ -252,9 +254,10 @@ function genTerrainV3(seed: number, mode: string): Terrain {
     m += ring * (0.27 * lobe(a, aForest) - 0.25 * lobe(a, aDesert));
     m = lerp(m, 0.47, clamp(1 - (d - 30) / 60, 0, 1));
     let t: number;
-    if (h < tDeep) t = TT.DEEP;
-    else if (h < tWater) t = TT.WATER;
-    else if (h < tSand) t = TT.SAND;
+    const dry = v >= 4 && ring * lobe(a, aDesert) > 0.3 && e >= edge;   // no lakes in the desert
+    if (!dry && h < tDeep) t = TT.DEEP;
+    else if (!dry && h < tWater) t = TT.WATER;
+    else if (!dry && h < tSand) t = TT.SAND;
     else if (h > tRock) t = TT.ROCK;
     else if (h > tDirt) t = TT.DIRT;
     else if (hl > 0.35 && fbm(x / 40 + 90, y / 40, seed + 13, 2) < 0.25 + hl * 0.3) t = TT.DIRT;   // rocky ground between the ranges
@@ -305,6 +308,7 @@ function genTerrainV3(seed: number, mode: string): Terrain {
   blob(fx, fy, Math.round(R * 0.12), (i, x, y) => { if (isLand(tiles[i]) && tiles[i] !== TT.ROCK) { tiles[i] = TT.GRASS2; trees[i] = hash2(x, y, seed + 5) < 0.3 ? 1 : 0; } });
   blob(sx, sy, Math.round(R * 0.16), (i) => { if (isLand(tiles[i])) { tiles[i] = TT.SAND; trees[i] = 0; } });
   blob(hx, hy, Math.round(R * 0.14), (i) => { if (isLand(tiles[i]) && tiles[i] !== TT.ROCK) { tiles[i] = TT.DIRT; trees[i] = 0; } });
+  if (v >= 4) keepDesertFromWater(tiles);
 
   // ---- resource nodes
   const nodes: ResNode[] = [];
@@ -352,6 +356,11 @@ function genTerrainV3(seed: number, mode: string): Terrain {
     const n = 2 + Math.floor(r() * 4);
     for (let k = 0; k < n; k++) tryPlace('crude_oil', 5, 14, undefined, c.x, c.y, 200);
   }
+  if (v >= 4) {
+    // uranium: rare, glowing, near the edges of the map
+    const [u0, u1] = RINGS.uranium;
+    for (let i = 0; i < Math.max(4, Math.round(16 * area * D.rich)); i++) tryPlace('uranium', u0 * R, u1 * R, undefined, cx, cy, 300);
+  }
   carvePasses(tiles, cx, cy, nodes);
   return { tiles, trees, nodes, nodeGrid };
 }
@@ -396,4 +405,33 @@ function carvePasses(tiles: Uint8Array, cx: number, cy: number, nodes: ResNode[]
       }
     }
   }
+}
+
+/** Deserts shouldn't touch big lakes or the sea: sand near large water turns to grassland (keeping a thin beach). */
+function keepDesertFromWater(tiles: Uint8Array) {
+  const N = W * H, wet = (t: number) => t === TT.WATER || t === TT.DEEP;
+  // find large water bodies
+  const comp = new Int32Array(N).fill(-1), big: boolean[] = [];
+  for (let i = 0; i < N; i++) {
+    if (comp[i] >= 0 || !wet(tiles[i])) continue;
+    const id = big.length, st = [i]; comp[i] = id; let n = 0;
+    while (st.length) {
+      const c = st.pop()!; n++;
+      const x = c % W, y = (c / W) | 0;
+      if (x > 0 && comp[c - 1] < 0 && wet(tiles[c - 1])) { comp[c - 1] = id; st.push(c - 1); }
+      if (x < W - 1 && comp[c + 1] < 0 && wet(tiles[c + 1])) { comp[c + 1] = id; st.push(c + 1); }
+      if (y > 0 && comp[c - W] < 0 && wet(tiles[c - W])) { comp[c - W] = id; st.push(c - W); }
+      if (y < H - 1 && comp[c + W] < 0 && wet(tiles[c + W])) { comp[c + W] = id; st.push(c + W); }
+    }
+    big.push(n >= 400);
+  }
+  // distance (in tiles) from large water, up to 12
+  const dist = new Uint8Array(N).fill(255), q: number[] = [];
+  for (let i = 0; i < N; i++) if (comp[i] >= 0 && big[comp[i]]) { dist[i] = 0; q.push(i); }
+  for (let h = 0; h < q.length; h++) {
+    const c = q[h], d = dist[c]; if (d >= 12) continue;
+    const x = c % W, y = (c / W) | 0;
+    for (const n of [x > 0 ? c - 1 : -1, x < W - 1 ? c + 1 : -1, y > 0 ? c - W : -1, y < H - 1 ? c + W : -1]) if (n >= 0 && dist[n] === 255) { dist[n] = d + 1; q.push(n); }
+  }
+  for (let i = 0; i < N; i++) if (tiles[i] === TT.SAND && dist[i] > 2 && dist[i] <= 12) tiles[i] = TT.GRASS;
 }

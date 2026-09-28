@@ -1,4 +1,5 @@
-import { audioInit, sfx } from './audio';
+import { audioInit, audioTick, setAmbience, setMusicState, sfx, startMusic } from './audio';
+import { nightness } from './daynight';
 import { BLD, ITEMS, Milestone, RECIPES } from './data';
 import { buildAtlas, iconHooks } from './atlas';
 import { applyDayNight, C, initCore, resizeCore, rotateCamera, updateCamera } from './r3/core';
@@ -14,7 +15,7 @@ import { icon3D, init3D, Label3, reset3D, update3D } from './r3/world3d';
 import { hexCol, rgba } from './gl';
 import { chopFx, initInput, tickInput, updateGhosts } from './input';
 import { setDeliverFx, setOnMilestone, unlockName } from './progress';
-import { loadWorld, newSlotId, saveGame, slot } from './save';
+import { addFrame, loadWorld, newSlotId, saveGame, slot } from './save';
 import { hideTitle, initTitle, NewWorldOpts, showTitle, title } from './title';
 import { ensureFresh, resetStats, update } from './sim';
 import { HX, HY } from './terrain';
@@ -78,7 +79,7 @@ function setupFx() {
       const cols = ['#f5a524', '#4cc38a', '#4ea1ff', '#ef5b5b', '#c77dff', '#ffffff'].map(c => hexCol(c));
       for (let i = 0; i < (m.phase ? 180 : 90); i++) { const a = Math.random() * Math.PI * 2, v = 2 + Math.random() * 8; spawn(src.x + src.w / 2, src.y + src.h / 2, { vx: Math.cos(a) * v, vy: Math.sin(a) * v, z: 1.5, vz: 5 + Math.random() * 6, life: 1.6 + Math.random(), col: cols[i % cols.length], size: 0.14, grav: 9 }); }
     }
-    if (m.win) setTimeout(() => UI.openModal('win'), 1500);
+    if (m.win) { if (slot.id) addFrame(slot.id, UI.snapshotOverlay()); setTimeout(() => UI.openModal('win'), 1500); }
     UI.renderHotbar();
     saveGame();
   });
@@ -116,6 +117,7 @@ async function enterWorld(fn: () => Promise<boolean> | boolean, isNew: boolean, 
 function createWorld(o: NewWorldOpts) {
   enterWorld(async () => {
     newWorld((Math.random() * 1e9) | 0, o);
+    SIM.hist.s = [];
     view.cam.x = HX + 2; view.cam.y = HY + 2; view.cam.s = 30;
     slot.id = newSlotId();
     await saveGame();
@@ -138,7 +140,7 @@ async function exitToTitle() {
   openTitle();
 }
 
-let last = 0, acc = 0, saveT = 0, dbgT = 1e7, simErr = false;
+let last = 0, acc = 0, saveT = 0, dbgT = 1e7, simErr = false, ambT = 0;
 let fly: null | { x0: number; y0: number; x1: number; y1: number; t: number } = null;
 function flyTo(x: number, y: number) { fly = { x0: view.cam.x, y0: view.cam.y, x1: x, y1: y, t: 0 }; if (view.cam.s < 22) view.cam.s = 26; }
 function frame(ms: number) {
@@ -183,6 +185,31 @@ function frame(ms: number) {
     octx.fillStyle = c; octx.fillText(t, sx, sy);
   }
   if (!title.open) UI.uiTick(dt);
+  // real play time + a timelapse frame every 3 minutes
+  if (!title.open && G.S && slot.id) {
+    G.S.playT = (G.S.playT ?? G.S.time) + dt;
+    const nf = G.S.flags.nextFrame ?? 10;
+    if (G.S.playT >= nf) { G.S.flags.nextFrame = G.S.playT + 180; addFrame(slot.id, UI.snapshotOverlay()); }
+  }
+  // sound: ambience from what's around the camera, music from progress
+  ambT += dt;
+  if (ambT > 0.25 && G.tiles) {
+    ambT = 0;
+    const Wn = Math.round(Math.sqrt(G.tiles.length)), R = Math.min(70, C.dist * 0.7 + 10);
+    let n = 0, water = 0, forest = 0, desert = 0, hills = 0;
+    for (let j = -4; j <= 4; j++) for (let i = -4; i <= 4; i++) {
+      const x = Math.floor(view.cam.x + i * R / 4), y = Math.floor(view.cam.y + j * R / 4);
+      if (x < 0 || y < 0 || x >= Wn || y >= Wn) { water++; n++; continue; }
+      const t = G.tiles[y * Wn + x]; n++;
+      if (t === 4 || t === 5) water++; else if (t === 1 || G.trees[y * Wn + x]) forest++; else if (t === 2) desert++; else if (t === 3 || t === 6) hills++;
+    }
+    let busy = 0;
+    if (G.L) for (const e of G.L.machines) if (e.st === 'work' && Math.abs(e.x - view.cam.x) < R && Math.abs(e.y - view.cam.y) < R) busy++;
+    const night = G.S ? nightness() : 0;
+    setAmbience({ wind: Math.min(1, hills / n * 1.6 + C.dist / 400), water: Math.min(1, water / n * 1.8), forest: forest / n, desert: desert / n, night, factory: Math.min(1, busy / 12) * (C.dist < 120 ? 1 : 0.3) });
+    setMusicState(title.open ? 0 : G.S.maxTier, night);
+  }
+  audioTick();
   saveT += dt;
   if (saveT > 30) { saveT = 0; if (slot.id && !title.open) saveGame(); }
   requestAnimationFrame(frame);

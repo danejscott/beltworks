@@ -54,13 +54,24 @@ export function setOnMilestone(f: (m: Milestone) => void) { onMilestone = f; }
 export function completeMilestone(m: Milestone) {
   const S = G.S;
   S.done.add(m.id);
+  const pt = Math.round(S.playT ?? S.time);
+  (S.msT = S.msT || {})[m.id] = pt;
+  const tierBefore = S.maxTier;
   if (m.un) for (const k of m.un) S.unlocked.add(k);
   if (m.unlockTiers) for (const t of m.unlockTiers) if (t > S.maxTier) S.maxTier = t;
   if (S.maxTier === 0 && MILESTONES.filter(x => x.tier === 0).every(x => S.done.has(x.id))) S.maxTier = 2;
-  if (m.win && !S.won) S.won = true;
+  if (S.maxTier > tierBefore) (S.tierT = S.tierT || {})[S.maxTier] = pt;
+  if (m.win && !S.won) { S.won = true; S.wonT = pt; recordBest(); }
   onMilestone(m);
 }
 export const tierName = (t: number) => TIER_NAMES[t] || '';
+/** personal bests per difficulty + map size, kept in this browser */
+export function loadRecords(): Record<string, { t: number; name: string; date: number }> { try { return JSON.parse(localStorage.getItem('bw-records') || '{}'); } catch { return {}; } }
+function recordBest() {
+  const S = G.S, key = `${S.mode}|${S.size}`, rec = loadRecords(), t = Math.round(S.playT ?? S.time);
+  if (S.mode === 'creative') return;
+  if (!rec[key] || t < rec[key].t) { rec[key] = { t, name: S.name, date: Date.now() }; S.flags.pbNew = 1; try { localStorage.setItem('bw-records', JSON.stringify(rec)); } catch { } }
+}
 
 // ---------------------------------------------------------------------------
 // Points, coupons, shop

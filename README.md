@@ -42,13 +42,14 @@ After building, copy `dist/index.html` over `Play Beltworks.html` to update the 
 
 - **Big regions and resource rings (new worlds):**
   - A forest, a desert and mountainous highlands lie in different directions from the HUB, each about 4× the old biome size.
-  - Resources sit in rings that scale with the map: coal a little way out; oil, quartz, caterium and sulfur further; bauxite near the edges.
+  - Resources sit in rings that scale with the map: coal a little way out; oil, quartz, caterium and sulfur further; bauxite and uranium near the edges.
+  - Deserts stay dry: no big lakes or sea next to them.
   - Mountains cover up to 2× the old amount, with foothills around them and guaranteed passes, so they're an obstacle until trains can tunnel through.
 - **Every new world is randomized:** HUB position, amount of water and mountains, biome mix, lake placement and landmass shape.
 - **Three world sizes** (512², 1024², 2304²), multiple named saves and a title screen.
 - **Difficulties with target play times:** Easy (~10–15 h), Normal (~15–30 h), Hard (~30–50 h) and Creative. Later milestones and Space Elevator phases scale with difficulty; Tier 0 is the same for everyone.
 - **Biomes** (plains, forest, desert, highlands), each with its own resources. Nodes come in impure, normal and pure. Trees regrow.
-- **71 items, 76 recipes (17 of them alternates), 55 buildings.** Covers smelting, construction, assembly, foundries, oil refining with byproducts, and manufacturing.
+- **77 items, 80 recipes (17 of them alternates), 60 buildings.** Covers smelting, construction, assembly, foundries, oil refining with byproducts, and manufacturing.
 - **Machine ports:** one blue input arrow and one orange output arrow per machine. Mergers combine ingredient belts.
 - **Day/night cycle** (12-minute days, can be switched off). **Solar Panels** only produce power in daylight.
 - **Power grids:** poles auto-wire (a reach preview is shown while placing), five generator types, and batteries.
@@ -57,6 +58,12 @@ After building, copy `dist/index.html` over `Play Beltworks.html` to update the 
 - **Outposts:** second bases for far-away regions, with 10 MW of free power. In Easy, Normal and Creative you can fast-travel between the HUB and Outposts (O).
 - **Advanced machines:** Packager (fluids in canisters), Blender (Cooling Systems, Turbofuel) and Particle Accelerator (Quantum Cores for the final launch). Plus Sulfur, Compacted Coal, Heat Sinks and Turbo Motors.
 - **Inventory screen (I):** grouped by category, searchable, with production rates and what your goals still need.
+- **Nuclear power:** uranium (rare, glowing, near the map edges) goes to encased cells, then fuel rods, then a 2500 MW Nuclear Power Plant. Its waste has to be stored.
+- **Ships:** Ship Ports on lake and sea shores. Cargo ships (2400 items) sail between the ports you choose.
+- **Train signals:** Block and Path Signals let many trains share hand-built networks safely.
+- **Production graphs:** the last hour of every item and of power, in Stats (P).
+- **Soundscapes & music:** wind, water, birds and crickets depending on where you look, and a generated soundtrack that changes each tier. Separate volume sliders in the menu.
+- **Run recap:** play time, items made, track laid, a timelapse of your factory growing, and personal bests per difficulty and map size (menu → Run recap; opens automatically when you win).
 - **Trucks:** Truck Stations plus trucks that path over open ground.
 - **Floors (unlocked with Logistics Mk2):** build on up to 3 floors above the ground using Foundations. Conveyor Lifts and Pipe Lifts link the floors. Change floor with PageUp/PageDown; floors above the active one fade out.
 - **Mountains:** taller, with snow caps. Railways (and Quick Route) tunnel straight through them; trucks drive around.
@@ -80,6 +87,8 @@ After building, copy `dist/index.html` over `Play Beltworks.html` to update the 
 | `sim.ts` | Belts, machines, power grids, fluid networks |
 | `trains.ts`, `trucks.ts`, `drones.ts` | Transport (Quick Route loops, truck pathing) |
 | `daynight.ts` | Day/night cycle and solar output |
+| `ships.ts` | Ship Ports and cargo ships (pathing over water) |
+| `audio.ts` | Sound effects, biome ambience and generated music |
 | `difficulty.ts` | Difficulty settings: starting kit, resource richness, game-length scaling |
 | `features.ts`, `explore.ts` | Crash sites, power crystals, discovery, scanner, hard-drive research |
 | `achievements.ts`, `planner.ts` | Achievements; production planner maths |

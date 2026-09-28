@@ -7,11 +7,16 @@ import { Feat } from './features';
 import { machineName, plan, plannableItems } from './planner';
 import { addTrainToLine, lineOf, lineTrains, MAX_LINE_TRAINS, trainCap } from './trains';
 import { buyTruck, removeTruck, TRUCK_CAP, truckStations } from './trucks';
+import { buyShip, removeShip, Ship, SHIP_CAP, shipPorts } from './ships';
 import { esc, fmt, fmtR } from './util';
 import { W } from './terrain';
 import { view } from './view';
 import { Ent, G, Truck } from './world';
-import { closeModal, costHTML, flyTo, ic, openModal, openTrain, openTruck, status, toast } from './ui';
+import { ACHS as ACH_LIST } from './achievements';
+import { loadRecords } from './progress';
+import { getFrames, slot } from './save';
+import { TIER_NAMES } from './data';
+import { closeModal, costHTML, flyTo, ic, openModal, openShip, openTrain, openTruck, status, toast } from './ui';
 
 export const plannerAllowed = () => G.S.mode === 'easy' || G.S.mode === 'creative';
 export const fastTravelAllowed = () => G.S.mode !== 'hard';
@@ -60,6 +65,13 @@ export const EXTRA_MODALS: Record<string, () => [string, string]> = {
         const st = G.ents.get(t.sched[t.si]);
         h += `<tr><td>${esc(t.name)}</td><td>${status(vehLed(t.state), stTxt[t.state] || t.state)}</td><td>${st ? esc(st.name) : '—'}</td><td>${fmt(t.tot)} / ${fmt(TRUCK_CAP)}</td><td><button class="mini" data-act="vview:k:${t.id}">View</button></td></tr>`;
       }
+      h += '</table>';
+    }
+    h += '<h3 class="ch">🚢 Ships</h3>';
+    if (!G.ships.length) h += '<div class="dim">No ships yet. Build two Ship Ports on the shores of the same lake (or the sea) and buy a ship in one of their panels.</div>';
+    else {
+      h += '<table class="st"><tr><th>Name</th><th>Status</th><th>Next port</th><th>Cargo</th><th></th></tr>';
+      for (const t of G.ships) { const st = G.ents.get(t.sched[t.si]); h += `<tr><td>${esc(t.name)}</td><td>${status(vehLed(t.state), t.state === 'moving' ? 'Sailing' : stTxt[t.state] || t.state)}</td><td>${st ? esc(st.name) : '—'}</td><td>${fmt(t.tot)} / ${fmt(SHIP_CAP)}</td><td><button class="mini" data-act="vview:s:${t.id}">View</button></td></tr>`; }
       h += '</table>';
     }
     return ['Vehicles', h];
@@ -153,6 +165,7 @@ export function extraAct(cmd: string, a: string, b: string): boolean {
   switch (cmd) {
     case 'vview': {
       if (a === 't') { const t = G.trains.find(x => String(x.id) === b); if (t) { const c = t.cells[0]; flyTo(c % W, Math.floor(c / W)); closeModal(); openTrain(t); } }
+      else if (a === 's') { const t = G.ships.find(x => String(x.id) === b); if (t) { flyTo(t.x, t.y); closeModal(); openShip(t); } }
       else { const t = G.trucks.find(x => String(x.id) === b); if (t) { flyTo(t.x, t.y); closeModal(); openTruck(t); } }
       return true;
     }
@@ -162,10 +175,14 @@ export function extraAct(cmd: string, a: string, b: string): boolean {
     case 'pickalt': pickAlt(a); return true;
     case 'loot': { if (pendingSite) { const err = lootSite(pendingSite); if (err) { toast(err, 'bad'); sfx('err'); } else { toast(`🛸 Looted! <b>+1 Hard Drive</b>${pendingSite.shards ? ` and <b>+${pendingSite.shards} Power Shard${pendingSite.shards > 1 ? 's' : ''}</b>` : ''}. Press <kbd>U</kbd> to research it.`, 'big'); closeModal(); } } return true; }
     case 'buytruck': if (e) { const others = truckStations().filter(o => o !== e); const tgt = G.ents.get(e.truckTo) || others[0] || null; const err = buyTruck(e, tgt); if (err) { toast(err, 'bad'); sfx('err'); } else toast(`🚚 A truck is on its way${tgt ? ` between <b>${esc(e.name)}</b> and <b>${esc(tgt.name)}</b>` : ''}!`, 'good'); } return true;
+    case 'buyship': if (e) { const others = shipPorts().filter(o => o !== e); const tgt = G.ents.get(e.shipTo) || others[0] || null; const err = buyShip(e, tgt); if (err) { toast(err, 'bad'); sfx('err'); } else toast(`🚢 A ship is sailing${tgt ? ` between <b>${esc(e.name)}</b> and <b>${esc(tgt.name)}</b>` : ''}!`, 'good'); } return true;
+    case 'sremove': { const s = view.inspectShip as Ship | null; if (s) { removeShip(s); view.inspectShip = null; } return true; }
+    case 'sdel': { const s = view.inspectShip as Ship | null; if (s) { s.sched.splice(+a, 1); if (s.si >= s.sched.length) s.si = 0; s.state = 'idle'; s.retryT = 0; } return true; }
     case 'kremove': if (k) { removeTruck(k); view.inspectTruck = null; } return true;
     case 'ksched': if (k) { const tgt = G.ents.get(+a); if (tgt && !k.sched.includes(tgt.id)) k.sched.push(tgt.id); } return true;
     case 'kdel': if (k) { k.sched.splice(+a, 1); if (k.si >= k.sched.length) k.si = 0; k.state = 'idle'; k.retryT = 0; } return true;
     case 'travel': { const p = travelPoints()[+a]; if (p && fastTravelAllowed()) { flyTo(p.x, p.y); closeModal(); toast(`🧭 ${esc(p.name)}`, ''); sfx('click'); } return true; }
+    case 'tlreplay': startTimelapse(null); return true;
     case 'dn': S.dayNight = !S.dayNight; sfx('click'); toast(S.dayNight ? '🌙 Day/night cycle on' : '☀️ Day/night cycle off (always daytime)', ''); return true;
   }
   return false;
@@ -176,6 +193,10 @@ export function extraInput(k: string, _a: string, el: HTMLInputElement, ev: Even
   if (k === 'plitem') { pl.item = el.value; rerender(); return true; }
   if (k === 'plrate') { const v = parseFloat(el.value); if (v > 0 && ev.type === 'change') { pl.rate = v; rerender(); } else if (v > 0) pl.rate = v; return true; }
   if (k === 'truckTo' && e) { e.truckTo = +el.value; return true; }
+  if (k === 'shipTo' && e) { e.shipTo = +el.value; return true; }
+  const sh = view.inspectShip as Ship | null;
+  if (k === 'sname' && sh) { sh.name = el.value || sh.name; return true; }
+  if (k === 'sstop' && sh && el.value && ev.type === 'change') { sh.sched.push(+el.value); if (sh.state === 'noschedule' || sh.state === 'nopath') { sh.state = 'idle'; sh.retryT = 0; } sfx('click'); return true; }
   if (k === 'kname' && t) { t.name = el.value || t.name; return true; }
   if (k === 'kstop' && t && el.value && ev.type === 'change') { t.sched.push(+el.value); if (t.state === 'noschedule' || t.state === 'nopath') { t.state = 'idle'; t.retryT = 0; } sfx('click'); return true; }
   return false;
@@ -238,3 +259,111 @@ export function truckDyn(t: Truck): string {
   return h + '</div>';
 }
 export { CRYSTAL_NAMES };
+
+// ---------------------------------------------------------------------------
+// Ship ports & ships
+export function portStatic(e: Ent): string {
+  let h = `<div class="sec">Name</div><input type="text" value="${esc(e.name)}" data-input="name" maxlength="24" style="width:100%">`;
+  h += `<div class="sec">Mode</div><div class="row"><button class="${e.mode === 'load' ? 'go' : ''}" data-act="mode:load">⬆ Load ships</button><button class="${e.mode === 'unload' ? 'go' : ''}" data-act="mode:unload">⬇ Unload ships</button></div>`;
+  const others = shipPorts().filter(o => o !== e);
+  h += '<div class="sec">🚢 Buy a ship</div>';
+  if (!others.length) h += '<div class="sm">Build a second Ship Port on the same lake (or the sea), then buy a ship here.</div>';
+  else {
+    const sel = e.shipTo && others.some(o => o.id === e.shipTo) ? e.shipTo : others[0].id;
+    h += `<select data-input="shipTo" style="width:100%">${others.map(o => `<option value="${o.id}" ${o.id === sel ? 'selected' : ''}>to ${esc(o.name)} (${Math.round(Math.hypot(o.x - e.x, o.y - e.y))} tiles)</option>`).join('')}</select>`;
+    h += `<div class="row" style="margin-top:6px"><button class="go" data-act="buyship">Buy ship</button><span class="sm">${costHTML(BLD.ship.cost)}</span></div>`;
+    h += `<div class="sm">Ships carry ${SHIP_CAP} items. Click a ship to add more ports to its route.</div>`;
+  }
+  return h;
+}
+export function portDyn(e: Ent): string {
+  const sh = G.ships.filter(t => t.sched.includes(e.id));
+  let h = `<div class="sm">${sh.length ? 'Visited by ' + sh.map(t => esc(t.name)).join(', ') : 'No ships call here yet.'}</div>`;
+  if (!e.pnet) h += '<div class="neg sm">Needs power to load/unload.</div>';
+  return h;
+}
+export function shipStatic(t: Ship): string {
+  let h = `<div class="ih"><div class="it">🚢 Cargo Ship</div><button class="x" data-act="closeInsp">✕</button></div>`;
+  h += `<input type="text" value="${esc(t.name)}" data-input="sname" maxlength="24" style="width:100%"><div id="idyn"></div>`;
+  h += '<div class="sec">Route (visits these ports in order)</div>';
+  t.sched.forEach((sid, i) => { const s = G.ents.get(sid); h += `<div class="stop"><span class="sn">${i + 1}. ${s ? esc(s.name) + (s.mode === 'load' ? ' ⬆' : ' ⬇') : '?'}</span><button class="mini" data-act="sdel:${i}">✕</button></div>`; });
+  h += `<select data-input="sstop" style="width:100%;margin-top:4px"><option value="">+ Add a port…</option>${shipPorts().map(s => `<option value="${s.id}">${esc(s.name)} (${s.mode})</option>`).join('')}</select>`;
+  h += '<div class="ibtns"><button class="danger" data-act="sremove">Remove ship</button></div>';
+  return h;
+}
+export function shipDyn(t: Ship): string {
+  const st = G.ents.get(t.sched[t.si]);
+  let h = `<div class="row">${status(vehLed(t.state), t.state === 'nopath' ? 'No water route — the ports must share a lake or the sea' : t.state === 'moving' ? 'Sailing' : stTxt[t.state] || t.state)}</div>`;
+  if (st) h += `<div class="sm">Next: ${esc(st.name)} · ${fmtR(t.v)} tiles/s</div>`;
+  h += `<div class="row">Cargo ${fmt(t.tot)} / ${fmt(SHIP_CAP)}</div><div class="bar"><i style="width:${t.tot / SHIP_CAP * 100}%"></i></div><div class="chips">`;
+  for (const kk in t.cargo) h += `<span class="chip">${ic(kk, 18)}${fmt(t.cargo[kk])}</span>`;
+  return h + '</div>';
+}
+
+// ---------------------------------------------------------------------------
+// Run recap: stats, timeline, personal bests and a timelapse of the factory growing
+export const showTimer = () => { try { return localStorage.getItem('bw-timer') === '1'; } catch { return false; } };
+export function fmtTime(sec: number) { sec = Math.max(0, Math.round(sec)); const h = Math.floor(sec / 3600), m = Math.floor(sec / 60) % 60, s = sec % 60; return h ? `${h}h ${String(m).padStart(2, '0')}m` : `${m}m ${String(s).padStart(2, '0')}s`; }
+export function recapHTML(win: boolean): [string, string] {
+  const S = G.S, pt = S.playT ?? S.time;
+  let made = 0; const top: [string, number][] = [];
+  for (const k in S.made) if (!ITEMS[k].fluid) { made += S.made[k]; top.push([k, S.made[k]]); }
+  top.sort((a, b) => b[1] - a[1]);
+  const kinds = (kind: string) => { let n = 0; for (const e of G.ents.values()) if (BLD[e.type].kind === kind) n++; return n; };
+  let cap = 0; for (const n of G.pnets) cap += n.cap;
+  const rec = loadRecords()[`${S.mode}|${S.size}`];
+  const gotAch = ACH_LIST.filter(a => S.ach[a.id]).length;
+  let h = win ? `<div class="rwin"><div style="font-size:46px">🚀</div><h2>Project Assembly launched!</h2>${S.flags.pbNew ? '<div class="pb">🏆 New personal best!</div>' : ''}</div>` : '';
+  h += `<div class="recap"><div><canvas id="tlapse" width="360" height="360"></canvas><div class="row" style="justify-content:center;gap:8px;margin-top:6px"><button class="mini" data-act="tlreplay">↺ Replay timelapse</button><span class="sm dim" id="tlinfo"></span></div></div><div>`;
+  h += `<div class="rstats">
+    <div><b>${fmtTime(win && S.wonT ? S.wonT : pt)}</b><span>${win ? 'to launch' : 'played'}</span></div>
+    <div><b>${fmt(made)}</b><span>items made</span></div>
+    <div><b>${fmt(kinds('rail'))}</b><span>tiles of track</span></div>
+    <div><b>${fmt(kinds('belt'))}</b><span>belts</span></div>
+    <div><b>${fmt(G.L.machines.length)}</b><span>machines</span></div>
+    <div><b>${fmtR(Math.max(cap, S.flags.peakMW || 0))} MW</b><span>peak power</span></div>
+    <div><b>${G.trains.length + G.trucks.length + G.ships.length}</b><span>vehicles</span></div>
+    <div><b>${gotAch}/${ACH_LIST.length}</b><span>achievements</span></div>
+  </div>`;
+  h += `<p class="sm">${esc(S.name)} · ${S.mode} · ${S.size}² map · Tier ${S.maxTier}${rec ? ` · personal best here: <b>${fmtTime(rec.t)}</b>` : ''}</p>`;
+  if (top.length) h += `<h3 class="ch">Most made</h3><div class="chips">${top.slice(0, 6).map(([k, n]) => `<span class="chip">${ic(k, 16)} ${fmt(n)}</span>`).join('')}</div>`;
+  const tt = S.tierT || {};
+  h += '<h3 class="ch">Timeline</h3><div class="tline">';
+  for (let t = 1; t <= 7; t++) h += `<div class="${tt[t] !== undefined || t <= 2 && S.maxTier >= t ? 'got' : ''}"><b>T${t}</b><span>${tt[t] !== undefined ? fmtTime(tt[t]) : S.maxTier >= t ? '✔' : '—'}</span><em>${TIER_NAMES[t]}</em></div>`;
+  h += `<div class="${S.won ? 'got' : ''}"><b>🚀</b><span>${S.wonT ? fmtTime(S.wonT) : '—'}</span><em>Launch</em></div></div>`;
+  h += `</div></div>${win ? '<button class="go big" data-act="closeModal">Keep building</button>' : ''}`;
+  return [win ? '🏆 Victory!' : '📊 Run recap', h];
+}
+let tlTimer = 0, tlBase: HTMLCanvasElement | null = null;
+export function startTimelapse(base: HTMLCanvasElement | null) {
+  if (base) tlBase = base; else base = tlBase;
+  const c = document.getElementById('tlapse') as HTMLCanvasElement | null;
+  if (!c || !slot.id) return;
+  clearInterval(tlTimer);
+  const g = c.getContext('2d')!, info = document.getElementById('tlinfo');
+  // crop to the part of the map you built on
+  let x0 = 1e9, y0 = 1e9, x1 = -1e9, y1 = -1e9;
+  for (const e of G.ents.values()) { x0 = Math.min(x0, e.x); y0 = Math.min(y0, e.y); x1 = Math.max(x1, e.x + e.w); y1 = Math.max(y1, e.y + e.h); }
+  const Wm = Math.round(Math.sqrt(G.tiles.length)), pad = 12;
+  let side = Math.max(60, x1 - x0, y1 - y0) + pad * 2;
+  const cx = (x0 + x1) / 2, cy = (y0 + y1) / 2;
+  let sx = Math.max(0, Math.min(Wm - side, cx - side / 2)), sy = Math.max(0, Math.min(Wm - side, cy - side / 2)); side = Math.min(side, Wm);
+  getFrames(slot.id).then(urls => {
+    if (!urls.length) { if (info) info.textContent = 'Frames are recorded every 3 minutes of play.'; }
+    const imgs = urls.map(u => { const im = new Image(); im.src = u; return im; });
+    let i = 0;
+    const k = 512 / Wm;
+    const draw = () => {
+      if (!document.body.contains(c)) { clearInterval(tlTimer); return; }
+      g.imageSmoothingEnabled = false;
+      g.fillStyle = '#0b1a26'; g.fillRect(0, 0, c.width, c.height);
+      if (base) g.drawImage(base, sx, sy, side, side, 0, 0, c.width, c.height);
+      g.fillStyle = 'rgba(0,0,0,.25)'; g.fillRect(0, 0, c.width, c.height);
+      const im = imgs[Math.min(i, imgs.length - 1)];
+      if (im && im.complete) g.drawImage(im, sx * k, sy * k, side * k, side * k, 0, 0, c.width, c.height);
+      if (info && imgs.length) info.textContent = `frame ${Math.min(i + 1, imgs.length)} / ${imgs.length}`;
+      i++; if (i >= imgs.length + 15) i = 0;
+    };
+    draw(); tlTimer = setInterval(draw, 140) as any;
+  });
+}

@@ -8,7 +8,7 @@ import { hexCol, rgba } from '../gl';
 import { curPhase } from '../progress';
 import { ensureFresh } from '../sim';
 import { H, W } from '../terrain';
-import { trainPoints } from '../trains';
+import { signalRed, trainPoints } from '../trains';
 import { nightness } from '../daynight';
 import { DX, DY, easeOutBack, hash2 } from '../util';
 import { parts, spawn, view } from '../view';
@@ -75,7 +75,7 @@ let bbs: Billboards, bbAdd: Billboards;
 let prevWires: THREE.LineSegments, ringMat: THREE.Material, ringGeo: THREE.BufferGeometry;
 let wires: THREE.LineSegments, selPlane: THREE.Mesh, hoverBox: THREE.LineSegments, inspBox: THREE.LineSegments;
 let lastRev = -1, lastStatic = 0, animEnts: Ent[] = [], popping = false, lastFluidSig = '';
-let lampEnts: Ent[] = [], visFeats: { x: number; y: number; kind: string; tier: number }[] = [];
+let sigRails: Ent[] = [], lampEnts: Ent[] = [], visFeats: { x: number; y: number; kind: string; tier: number }[] = [];
 const AM = new THREE.Matrix4();
 function fluidSig() { let s = ''; for (const n of G.fnets) s += (n.fluid || '-')[0] + (n.fluid || '').length; return s; }
 let treeState = { x: -999, y: -999, r: 0, rev: -1, t: 0 };
@@ -164,14 +164,14 @@ function pushModel(L: Layer, key: string, model: Model, m: THREE.Matrix4, mat?: 
   L.get(key, model.geo, mat || model.mats, shadow).push(m);
 }
 /** orange arrow in front (output) and blue arrow behind (input) for every building with ports */
-const OUT_KINDS = new Set(['machine', 'miner', 'harvester', 'storage', 'station', 'tstation', 'drone']);
+const OUT_KINDS = new Set(['machine', 'miner', 'harvester', 'storage', 'station', 'tstation', 'port', 'drone']);
 const inArrowModel = () => mdl('arrowIn', () => { const b = new B(); b.add(new THREE.ConeGeometry(0.2, 0.36, 3), M.glowBlue, 0, 0.03, 0, 0, 0, -HP); return b.build(); });
 const outArrowModel = () => mdl('arrowOut', () => { const b = new B(); b.add(new THREE.ConeGeometry(0.2, 0.36, 3), M.glowOrange, 0, 0.03, 0, 0, 0, -HP); return b.build(); });
 function pushPortArrows(L: Layer, e: Ent, pre: string) {
   const d = BLD[e.type];
   if (!d) return;
   const hasIn = PORTED.has(d.kind) && !(d.kind === 'gen' && !(d.fuels && Object.keys(d.fuels).some(f => !ITEMS[f].fluid)));
-  const hasOut = OUT_KINDS.has(d.kind);
+  const hasOut = OUT_KINDS.has(d.kind) || !!d.waste;
   const dx = DX[e.rot], dy = DY[e.rot], ry = -e.rot * HP;
   const free = (x: number, y: number) => { if (pre) return true; const n = entAt(x, y, e.z || 0); return !(n && (BLD[n.type].kind === 'belt' || BLD[n.type].kind === 'tunnel')); };
   if (hasOut) { const [fx, fy] = frontTiles(e)[0]; if (free(fx, fy)) pushModel(L, pre + 'arrowOut', outArrowModel(), compose(fx + 0.5 - dx * 0.2, 0.03, fy + 0.5 - dy * 0.2, ry, 1.5, 0.3, 1.5), undefined, false); }
@@ -235,7 +235,7 @@ function rebuildStatic(real: number) {
   ensureFresh();
   { const rr: number[] = []; for (const r of G.L.rails) if (G.tiles[r.y * W + r.x] === 6) rr.push(r.y * W + r.x); updateCuts(rr); }
   SL.begin();
-  animEnts = []; lampEnts = []; visFeats = []; popping = false;
+  animEnts = []; lampEnts = []; sigRails = []; visFeats = []; popping = false;
   const SR = C.dist * 1.3 + 16, sx = view.cam.x, sy = view.cam.y;
   stX = sx; stY = sy; stR = SR;
   const inR = (x: number, y: number, pad = 0) => x > sx - SR - pad && x < sx + SR + pad && y > sy - SR - pad && y < sy + SR + pad;
@@ -261,6 +261,7 @@ function rebuildStatic(real: number) {
     if (k === 'belt' || k === 'tunnel') { pushBelt(SL, e); continue; }
     if (k === 'rail') {
       pushRail(SL, e.x, e.y, e.pairs);
+      if (e.sig) sigRails.push(e);
       if (G.tiles[e.y * W + e.x] === 6) pushPortals(e);
       continue;
     }
@@ -483,6 +484,24 @@ export function update3D(time: number, real: number, dt: number, labels: Label3[
       if (near) bbs.add(w.x + 0.5 + DX[w.dir] * 0.5, w.y + 0.5 + DY[w.dir] * 0.5, (w.z || 0) * LH + 1.1, 0.45, 0.45, SPR.bolt, hexCol('#ff5050'));
     }
   }
+  // ships: bob gently on the water and leave a wake
+  for (const sp of G.ships) {
+    if (Math.abs(sp.x - tgx) > VR * 1.5 || Math.abs(sp.y - tgy) > VR * 1.5) continue;
+    const bob = Math.sin(real * 1.3 + sp.id % 7) * 0.04;
+    pushModel(DL, 'ship', mdl('ship', MD.shipModel), compose(sp.x, -0.32 + bob, sp.y, -sp.a));
+    if (sp.v > 0.5 && near && Math.random() < 0.3) spawn(sp.x - Math.cos(sp.a) * 1.4, sp.y - Math.sin(sp.a) * 1.4, { z: -0.1, vz: 0.2, life: 1.2, spr: 'glow', size: 0.35, col: rgba(0.9, 0.95, 1, 0.5), grow: 0.8, vr: 0 });
+    if (close) labels.push({ x: sp.x, y: sp.y, z: 1.6, t: sp.name, c: '#bfe0ff' });
+  }
+  // rail signals: a post beside the track with a red or green lamp
+  for (const r of sigRails) {
+    if (!G.ents.has(r.id) || !r.sig || Math.abs(r.x - tgx) > VR || Math.abs(r.y - tgy) > VR) continue;
+    const post = mdl('sigPost' + r.sig, () => MD.signalModel(r.sig === 2));
+    pushModel(DL, 'sigPost' + r.sig, post, compose(r.x + 0.5, 0, r.y + 0.5, 0));
+    const red = signalRed(r.y * W + r.x);
+    COL.set(red ? '#ff3a2a' : '#3aff6a');
+    DL.get('light', mdl('lightS', () => ({ geo: new THREE.SphereGeometry(0.07, 8, 6), mats: [] })).geo, lightMat, false, true).push(compose(r.x + 0.9, 1.05, r.y + 0.9, 0, 1.3, 1.3, 1.3), COL);
+    if (near) bbAdd.add(r.x + 0.9, r.y + 0.9, 1.05, 0.5, 0.5, SPR.glow, hexCol(red ? '#ff3a2a' : '#3aff6a', 0.6));
+  }
   // trucks
   for (const tk of G.trucks) {
     if (Math.abs(tk.x - tgx) > VR * 1.5 || Math.abs(tk.y - tgy) > VR * 1.5) continue;
@@ -520,6 +539,7 @@ export function update3D(time: number, real: number, dt: number, labels: Label3[
       bbAdd.add(e.x + 0.6, e.y + 0.5, lz + 1.6, 1.4, 1.4, SPR.glow, hexCol('#fff2c0', night * 0.9));
       bbAdd.add(e.x + 0.5, e.y + 0.5, lz + 0.15, 7, 7, SPR.glow, hexCol('#ffe6a0', night * 0.45));
     }
+    for (const sp of G.ships) bbAdd.add(sp.x - Math.cos(sp.a) * 1.0, sp.y - Math.sin(sp.a) * 1.0, 1.2, 1.2, 1.2, SPR.glow, hexCol('#fff0c0', night * 0.7));
     for (const tk of G.trucks) if (tk.v > 0.1) bbAdd.add(tk.x + Math.cos(tk.a) * 0.9, tk.y + Math.sin(tk.a) * 0.9, 0.35, 1.4, 1.4, SPR.glow, hexCol('#fff0c0', night * 0.7));
     for (const tr of G.trains) { const p0 = trainPoints(tr)[0]; if (p0) bbAdd.add(p0[0], p0[1], 0.6, 1.8, 1.8, SPR.glow, hexCol('#fff0c0', night * 0.8)); }
   }
@@ -532,6 +552,7 @@ export function update3D(time: number, real: number, dt: number, labels: Label3[
   }
   for (const s of G.L.stations) if (near) labels.push({ x: s.x + 1.5, y: s.y + 1.5, z: 2.9, t: s.name + (s.mode === 'load' ? ' ⬆' : ' ⬇'), c: '#ffe08a' });
   for (const s of G.L.outposts || []) labels.push({ x: s.x + 1.5, y: s.y + 1.5, z: 3.9, t: '⛺ ' + s.name, c: '#ffc070' });
+  for (const s of G.L.ports || []) if (near) labels.push({ x: s.x + 1.5, y: s.y + 1.5, z: 2.9, t: '⚓ ' + s.name + (s.mode === 'load' ? ' ⬆' : ' ⬇'), c: '#a8d0ff' });
   for (const s of G.L.tstations) if (near) labels.push({ x: s.x + 1.5, y: s.y + 1.5, z: 2.6, t: s.name + (s.mode === 'load' ? ' ⬆' : ' ⬇'), c: '#ffd0a0' });
   if (G.L.elevator) { const e = G.L.elevator; labels.push({ x: e.x + 2.5, y: e.y + 2.5, z: 13.5, t: 'SPACE ELEVATOR', c: '#e0d4ff' }); }
   if (G.L.hub) { const e = G.L.hub; if (near) labels.push({ x: e.x + 2, y: e.y + 2, z: 4.3, t: 'HUB', c: '#ffd08a' }); }
@@ -613,6 +634,7 @@ function updateGhosts(real: number) {
     if (gh.type === 'pipe_lift') { pushModel(GL, pre + 'pipeLift', mdl('pipeLift', MD.pipeLiftModel), compose(gh.x + 0.5, 0, gh.y + 0.5, 0), mat, false); continue; }
     if (d.kind === 'belt' || d.kind === 'tunnel') { pushBelt(GL, { ...gh, curve: -1, isExit: gh.isExit } as any, mat, pre); continue; }
     if (d.kind === 'rail') { pushRail(GL, gh.x, gh.y, gh.pairs || 1, mat, pre); continue; }
+    if (d.kind === 'signal') { pushModel(GL, pre + 'sigPost' + d.sig, mdl('sigPost' + d.sig, () => MD.signalModel(d.sig === 2)), compose(gh.x + 0.5, 0, gh.y + 0.5, 0), mat, false); continue; }
     if (d.kind === 'pipe') { pushModel(GL, pre + 'pipeHub', mdl('pipeHub', MD.pipeHub), compose(gh.x + 0.5, 0, gh.y + 0.5, 0), mat, false); pushModel(GL, pre + 'pipeArm', mdl('pipeArm', MD.pipeArm), compose(gh.x + 0.5, 0, gh.y + 0.5, 0), mat, false); pushModel(GL, pre + 'pipeArm', mdl('pipeArm', MD.pipeArm), compose(gh.x + 0.5, 0, gh.y + 0.5, Math.PI), mat, false); continue; }
     if (d.kind === 'ptunnel') { pushModel(GL, pre + 'ptun', mdl('ptun', MD.ptunnelModel), compose(gh.x + 0.5, 0, gh.y + 0.5, -(gh.isExit ? gh.rot + 2 : gh.rot) * HP), mat, false); continue; }
     const t = TPL[gh.type];
@@ -675,6 +697,7 @@ export function icon3D(type: string): string | null {
   let model: Model | null = null;
   if (TPL[type]) model = TPL[type].stat;
   else if (d.kind === 'foundation') model = mdl('deck', MD.deckModel);
+  else if (d.kind === 'signal') model = mdl('sigPost' + d.sig, () => MD.signalModel(d.sig === 2));
   else if (d.kind === 'lift') model = mdl('lift' + d.dz, () => MD.liftModel(d.dz! > 0));
   else if (type === 'pipe_lift') model = mdl('pipeLift', MD.pipeLiftModel);
   else if (d.kind === 'belt') model = mdl('beltFS', MD.beltFrameStraight);

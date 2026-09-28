@@ -106,6 +106,15 @@ table.st td,table.st th{padding:4px 8px;border-bottom:1px solid #262e3a;text-ali
 table.st td:first-child,table.st th:first-child{text-align:left}
 table.st th{color:var(--dim);font-weight:600;font-size:12px}
 .invgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px}
+.histg{width:100%;height:auto;background:#12171f;border:1px solid var(--line);border-radius:8px;margin:4px 0}
+.glegend{display:flex;flex-wrap:wrap;gap:6px;margin:2px 0 8px}
+tr.grow{cursor:pointer}tr.grow:hover{background:#ffffff0a}tr.gsel td:first-child{box-shadow:inset 3px 0 0 var(--accent)}
+.vols{display:flex;flex-direction:column;gap:4px;padding:6px 2px}.vols label{display:flex;justify-content:space-between;align-items:center;gap:10px;font-size:13px}.vols input{width:55%}
+.recap{display:grid;grid-template-columns:auto 1fr;gap:18px;align-items:start}#tlapse{width:360px;height:360px;border-radius:10px;border:1px solid var(--line);image-rendering:pixelated;background:#0b1a26}
+.rstats{display:grid;grid-template-columns:repeat(4,1fr);gap:8px}.rstats div{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:8px;text-align:center;display:flex;flex-direction:column}.rstats b{font-size:17px;color:#fff}.rstats span{font-size:11px;color:var(--dim)}
+.tline{display:grid;grid-template-columns:repeat(8,1fr);gap:4px}.tline div{background:var(--panel2);border:1px solid var(--line);border-radius:8px;padding:5px;text-align:center;display:flex;flex-direction:column;opacity:.5}.tline .got{opacity:1;border-color:#f5a52488}.tline span{font-size:11px}.tline em{font-size:9px;color:var(--dim);font-style:normal}
+.rwin{text-align:center;margin-bottom:10px}.rwin h2{margin:4px 0}.pb{color:var(--accent);font-weight:800;font-size:18px}.bests{display:flex;flex-direction:column;gap:3px;font-size:13px}
+@media (max-width:900px){.recap{grid-template-columns:1fr}.rstats{grid-template-columns:repeat(2,1fr)}}
 .invneed{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:4px 16px;margin-bottom:6px}
 .invneed .req .bn{width:120px;flex:none;font-size:12px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
 .invc.empty{opacity:.5}.invc.needed{border-color:#f5a52488}.needtag{font-size:10px;color:var(--accent);font-weight:700}

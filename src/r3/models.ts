@@ -348,6 +348,29 @@ export function buildTemplates(): Record<string, Template> {
     b.box(0.7, 1.2, 0.7, 1.05, 0.45, -1.05, M.orange); b.cyl(0.04, 0.8, 1.05, 1.65, -1.05, M.steel, 6);
     T.drone_port = { stat: b.build(), height: 1.6, light: [-1.3, 0.5, 1.3], anims: [] };
   }
+  // ---- Nuclear power plant: reactor dome and two cooling towers
+  {
+    const b = new B(); pad(b, 5);
+    const tower = new THREE.LatheGeometry([[1.05, 0], [0.8, 1.4], [0.68, 2.6], [0.74, 3.4], [0.82, 3.9]].map(([x, y]) => new THREE.Vector2(x, y)), 24);
+    for (const z of [-1.15, 1.15]) { b.add(tower, M.concrete, -1.0, 0.14, z); b.torus(0.8, 0.04, -1.0, 3.2, z, M.orange); }
+    b.cyl(0.95, 1.3, 1.05, 0.14, 0, M.white, 24); b.add(new THREE.SphereGeometry(0.95, 24, 8, 0, TAU, 0, Math.PI / 2), M.white, 1.05, 1.44, 0);
+    b.torus(0.97, 0.06, 1.05, 1.0, 0, M.green);
+    b.box(1.0, 0.9, 0.9, 1.55, 0.14, -1.6, M.orange); b.box(0.02, 0.3, 0.5, 2.06, 0.6, -1.6, M.glass);
+    b.hcyl(0.14, 1.2, 0.0, 0.8, -0.6, M.steel, 'x'); b.hcyl(0.14, 1.2, 0.0, 0.8, 0.6, M.steel, 'x');
+    T.nuclear_plant = { stat: b.build(), height: 4.1, light: [1.55, 1.1, -1.6], anims: [], smoke: [[-1.0, 4.1, -1.15], [-1.0, 4.1, 1.15]], glow: [[1.05, 2.4, 0]] };
+  }
+  // ---- Ship port: a concrete quay with a dock crane
+  {
+    const b = new B();
+    b.box(2.9, 0.35, 2.9, 0, 0, 0, M.concrete);
+    b.box(2.9, 0.04, 0.12, 0, 0.35, 1.39, M.yellow); b.box(0.12, 0.04, 2.9, 1.39, 0.35, 0, M.yellow);
+    for (const [x, z] of [[1.3, -1.1], [1.3, 0], [1.3, 1.1]]) b.cyl(0.08, 0.18, x, 0.35, z, M.black, 8);
+    b.box(1.0, 1.1, 1.2, -0.9, 0.35, -0.8, M.orange); b.box(1.04, 0.1, 1.24, -0.9, 1.45, -0.8, M.steelDk); b.box(0.02, 0.3, 0.6, -0.39, 0.9, -0.8, M.glass);
+    for (const [x, z] of [[-0.3, 0.9], [0.3, 0.9]]) b.box(0.1, 2.2, 0.1, x, 0.35, z, M.yellow);
+    b.box(0.8, 0.12, 0.2, 0, 2.55, 0.9, M.yellow);
+    b.box(0.55, 0.45, 0.55, -0.8, 0.35, 0.8, M.blue); b.box(0.55, 0.45, 0.55, -0.8, 0.8, 0.8, M.red);
+    T.ship_port = { stat: b.build(), height: 2.6, light: [-0.4, 1.3, -1.35], anims: [{ key: 'jib', model: one(b2 => { b2.box(2.3, 0.1, 0.12, 0.85, 0, 0, M.yellow); b2.cyl(0.02, 0.6, 1.8, -0.6, 0, M.steelDk, 4); b2.box(0.25, 0.12, 0.25, 1.8, -0.72, 0, M.steelDk); }), fn: (o, _e, _t, real) => { o.y = 2.66; o.z = 0.9; o.ry = Math.sin(real * 0.3) * 0.9; } }] };
+  }
   // ---- Outpost: a small field base with a comms mast and a beacon
   {
     const b = new B();
@@ -472,7 +495,7 @@ export function nodeModel(res: string, variant: number): Model {
     return b.build();
   }
   const col = ITEMS[res].c;
-  const oreMat = std(col, 0.55, res === 'coal' || res === 'limestone' ? 0.05 : 0.45, { flatShading: true });
+  const oreMat = std(col, 0.55, res === 'coal' || res === 'limestone' ? 0.05 : 0.45, res === 'uranium' ? { flatShading: true, emissive: new THREE.Color('#2aa040'), emissiveIntensity: 0.9 } : { flatShading: true });
   const baseMat = std('#6a665f', 0.9, 0.05, { flatShading: true });
   b.add(rockGeo(0.75, seed, 1, 0.45), baseMat, 0, 0.1, 0);
   const n = 6 + variant;
@@ -550,6 +573,19 @@ export function crystalModel(tier: number): Model {
     b.add(new THREE.OctahedronGeometry(0.14), m, 0.17, 0.3, 0.1, 0.45, 0, 0.35, 0.7, 1.6, 0.7);
     b.add(new THREE.OctahedronGeometry(0.12), m, -0.15, 0.27, -0.08, -0.3, 0, -0.45, 0.7, 1.5, 0.7);
     if (tier > 0) b.add(new THREE.OctahedronGeometry(0.1), m, 0.02, 0.24, -0.2, -0.5, 0, 0.1, 0.7, 1.5, 0.7);
+  });
+}
+/** cargo ship: hull, containers and a bridge at the stern (bow points +x) */
+export function shipModel(): Model {
+  return one(b => {
+    b.add(new THREE.BoxGeometry(2.6, 0.5, 0.95), M.steelDk, 0, 0.1, 0);
+    b.add(new THREE.CylinderGeometry(0.48, 0.48, 0.5, 3, 1), M.steelDk, 1.3, 0.1, 0, 0, Math.PI / 2, 0, 0.9, 1, 1);
+    b.box(2.9, 0.08, 1.0, 0.05, 0.35, 0, M.red);
+    b.box(2.4, 0.06, 0.85, 0.1, 0.43, 0, M.grey);
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 2; j++) b.box(0.45, 0.3, 0.38, -0.2 + i * 0.5, 0.49 + j * 0.3, 0, [M.orange, M.blue, M.green][(i + j) % 3]);
+    b.box(0.5, 0.55, 0.8, -1.0, 0.49, 0, M.white); b.box(0.52, 0.12, 0.82, -1.0, 1.04, 0, M.steelDk);
+    b.box(0.02, 0.14, 0.6, -0.74, 0.86, 0, M.glass);
+    b.cyl(0.08, 0.35, -1.15, 1.16, 0, M.orange, 8);
   });
 }
 export function droneModel(): Model {
@@ -643,6 +679,10 @@ export function portalModel(): Model {
     b.box(0.9, 1.45, 1.05, -0.5, 0, 0, M.black);
     b.box(0.08, 0.3, 0.9, 0.2, 1.47, 0, M.orange);
   });
+}
+/** rail signal post in the tile corner (path signals get a blue band) */
+export function signalModel(path: boolean): Model {
+  return one(b => { b.cyl(0.04, 1.0, 0.4, 0, 0.4, M.steelDk, 6); b.box(0.16, 0.28, 0.14, 0.4, 0.92, 0.4, M.black); b.box(0.18, 0.05, 0.16, 0.4, 0.86, 0.4, path ? M.blue : M.red); b.cyl(0.1, 0.05, 0.4, 0, 0.4, M.concrete, 8); });
 }
 export function railStraight(): Model {
   return one(b => {

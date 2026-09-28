@@ -1,10 +1,11 @@
-import { audioInit, sfx } from './audio';
+import { audioInit, sfx, startMusic } from './audio';
 import { BLD, CATS, Cost, isFluid, ITEMS, MILESTONES, RECIPES } from './data';
 import { hexCol, rgba } from './gl';
 import { ensureFresh, fluidsTouching, setRecipe } from './sim';
 import { H, W } from './terrain';
 import { canPlaceTrain, placeTrain, removeTrain, trainAt } from './trains';
 import { removeTruck, truckAt } from './trucks';
+import { removeShip, shipAt } from './ships';
 import { collectCrystal, featNear, locateHome } from './explore';
 import { openSite, plannerAllowed } from './ui2';
 import { clampCam, s2w, sd2w, spawn, updMouseWorld, view } from './view';
@@ -218,6 +219,18 @@ function tryPlace(loud: boolean) {
 }
 
 // ---------------------------------------------------------------------------
+// Rail signals live on rail tiles
+function placeSignal(x: number, y: number, sig: number, type: string) {
+  const r = view.level === 0 ? entAt(x, y) : null;
+  if (!r || r.type !== 'rail') { UI.toast('Put signals on a railway tile', 'bad'); sfx('err'); return; }
+  if (r.sig === sig) { UI.toast('That tile already has this signal', 'bad'); return; }
+  const d = BLD[type];
+  if (!canAfford(d.cost)) { UI.toast('Need: ' + missingText(d.cost), 'bad'); sfx('err'); return; }
+  if (r.sig) refund(BLD[r.sig === 1 ? 'rail_signal' : 'path_signal'].cost);
+  pay(d.cost); r.sig = sig; markDirty('rail'); sfx('place');
+}
+
+// ---------------------------------------------------------------------------
 // Deconstruct
 function layFoundations(x0: number, y0: number, x1: number, y1: number) {
   const z = view.level, d = BLD.foundation;
@@ -361,6 +374,9 @@ export function updateGhosts() {
           if (pairs) gh.pairs = pairs[i];
           g.push(gh);
         });
+      } else if (d.kind === 'signal') {
+        const r = view.level === 0 ? entAt(m.tx, m.ty) : null;
+        g.push({ type: t.type, x: m.tx, y: m.ty, rot: 0, ok: !!r && r.type === 'rail' });
       } else if (d.kind === 'train') {
         const r = canPlaceTrain(m.tx, m.ty, rot);
         g.push({ type: 'locomotive', x: m.tx, y: m.ty, rot, ok: !r.err, cells: r.cells });
@@ -438,7 +454,7 @@ export function initInput(canvas: HTMLCanvasElement) {
   canvas.addEventListener('pointerenter', () => { view.mouse.inCanvas = true; });
   canvas.addEventListener('pointerleave', () => { view.mouse.inCanvas = false; });
   canvas.addEventListener('pointerdown', ev => {
-    audioInit(); upd(ev); canvas.setPointerCapture(ev.pointerId); view.mouse.inCanvas = true;
+    audioInit(); startMusic(); upd(ev); canvas.setPointerCapture(ev.pointerId); view.mouse.inCanvas = true;
     const m = view.mouse;
     if (ev.button === 1) { rotating = true; rotX = ev.clientX; rotY = ev.clientY; return; }
     if (ev.button === 2) { startPan(ev); return; }
@@ -453,6 +469,7 @@ export function initInput(canvas: HTMLCanvasElement) {
       if (d.kind === 'foundation') { drag = { sx: m.tx, sy: m.ty, axis: null, kind: 'rect' }; return; }
       if ((d.kind === 'belt' || d.kind === 'pipe' || d.kind === 'rail') && !d.dz) { drag = { sx: m.tx, sy: m.ty, axis: null, kind: d.kind }; return; }
       if (d.kind === 'train' && view.level > 0) { UI.toast('Trains run on the ground floor', 'bad'); return; }
+      if (d.kind === 'signal') { placeSignal(m.tx, m.ty, d.sig!, t.type); return; }
       if (d.kind === 'train') { const tr = placeTrain(m.tx, m.ty, rot); if (tr) { setTool(null); UI.openTrain(tr); } return; }
       tryPlace(true);
       return;
@@ -463,6 +480,8 @@ export function initInput(canvas: HTMLCanvasElement) {
     if (tr) { UI.openTrain(tr); sfx('click'); return; }
     const tk = truckAt(m.wx, m.wy);
     if (tk) { UI.openTruck(tk); sfx('click'); return; }
+    const sp = shipAt(m.wx, m.wy);
+    if (sp) { UI.openShip(sp); sfx('click'); return; }
     const ft = featNear(m.wx, m.wy);
     if (ft) { if (ft.kind === 'crystal') collectCrystal(ft); else { openSite(ft); sfx('click'); } return; }
     const e = pickAt(m.wx, m.wy);
@@ -508,7 +527,7 @@ export function initInput(canvas: HTMLCanvasElement) {
     if (!drag || !t) { drag = null; return; }
     if (t.k === 'build' && BLD[t.type].kind === 'foundation') { layFoundations(drag.sx, drag.sy, m.tx, m.ty); drag = null; }
     else if (t.k === 'build') commitDrag();
-    else if (t.k === 'decon') { const e = drag.sx === m.tx && drag.sy === m.ty ? pickAt(m.wx, m.wy) : null; if (e) { const why = canRemove(e); if (why) { UI.toast(why, 'bad'); sfx('err'); } else if (remove(e)) sfx('remove'); } else { const one = drag.sx === m.tx && drag.sy === m.ty; const tr = one ? trainAt(m.wx, m.wy) : null; const tk = one && !tr ? truckAt(m.wx, m.wy) : null; if (tr) removeTrain(tr); else if (tk) removeTruck(tk); else deconRect(drag.sx, drag.sy, m.tx, m.ty); } drag = null; }
+    else if (t.k === 'decon') { const e = drag.sx === m.tx && drag.sy === m.ty ? pickAt(m.wx, m.wy) : null; if (e && e.type === 'rail' && e.sig) { refund(BLD[e.sig === 1 ? 'rail_signal' : 'path_signal'].cost); e.sig = 0; markDirty('rail'); sfx('remove'); } else if (e) { const why = canRemove(e); if (why) { UI.toast(why, 'bad'); sfx('err'); } else if (remove(e)) sfx('remove'); } else { const one = drag.sx === m.tx && drag.sy === m.ty; const tr = one ? trainAt(m.wx, m.wy) : null; const tk = one && !tr ? truckAt(m.wx, m.wy) : null; const sp = one && !tr && !tk ? shipAt(m.wx, m.wy) : null; if (tr) removeTrain(tr); else if (tk) removeTruck(tk); else if (sp) removeShip(sp); else deconRect(drag.sx, drag.sy, m.tx, m.ty); } drag = null; }
     else if (t.k === 'bpsel') {
       const bp = captureBP(drag.sx, drag.sy, m.tx, m.ty);
       drag = null;

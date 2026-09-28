@@ -36,10 +36,12 @@ export function dockTiles(st: Ent): number[] {
   return borderTiles(st).map(([x, y]) => y * W + x).filter(i => i >= 0 && i < W * H && cost(i) >= 0);
 }
 export function findTruckPath(from: number, st: Ent): number[] | null {
-  const goals = new Set(dockTiles(st));
+  return gridPath(from, new Set(dockTiles(st)), cost, st.x + st.w / 2, st.y + st.h / 2);
+}
+/** 8-way A* over the tile grid (shared by trucks on land and ships on water) */
+export function gridPath(from: number, goals: Set<number>, cost: (i: number) => number, gx: number, gy: number): number[] | null {
   if (!goals.size) return null;
   if (goals.has(from)) return [];
-  const gx = st.x + st.w / 2, gy = st.y + st.h / 2;
   const hf = (i: number) => { const dx = Math.abs(i % W - gx), dy = Math.abs(Math.floor(i / W) - gy); return (dx + dy - 0.59 * Math.min(dx, dy)) * 1.02; };
   const g = new Map<number, number>(), prev = new Map<number, number>(), heap: number[][] = [];
   g.set(from, 0); prev.set(from, -1); heapPush(heap, [hf(from), from]);

@@ -1,10 +1,10 @@
-import { ensureFresh, rebuildFluids, resetStats, syncFluidMembers } from './sim';
+import { ensureFresh, hist, rebuildFluids, resetStats, syncFluidMembers } from './sim';
 import { W, H } from './terrain';
 import { view } from './view';
 import { BLD } from './data';
 import { G, place, PORTED, remove, resetWorld, State } from './world';
 
-const KEYS = ['items', 'pair', 'isExit', 'recipe', 'ib', 'ob', 'prog', 'work', 'clock', 'shards', 'amp', 'tm', 'store', 'tot', 'mode', 'name', 'buf', 'filt', 'slot', 'famt', 'ffluid', 'fuelT', 'fbuf', 'water', 'stored', 'pairs', 'target', 'outbox', 'obTot', 'inbox', 'ibTot', 'dr', 'sunk', 'anyIn'];
+const KEYS = ['items', 'pair', 'isExit', 'recipe', 'ib', 'ob', 'prog', 'work', 'clock', 'shards', 'amp', 'tm', 'store', 'tot', 'mode', 'name', 'buf', 'filt', 'slot', 'famt', 'ffluid', 'fuelT', 'fbuf', 'water', 'stored', 'pairs', 'target', 'outbox', 'obTot', 'inbox', 'ibTot', 'dr', 'sunk', 'anyIn', 'sig'];
 
 export function serialize() {
   ensureFresh();
@@ -25,8 +25,9 @@ export function serialize() {
   return {
     v: 2,
     S: { ...S, unlocked: [...S.unlocked], done: [...S.done] },
-    ents, removed, floor, nextId: G.nextId,
+    ents, removed, floor, hist: hist.s, nextId: G.nextId,
     trains: G.trains.map(t => ({ ...t })),
+    ships: G.ships.map((t: any) => ({ ...t, path: [], pi: 0, state: t.state === 'moving' ? 'idle' : t.state })),
     trucks: G.trucks.map(t => ({ ...t, path: [], pi: 0, state: t.state === 'moving' ? 'idle' : t.state })),
     cam: { ...view.cam },
   };
@@ -60,10 +61,12 @@ export function deserialize(o: any) {
   G.nextId = Math.max(G.nextId, o.nextId || 1);
   G.trains = (o.trains || []).map((t: any) => ({ ...t }));
   G.trucks = (o.trucks || []).map((t: any) => ({ ...t, retryT: 0 }));
+  G.ships = (o.ships || []).map((t: any) => ({ ...t, retryT: 0 }));
   if (o.cam) Object.assign(view.cam, o.cam);
   G.dirty = { links: true, power: true, fluid: true };
   G.fnets = []; G.pnets = [];
   resetStats();
+  hist.s = Array.isArray(o.hist) ? o.hist.slice(-hist.keep) : [];
   ensureFresh();
   // restore fluid amounts from members
   rebuildFluids();
@@ -74,11 +77,12 @@ export interface WorldMeta { id: string; name: string; mode: string; size: numbe
 export const slot = { id: null as string | null };
 function db(): Promise<IDBDatabase> {
   return new Promise((res, rej) => {
-    const r = indexedDB.open('beltworks', 2);
+    const r = indexedDB.open('beltworks', 3);
     r.onupgradeneeded = () => {
       const d = r.result;
       if (!d.objectStoreNames.contains('saves')) d.createObjectStore('saves');
       if (!d.objectStoreNames.contains('meta')) d.createObjectStore('meta');
+      if (!d.objectStoreNames.contains('frames')) d.createObjectStore('frames');
     };
     r.onsuccess = () => res(r.result);
     r.onerror = () => rej(r.error);
@@ -141,8 +145,21 @@ export async function loadWorld(id: string): Promise<boolean> {
 export async function deleteWorld(id: string) {
   try {
     const d = await db();
-    await new Promise<void>((res) => { const tx = d.transaction(['saves', 'meta'], 'readwrite'); tx.objectStore('saves').delete(id); tx.objectStore('meta').delete(id); tx.oncomplete = () => res(); });
+    await new Promise<void>((res) => { const tx = d.transaction(['saves', 'meta', 'frames'], 'readwrite'); tx.objectStore('saves').delete(id); tx.objectStore('meta').delete(id); tx.objectStore('frames').delete(id); tx.oncomplete = () => res(); });
   } catch { }
+}
+// ---- timelapse frames: one small image of the factory every few minutes (at most 120, thinned evenly)
+export async function addFrame(id: string, url: string) {
+  try {
+    const d = await db();
+    const list: string[] = (await req(d.transaction('frames', 'readonly').objectStore('frames').get(id))) || [];
+    list.push(url);
+    const thin = list.length > 120 ? list.filter((_, i) => i % 2 === 0 || i === list.length - 1) : list;
+    await new Promise<void>((res, rej) => { const tx = d.transaction('frames', 'readwrite'); tx.objectStore('frames').put(thin, id); tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); });
+  } catch (e) { console.warn('timelapse frame not saved', e); }
+}
+export async function getFrames(id: string): Promise<string[]> {
+  try { const d = await db(); return (await req(d.transaction('frames', 'readonly').objectStore('frames').get(id))) || []; } catch { return []; }
 }
 export function exportSave() {
   const blob = new Blob([JSON.stringify(serialize())], { type: 'application/json' });

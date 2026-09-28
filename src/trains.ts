@@ -171,6 +171,10 @@ export function updateTrains(dt: number) {
   const occ = G.trainOcc;
   occ.clear();
   for (const t of G.trains) { for (const c of t.cells) occ.set(c, t.id); if (t.route.length && t.frac > 0) occ.set(t.route[0], t.id); }
+  if (G.railRev !== blocksRev && G.L) computeBlocks();
+  blockOcc.clear();
+  for (const [c, id] of occ) { const b = blocks.get(c); if (b !== undefined) { let st = blockOcc.get(b); if (!st) blockOcc.set(b, st = new Set()); st.add(id); } }
+  releaseReservations();
   for (const t of G.trains) {
     if (!t.running) { t.v = 0; if (t.frac === 0) t.state = 'stopped'; }
     if (!t.sched.length) { t.state = t.running ? 'noschedule' : 'stopped'; continue; }
@@ -195,6 +199,13 @@ export function updateTrains(dt: number) {
           break;
         }
         t.blockT = 0;
+        const tt = t as any;
+        if (t.frac === 0 && !canEnter(t)) {   // red signal ahead
+          t.v = 0; tt.sigWait = true; tt.sigT = (tt.sigT || 0) + dt;
+          if (tt.sigT > 45) { tt.sigT = 0; t.state = 'idle'; t.waitT = 99; }
+          break;
+        }
+        tt.sigWait = false; tt.sigT = 0;
         if (!t.running) { t.v = Math.max(0, t.v - DEC * 2 * dt); if (t.v === 0) break; }
         occ.set(nxt, t.id);
         const left = t.route.length - t.frac;
@@ -208,6 +219,7 @@ export function updateTrains(dt: number) {
           if (t.route.length) {
             const w2 = occ.get(t.route[0]);
             if (w2 !== undefined && w2 !== t.id) { t.frac = 0; t.v = 0; break; }
+            if (!canEnter(t)) { t.frac = 0; t.v = 0; break; }
             occ.set(t.route[0], t.id);
           }
         }
@@ -415,4 +427,91 @@ export function addTrainToLine(line: Line, skipCountCheck = false): string | nul
   G.trains.push(t);
   G.fx.sfx('place');
   return null;
+}
+
+// ---------------------------------------------------------------------------
+// Signals. A rail tile can carry a signal (rail.sig: 1 = block signal, 2 = path signal). Signal tiles split
+// the track into blocks. Before a train passes a signal it must reserve what lies beyond it:
+//  - block signal: the whole next block, which must be empty;
+//  - path signal: just the tiles its route uses in that block, so trains can cross a junction together.
+let blocks = new Map<number, number>(), blocksRev = -1;
+const blockRes = new Map<number, { t: number; entered: boolean; since: number }>();
+const tileRes = new Map<number, { t: number; entered: boolean; since: number }>();
+const blockOcc = new Map<number, Set<number>>();
+function computeBlocks() {
+  blocks = new Map(); blocksRev = G.railRev; blockRes.clear(); tileRes.clear();
+  let id = 0;
+  for (const r of G.L.rails) {
+    const s0 = r.y * W + r.x;
+    if (r.sig || blocks.has(s0)) continue;
+    id++; blocks.set(s0, id);
+    const st = [s0];
+    while (st.length) {
+      const c = st.pop()!, rc = railAt(c);
+      if (!rc) continue;
+      const sides = railSides(rc.pairs);
+      for (let s = 0; s < 4; s++) {
+        if (!(sides & (1 << s))) continue;
+        const n = (ty(c) + DY[s]) * W + tx(c) + DX[s], rn = railAt(n);
+        if (!rn || rn.sig || blocks.has(n) || !(railSides(rn.pairs) & (1 << opp(s)))) continue;
+        blocks.set(n, id); st.push(n);
+      }
+    }
+  }
+}
+export const blockAt = (i: number) => blocks.get(i);
+/** red if the track next to this signal is taken */
+export function signalRed(i: number): boolean {
+  for (let s = 0; s < 4; s++) {
+    const b = blocks.get((ty(i) + DY[s]) * W + tx(i) + DX[s]);
+    if (b !== undefined && (blockOcc.has(b) || blockRes.has(b))) return true;
+  }
+  return false;
+}
+/** may train t move onto its next tile? (reserves what it needs when it may) */
+function canEnter(t: Train): boolean {
+  const tile = t.route[0], r = railAt(tile);
+  if (!r || !r.sig) return true;
+  const after = t.route[1];
+  if (after === undefined) return true;
+  const B = blocks.get(after);
+  if (B === undefined) return true;
+  const mine = (x?: { t: number }) => !x || x.t === t.id;
+  const now = G.S.time;
+  const otherIn = [...(blockOcc.get(B) || [])].some(id => id !== t.id);
+  if (r.sig === 1) {
+    if (otherIn || !mine(blockRes.get(B))) return false;
+    for (const [ti, v] of tileRes) if (v.t !== t.id && blocks.get(ti) === B) return false;
+    if (!blockRes.has(B)) blockRes.set(B, { t: t.id, entered: false, since: now });
+    return true;
+  }
+  // path signal: only the tiles on our route inside this block
+  if (!mine(blockRes.get(B))) return false;
+  const path: number[] = [];
+  for (let k = 1; k < t.route.length && blocks.get(t.route[k]) === B; k++) path.push(t.route[k]);
+  for (const c of path) {
+    const o = G.trainOcc.get(c);
+    if ((o !== undefined && o !== t.id) || !mine(tileRes.get(c))) return false;
+  }
+  for (const c of path) if (!tileRes.has(c)) tileRes.set(c, { t: t.id, entered: false, since: now });
+  return true;
+}
+/** drop reservations once a train has passed through (or never came) */
+function releaseReservations() {
+  const cellsOf = new Map<number, Set<number>>();
+  for (const t of G.trains) cellsOf.set(t.id, new Set(t.cells));
+  const now = G.S.time;
+  for (const [b, v] of blockRes) {
+    const cells = cellsOf.get(v.t);
+    if (!cells) { blockRes.delete(b); continue; }
+    let inside = false; for (const c of cells) if (blocks.get(c) === b) { inside = true; break; }
+    if (inside) v.entered = true;
+    else if (v.entered || now - v.since > 60) blockRes.delete(b);
+  }
+  for (const [c, v] of tileRes) {
+    const cells = cellsOf.get(v.t);
+    if (!cells) { tileRes.delete(c); continue; }
+    if (cells.has(c)) v.entered = true;
+    else if (v.entered || now - v.since > 60) tileRes.delete(c);
+  }
 }
