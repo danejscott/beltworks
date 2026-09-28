@@ -1,4 +1,5 @@
-import { BLD, BDef, Cost, ITEMS, RECIPES, START_UNLOCKS } from './data';
+import { applyGameLength, BLD, BDef, Cost, ITEMS, RECIPES, START_UNLOCKS } from './data';
+import { diffOf, tierMult } from './difficulty';
 import { genTerrain, H, HX, HY, isLand, isWater, ResNode, setWorldSize, TT, W } from './terrain';
 import { Feat, genFeatures } from './features';
 import { DX, DY, opp } from './util';
@@ -22,6 +23,7 @@ export interface State {
   truckSeq: number; lineSeq: number;
   genV?: number;                // terrain generator version (2 = randomized)
   portsV?: number;              // 1 = world uses single input/output ports
+  lenV?: number;                // 1 = milestone amounts scale with difficulty (game length)
 }
 export interface Line { id: number; a: number; b: number; cells: number[]; split: number }
 export interface Truck {
@@ -39,7 +41,7 @@ export interface Train {
 /** floors: 0 = ground, 1..3 = on foundations; LH = height of one floor in world units */
 export const NL = 4, LH = 4;
 const TALL: Record<string, number> = { elevator: 13, tower: 5, hub: 4.5 };
-const GROUND_ONLY = new Set(['miner', 'extractor', 'harvester', 'rail', 'train', 'wagon', 'station', 'tstation', 'hub', 'elevator', 'drone', 'foundation']);
+const GROUND_ONLY = new Set(['miner', 'extractor', 'harvester', 'rail', 'train', 'wagon', 'station', 'tstation', 'hub', 'elevator', 'drone', 'foundation', 'outpost']);
 export const groundOnly = (type: string) => { const d = BLD[type]; return GROUND_ONLY.has(d.kind) || !!(d.on && d.on !== 'water'); };
 export const G = {
   S: null as State,
@@ -119,7 +121,7 @@ export function chopTree(x: number, y: number, give = true) {
   const i = y * W + x;
   if (!G.trees[i]) return 0;
   G.trees[i] = 0; G.treeRev++;
-  const S = G.S, mean = S.mode === 'hard' ? 1200 : S.mode === 'creative' ? 60 : 150;
+  const S = G.S, mean = diffOf(S.mode).regrow;
   S.regrow.push(i, S.time + mean * (0.5 + Math.random()));
   const n = give ? (G.S.shop.pick ? 10 : 5) : 0;
   if (n) addInv('wood', n);
@@ -250,6 +252,7 @@ export function place(type: string, x: number, y: number, rot: number, o: { free
     case 'rail': e.pairs = 0; break;
     case 'station': e.store = {}; e.tot = 0; e.mode = 'load'; e.name = 'Station ' + (++G.S.stationSeq); e.rr = 0; e.req = 0; break;
     case 'tstation': e.store = {}; e.tot = 0; e.mode = 'load'; e.name = 'Truck Stop ' + (++G.S.stationSeq); e.rr = 0; e.req = 0; break;
+    case 'outpost': e.name = 'Outpost ' + (++G.S.stationSeq); break;
     case 'drone': e.target = 0; e.outbox = {}; e.obTot = 0; e.inbox = {}; e.ibTot = 0; e.rr = 0; e.req = 0; e.dr = { s: 'home', t: 0, cargo: {}, n: 0 }; e.name = 'Port ' + (++G.S.stationSeq); break;
   }
   const g = gridOf(z);
@@ -393,12 +396,12 @@ export { opp, DX, DY };
 export const REGROW_MEAN: Record<string, number> = { easy: 150, hard: 1200, creative: 60 };
 export function newState(seed: number, o: { name?: string; mode?: string; size?: number; dayNight?: boolean } = {}): State {
   const mode = o.mode || 'easy';
-  const inv: Record<string, number> = mode === 'easy' ? { iron_plate: 200, iron_rod: 140, wood: 60 } : mode === 'hard' ? { iron_plate: 80, iron_rod: 50, wood: 10 } : {};
+  const inv: Record<string, number> = { ...diffOf(mode).kit };
   const S: State = {
     seed, inv, unlocked: new Set(START_UNLOCKS), done: new Set(), maxTier: 0, elev: {}, time: 0, won: false,
     flags: {}, delivered: {}, speed: 1, points: 0, coupons: 0, couponsEarned: 0, shop: {}, stationSeq: 0, trainSeq: 0,
     name: o.name || 'New World', mode, size: o.size || 1024, regrow: [],
-    dayNight: o.dayNight !== false, genV: 2, portsV: 1, lines: [], looted: [], alts: [], altOffer: null, ach: {}, made: {}, discN: null, discF: null, truckSeq: 0, lineSeq: 0,
+    dayNight: o.dayNight !== false, genV: 3, portsV: 1, lenV: 1, lines: [], looted: [], alts: [], altOffer: null, ach: {}, made: {}, discN: null, discF: null, truckSeq: 0, lineSeq: 0,
   };
   if (mode === 'creative') {
     for (const k in BLD) S.unlocked.add(k);
@@ -439,6 +442,8 @@ export function resetWorld(seed: number, S?: State) {
   if (S.discF === undefined) S.discF = null;
   S.truckSeq = S.truckSeq || 0; S.lineSeq = S.lineSeq || 0;
   setWorldSize(S.size);
+  const mode = S.mode;
+  applyGameLength(tier => tierMult(mode, tier), !S.lenV);
   const t = genTerrain(seed, S.mode, S.genV || 1);
   const f = genFeatures(seed, t.tiles, t.trees, t.nodeGrid);
   G.feats = f.feats; G.featGrid = f.grid;

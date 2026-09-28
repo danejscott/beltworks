@@ -14,6 +14,14 @@ import { Ent, G, Truck } from './world';
 import { closeModal, costHTML, flyTo, ic, openModal, openTrain, openTruck, status, toast } from './ui';
 
 export const plannerAllowed = () => G.S.mode === 'easy' || G.S.mode === 'creative';
+export const fastTravelAllowed = () => G.S.mode !== 'hard';
+/** the HUB plus every Outpost, for the travel list */
+export function travelPoints(): { name: string; x: number; y: number; e: Ent }[] {
+  const out: { name: string; x: number; y: number; e: Ent }[] = [];
+  if (G.L && G.L.hub) out.push({ name: '🏠 HUB', x: G.L.hub.x + 2, y: G.L.hub.y + 2, e: G.L.hub });
+  for (const o of (G.L && G.L.outposts) || []) out.push({ name: '⛺ ' + o.name, x: o.x + 1.5, y: o.y + 1.5, e: o });
+  return out;
+}
 let pendingSite: Feat | null = null;
 export function openSite(f: Feat) { pendingSite = f; openModal('site'); }
 const pl = { item: 'reinforced_plate', rate: 10 };
@@ -100,6 +108,20 @@ export const EXTRA_MODALS: Record<string, () => [string, string]> = {
     h += `<p>⚡ Total power: <b>${fmtR(p.power)} MW</b> (plus miners and extractors). Belts: Mk1 carries 240/min.</p><p class="sm dim">Uses standard recipes, normal nodes and 100% clock speed.</p>`;
     return ['📐 Production Planner', h];
   },
+  travel: () => {
+    const pts = travelPoints();
+    let h = '';
+    if (!fastTravelAllowed()) h += '<p class="warn">Fast travel is turned off in <b>Hard</b> mode — pan the camera there yourself. (<kbd>G</kbd> still takes you home.)</p>';
+    else h += '<p class="sm" style="margin-top:0">Jump the camera straight to your HUB or any Outpost. Build Outposts (Transport tab) in far-away regions to add more stops. Keys <kbd>1</kbd>–<kbd>9</kbd> pick a stop.</p>';
+    h += '<div class="cgrid">';
+    pts.forEach((p, i) => {
+      const d = Math.round(Math.hypot(p.x - view.cam.x, p.y - view.cam.y));
+      const n = p.e.pnet ? `${fmtR(p.e.pnet.cap)} MW grid` : 'no grid';
+      h += `<div class="ccard"><div><b>${esc(p.name)}</b><div class="sm">${d < 8 ? 'You are here' : d + ' tiles away'} · ${n}</div></div><div class="cb"><button class="${fastTravelAllowed() ? 'go' : ''}" data-act="travel:${i}" ${fastTravelAllowed() ? '' : 'disabled'}>${i < 9 ? `<kbd>${i + 1}</kbd> ` : ''}Travel</button></div></div>`;
+    });
+    if (pts.length < 2) h += '<div class="dim" style="padding:8px">No Outposts yet — they unlock with Logistics Mk2 (Tier 1).</div>';
+    return ['🧭 Fast Travel', h + '</div>'];
+  },
   ach: () => {
     const S = G.S, got = ACHS.filter(a => S.ach[a.id]).length;
     let h = `<p style="margin-top:0"><b>${got}</b> / ${ACHS.length} unlocked</p><div class="bar" style="max-width:420px"><i style="width:${got / ACHS.length * 100}%"></i></div><div class="achg">`;
@@ -143,6 +165,7 @@ export function extraAct(cmd: string, a: string, b: string): boolean {
     case 'kremove': if (k) { removeTruck(k); view.inspectTruck = null; } return true;
     case 'ksched': if (k) { const tgt = G.ents.get(+a); if (tgt && !k.sched.includes(tgt.id)) k.sched.push(tgt.id); } return true;
     case 'kdel': if (k) { k.sched.splice(+a, 1); if (k.si >= k.sched.length) k.si = 0; k.state = 'idle'; k.retryT = 0; } return true;
+    case 'travel': { const p = travelPoints()[+a]; if (p && fastTravelAllowed()) { flyTo(p.x, p.y); closeModal(); toast(`🧭 ${esc(p.name)}`, ''); sfx('click'); } return true; }
     case 'dn': S.dayNight = !S.dayNight; sfx('click'); toast(S.dayNight ? '🌙 Day/night cycle on' : '☀️ Day/night cycle off (always daytime)', ''); return true;
   }
   return false;
@@ -171,6 +194,11 @@ export function stationExtra(e: Ent): string {
     h += `<div class="row">⇄ ${o ? esc(o.name) : '?'} · ${lineTrains(l).length} train${lineTrains(l).length === 1 ? '' : 's'} <button class="mini go" data-act="lineadd:${l.id}">+ Train</button></div>`;
   }
   return h + `<div class="sm">Loops are one-way, so trains follow each other safely. Cost per train: ${costHTML({ ...BLD.locomotive.cost })} + wagon.</div>`;
+}
+export function outpostStatic(e: Ent): string {
+  let h = `<div class="sec">Name</div><input type="text" value="${esc(e.name)}" data-input="name" maxlength="24" style="width:100%">`;
+  h += `<div class="sm" style="margin-top:6px">Gives ${BLD.outpost.mw} MW of free power inside its area and wires to nearby poles. ${fastTravelAllowed() ? 'Press <kbd>O</kbd> to fast-travel between your HUB and Outposts.' : 'Fast travel is off in Hard mode.'}</div>`;
+  return h;
 }
 export function tstationStatic(e: Ent): string {
   let h = `<div class="sec">Name</div><input type="text" value="${esc(e.name)}" data-input="name" maxlength="24" style="width:100%">`;

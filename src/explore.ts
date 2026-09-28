@@ -37,7 +37,7 @@ export const discoveredCount = () => G.S.discN ? G.S.discN.length : 0;
 // ---------------------------------------------------------------------------
 // Scanner
 export const scanRange = () => 180 + 70 * G.S.maxTier;
-export const SCAN_TARGETS = ['iron_ore', 'copper_ore', 'limestone', 'coal', 'caterium_ore', 'raw_quartz', 'bauxite', 'crude_oil', 'geyser', 'site', 'crystal'];
+export const SCAN_TARGETS = ['iron_ore', 'copper_ore', 'limestone', 'coal', 'caterium_ore', 'raw_quartz', 'bauxite', 'sulfur', 'crude_oil', 'geyser', 'site', 'crystal'];
 export const scanName = (k: string) => k === 'site' ? 'Crash Sites' : k === 'crystal' ? 'Power Crystals' : k === 'geyser' ? 'Geysers' : k === 'crude_oil' ? 'Oil' : ITEMS[k].n;
 const SCAN_COL: Record<string, string> = { geyser: '#ff7040', crude_oil: '#b080e0', site: '#ffb347', crystal: '#6ec8ff' };
 export const scanCol = (k: string) => SCAN_COL[k] || ITEMS[k].c;

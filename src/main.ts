@@ -6,6 +6,9 @@ import { initDiscovery, tickExplore } from './explore';
 import { tickAchievements } from './achievements';
 import * as TK from './trucks';
 import * as EX from './explore';
+import * as PL from './planner';
+import * as TER from './terrain';
+import * as DATA from './data';
 import { buildTerrain, T3, terrainTick, terrainTileChanged } from './r3/terrain3d';
 import { icon3D, init3D, Label3, reset3D, update3D } from './r3/world3d';
 import { hexCol, rgba } from './gl';
@@ -218,7 +221,7 @@ async function boot() {
   document.addEventListener('visibilitychange', () => { if (document.hidden && slot.id) saveGame(); });
   requestAnimationFrame(t => { last = t / 1000; requestAnimationFrame(frame); });
   (window as any).G = G; // debugging aid
-  (window as any).BW = { frame: (n = 1, dt = 1 / 60) => { for (let i = 0; i < n; i++) { dbgT += dt * 1000; frame(dbgT); } }, T3, G, W: W_, SIM, TR, TK, EX, INP, PR, UI, view, DR, CORE };
+  (window as any).BW = { frame: (n = 1, dt = 1 / 60) => { for (let i = 0; i < n; i++) { dbgT += dt * 1000; frame(dbgT); } }, T3, PL, DATA, TER, G, W: W_, SIM, TR, TK, EX, INP, PR, UI, view, DR, CORE };
 }
 boot();
 export { audioInit, ITEMS, parts, rgba };

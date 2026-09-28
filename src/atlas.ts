@@ -230,7 +230,7 @@ export function buildAtlas() {
   // trees
   for (let v = 0; v < 4; v++) add('tree' + v, 48, 48, (g) => treeSprite(g, v));
   // nodes
-  for (const res of ['iron_ore', 'copper_ore', 'limestone', 'coal', 'caterium_ore', 'raw_quartz', 'bauxite', 'crude_oil', 'geyser']) add('n:' + res, 64, 64, (g) => nodeSprite(g, res));
+  for (const res of ['iron_ore', 'copper_ore', 'limestone', 'coal', 'caterium_ore', 'raw_quartz', 'bauxite', 'sulfur', 'crude_oil', 'geyser']) add('n:' + res, 64, 64, (g) => nodeSprite(g, res));
   // vehicles
   add('loco', 64, 28, (g) => { rrect(g, 2, 2, 60, 24, 6); g.fillStyle = '#7a2a20'; g.fill(); rrect(g, 4, 4, 56, 20, 5); g.fillStyle = '#d0503a'; g.fill(); g.fillStyle = '#2a3440'; rrect(g, 44, 6, 12, 16, 3); g.fill(); g.fillStyle = '#f5d060'; g.fillRect(58, 8, 3, 4); g.fillRect(58, 16, 3, 4); g.fillStyle = '#5a1a14'; for (let x = 10; x < 40; x += 8) g.fillRect(x, 7, 3, 14); });
   add('wagon', 64, 28, (g) => { rrect(g, 3, 3, 58, 22, 4); g.fillStyle = '#3a342e'; g.fill(); rrect(g, 5, 5, 54, 18, 3); g.fillStyle = '#8a7a6a'; g.fill(); g.strokeStyle = '#5a4a3a'; g.lineWidth = 2; for (let x = 12; x < 56; x += 10) { g.beginPath(); g.moveTo(x, 5); g.lineTo(x, 23); g.stroke(); } });

@@ -325,7 +325,7 @@ function rebuildStatic(real: number) {
   SL.end();
   // power lines
   const pts: number[] = [];
-  const wz = (e: Ent) => (e.type === 'tower' ? 4.45 : e.type === 'pole2' ? 2.3 : e.type === 'hub' ? 3.7 : 1.82) + (e.z || 0) * LH;
+  const wz = (e: Ent) => (e.type === 'outpost' ? 3.3 : e.type === 'tower' ? 4.45 : e.type === 'pole2' ? 2.3 : e.type === 'hub' ? 3.7 : 1.82) + (e.z || 0) * LH;
   const wxy = (e: Ent) => e.type === 'hub' ? [e.x + e.w / 2 + 1.3, e.y + e.h / 2 - 1.3] : [e.x + e.w / 2, e.y + e.h / 2];
   for (const p of G.L.poles) for (const q of p.wires || []) {
     if (!inR(p.x, p.y, 70) && !inR(q.x, q.y, 70)) continue;
@@ -531,6 +531,7 @@ export function update3D(time: number, real: number, dt: number, labels: Label3[
     if (p.name && near) labels.push({ x: p.x + 1.5, y: p.y + 1.5, z: 2.2, t: p.name, c: '#a8d8ff' });
   }
   for (const s of G.L.stations) if (near) labels.push({ x: s.x + 1.5, y: s.y + 1.5, z: 2.9, t: s.name + (s.mode === 'load' ? ' ⬆' : ' ⬇'), c: '#ffe08a' });
+  for (const s of G.L.outposts || []) labels.push({ x: s.x + 1.5, y: s.y + 1.5, z: 3.9, t: '⛺ ' + s.name, c: '#ffc070' });
   for (const s of G.L.tstations) if (near) labels.push({ x: s.x + 1.5, y: s.y + 1.5, z: 2.6, t: s.name + (s.mode === 'load' ? ' ⬆' : ' ⬇'), c: '#ffd0a0' });
   if (G.L.elevator) { const e = G.L.elevator; labels.push({ x: e.x + 2.5, y: e.y + 2.5, z: 13.5, t: 'SPACE ELEVATOR', c: '#e0d4ff' }); }
   if (G.L.hub) { const e = G.L.hub; if (near) labels.push({ x: e.x + 2, y: e.y + 2, z: 4.3, t: 'HUB', c: '#ffd08a' }); }

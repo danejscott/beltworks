@@ -15,7 +15,7 @@ export const T3 = {
   tex: null as THREE.DataTexture,
   data: null as Uint8Array,
   group: null as THREE.Group,
-  uniforms: { uTiles: { value: null as THREE.Texture }, uTime: { value: 0 }, uSize: { value: new THREE.Vector2(W, H) }, uCamT: { value: new THREE.Vector2() }, uTreeR: { value: 100 } },
+  uniforms: { uTiles: { value: null as THREE.Texture }, uTime: { value: 0 }, uSize: { value: new THREE.Vector2(W, H) }, uCamT: { value: new THREE.Vector2() }, uTreeR: { value: 100 }, uSnow: { value: 10.8 } },
   dirtyT: 0,
   mat: null as THREE.Material,
 };
@@ -36,7 +36,7 @@ function chunkGeo(ci: number, cj: number, st: number) {
 }
 
 const GLSL_COMMON = `
-uniform sampler2D uTiles; uniform float uTime; uniform vec2 uSize; uniform vec2 uCamT; uniform float uTreeR;
+uniform sampler2D uTiles; uniform float uTime; uniform vec2 uSize; uniform vec2 uCamT; uniform float uTreeR; uniform float uSnow;
 varying vec3 vW;
 float h21(vec2 p){ p = fract(p*vec2(123.34, 456.21)); p += dot(p, p+45.32); return fract(p.x*p.y); }
 float vn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
@@ -116,6 +116,9 @@ export function buildTerrain() {
   if (T3.group) { C.scene.remove(T3.group); T3.group.traverse(o => { if ((o as any).geometry) (o as any).geometry.dispose(); }); }
   T3.hts = computeHeights();
   T3.hts0 = T3.hts.slice(); T3.cut = new Set(); T3.cutSig = '';
+  // snow caps only the top of the mountains, however tall this world's ranges are
+  { const hh: number[] = []; for (let i = 0; i < T3.hts.length; i += 3) if (T3.hts[i] > 2) hh.push(T3.hts[i]); hh.sort((a, b) => a - b);
+    T3.uniforms.uSnow.value = hh.length > 50 ? Math.max(9, hh[Math.floor(hh.length * 0.8)]) : 10.8; }
   // tile texture
   T3.data = new Uint8Array(W * H * 4);
   for (let i = 0; i < W * H; i++) { T3.data[i * 4] = G.tiles[i]; T3.data[i * 4 + 1] = G.trees[i] ? 255 : 0; T3.data[i * 4 + 3] = 255; }
@@ -190,7 +193,7 @@ vec3 terrainColor(){
   // high rock turns pale grey, then snow caps the peaks (thicker on flatter ground)
   if (vW.y > 4.0) {
     c = mix(c, vec3(0.46,0.45,0.44) * (0.85 + 0.3 * vn(w * 2.0)), smoothstep(4.0, 9.0, vW.y) * 0.55);
-    float line = 10.8 + (vn(w * 0.25) - 0.5) * 3.0 + (vn(w * 1.7) - 0.5) * 1.0;
+    float line = uSnow + (vn(w * 0.25) - 0.5) * 3.0 + (vn(w * 1.7) - 0.5) * 1.0;
     float sn = smoothstep(line, line + 1.2, vW.y) * (1.0 - smoothstep(0.62, 0.9, slope) * 0.75);
     c = mix(c, vec3(0.93,0.95,0.98) * (0.93 + 0.07 * vn(w * 6.0)), clamp(sn, 0.0, 1.0));
   }

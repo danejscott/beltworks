@@ -3,18 +3,15 @@ import { audioInit, sfx } from './audio';
 import { deleteWorld, importSave, listWorlds, WorldMeta } from './save';
 import { SIZES } from './terrain';
 import { TIER_NAMES } from './data';
+import { DIFF } from './difficulty';
 import { $, esc } from './util';
 
 export const title = { open: false };
 export interface NewWorldOpts { name: string; size: number; mode: string; dayNight: boolean }
 let handlers: { play: (id: string) => void; create: (o: NewWorldOpts) => void; imported: () => void };
-let sel = { size: 'medium', mode: 'easy', dn: 'on' };
+let sel = { size: 'medium', mode: 'normal', dn: 'on' };
 
-export const MODES: Record<string, { label: string; icon: string; desc: string }> = {
-  easy: { label: 'Easy', icon: '🌱', desc: 'Rich resources, lots of pure nodes, a generous starting kit. Trees grow back quickly.' },
-  hard: { label: 'Hard', icon: '⛏️', desc: 'Scarce, mostly impure nodes and a small starting kit. Trees take ages to grow back.' },
-  creative: { label: 'Creative', icon: '🎨', desc: 'Everything unlocked, unlimited materials, trees regrow fast. Just build.' },
-};
+export const MODES = DIFF;
 const ADJ = ['Rusty', 'Copper', 'Iron', 'Misty', 'Golden', 'Quiet', 'Windy', 'Sunny', 'Humming', 'Silver', 'Northern', 'Lazy', 'Busy', 'Crimson'];
 const NOUN = ['Valley', 'Ridge', 'Plains', 'Hollow', 'Basin', 'Meadow', 'Outpost', 'Frontier', 'Mesa', 'Harbor', 'Works', 'Crossing', 'Heights', 'Fields'];
 const randName = () => `${ADJ[Math.floor(Math.random() * ADJ.length)]} ${NOUN[Math.floor(Math.random() * NOUN.length)]}`;
@@ -53,7 +50,7 @@ export async function showTitle(h: typeof handlers) {
         <label class="flabel">Map size</label>
         <div class="opts">${Object.entries(SIZES).map(([k, s]) => `<div class="opt ${sel.size === k ? 'sel' : ''}" data-tact="size:${k}"><b>${s.label}</b><span>${s.desc}</span></div>`).join('')}</div>
         <label class="flabel">Difficulty</label>
-        <div class="opts">${Object.entries(MODES).map(([k, m]) => `<div class="opt ${sel.mode === k ? 'sel' : ''}" data-tact="mode:${k}"><b>${m.icon} ${m.label}</b><span>${m.desc}</span></div>`).join('')}</div>
+        <div class="opts two">${Object.entries(MODES).map(([k, m]) => `<div class="opt ${sel.mode === k ? 'sel' : ''}" data-tact="mode:${k}"><b>${m.icon} ${m.label} <span class="hrs">${m.hours}</span></b><span>${m.desc}</span></div>`).join('')}</div>
         <label class="flabel">Day / night cycle</label>
         <div class="opts two">${[['on', '🌗 On', 'A 12-minute day. Solar power only works in daylight.'], ['off', '☀️ Off', 'Always sunny. (You can change this later in the menu.)']].map(([k, l, d]) => `<div class="opt ${sel.dn === k ? 'sel' : ''}" data-tact="dn:${k}"><b>${l}</b><span>${d}</span></div>`).join('')}</div>
         <button class="go big" data-tact="create">Create world</button>

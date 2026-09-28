@@ -38,7 +38,7 @@ export function ensureFresh() {
 }
 
 export function rebuildLinks() {
-  const L: any = { belts: [], order: [], machines: [], miners: [], extractors: [], harvesters: [], logi: [], gens: [], bats: [], poles: [], stations: [], tstations: [], drones: [], sinks: [], pipes: [], rails: [], cnt: Object.create(null), powered: [] };
+  const L: any = { outposts: [], belts: [], order: [], machines: [], miners: [], extractors: [], harvesters: [], logi: [], gens: [], bats: [], poles: [], stations: [], tstations: [], drones: [], sinks: [], pipes: [], rails: [], cnt: Object.create(null), powered: [] };
   for (const e of G.ents.values()) {
     const d = BLD[e.type];
     L.cnt[e.type] = (L.cnt[e.type] || 0) + 1;
@@ -55,6 +55,7 @@ export function rebuildLinks() {
       case 'battery': L.bats.push(e); break;
       case 'pole': L.poles.push(e); break;
       case 'hub': L.poles.push(e); L.hub = e; break;
+      case 'outpost': L.poles.push(e); L.outposts.push(e); break;
       case 'station': L.stations.push(e); break;
       case 'tstation': L.tstations.push(e); break;
       case 'drone': L.drones.push(e); break;
@@ -163,10 +164,10 @@ export function rebuildPower() {
   const netOf = (poleId: number) => {
     const r = find(poleId);
     let n = nets.get(r);
-    if (!n) { n = { id: r, gens: [], cons: [], bats: [], poles: 0, cap: 0, demand: 0, lastDemand: 0, sat: 1, load: 0, batFlow: 0, hist: [], hub: null }; nets.set(r, n); }
+    if (!n) { n = { id: r, outposts: 0, gens: [], cons: [], bats: [], poles: 0, cap: 0, demand: 0, lastDemand: 0, sat: 1, load: 0, batFlow: 0, hist: [], hub: null }; nets.set(r, n); }
     return n;
   };
-  for (const p of poles) { const n = netOf(p.id); n.poles++; p.pnet = n; if (BLD[p.type].kind === 'hub') n.hub = p; }
+  for (const p of poles) { const n = netOf(p.id); n.poles++; p.pnet = n; if (BLD[p.type].kind === 'hub') n.hub = p; else if (BLD[p.type].kind === 'outpost') n.outposts++; }
   const attach = (e: Ent) => {
     for (let j = 0; j < e.h; j++) for (let i = 0; i < e.w; i++) {
       const id = cov[(e.y + j) * W + e.x + i];
@@ -201,6 +202,7 @@ function updatePower(dt: number) {
   for (const n of G.pnets) {
     let cap = 0;
     if (n.hub) cap += BLD.hub.mw;
+    cap += (n.outposts || 0) * BLD.outpost.mw;
     for (const g of n.gens) { g.avail = genAvail(g); cap += g.avail; }
     const demand = n.demand;
     n.lastDemand = demand; n.demand = 0;

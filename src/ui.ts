@@ -12,7 +12,7 @@ import { $, clamp, DX, DY, esc, fmt, fmtR } from './util';
 import { s2w, view } from './view';
 import { pickAt } from './r3/world3d';
 import { addInv, canAfford, count, def, Ent, entAt, G, hasFloor, missingText, nodeAt, remove, rotateEnt, Train, Truck } from './world';
-import { EXTRA_MODALS, extraAct, extraInput, LIVE_MODALS, plannerAllowed, setRerender, stationExtra, truckDyn, truckStatic, tstationDyn, tstationStatic } from './ui2';
+import { EXTRA_MODALS, extraAct, extraInput, LIVE_MODALS, outpostStatic, plannerAllowed, setRerender, stationExtra, travelPoints, truckDyn, truckStatic, tstationDyn, tstationStatic } from './ui2';
 import { clockText, cycleOn, solarFactor } from './daynight';
 import { locateHome, scanCol } from './explore';
 
@@ -260,6 +260,7 @@ function inspStatic(e: Ent): string {
     h += stationExtra(e);
   }
   if (d.kind === 'tstation') h += tstationStatic(e);
+  if (d.kind === 'outpost') h += outpostStatic(e);
   if (d.kind === 'drone') {
     const ports = G.L.drones.filter((p: Ent) => p !== e);
     h += `<div class="sec">Name</div><input type="text" value="${esc(e.name)}" data-input="name" maxlength="24" style="width:100%">`;
@@ -335,7 +336,7 @@ function inspDyn(e: Ent): string {
       break;
     }
     case 'battery': h += `<div>Stored: <b>${fmtR(e.stored)}</b> / ${d.cap} MJ (${Math.round(e.stored / d.cap * 100)}%)</div>` + netHTML(e.pnet); break;
-    case 'pole': case 'hub':
+    case 'pole': case 'hub': case 'outpost':
       if (d.kind === 'hub') {
         h += '<div class="sm">Delivered per minute:</div>';
         const ks = ITEM_KEYS.filter(k => rate(stats.D, k) > 0);
@@ -431,6 +432,8 @@ export function showUnlocks(m: any, tierUp: boolean) {
 }
 let bpPending: BP | null = null;
 export const modalOpen = () => !!modalKind;
+export const currentModal = () => modalKind;
+export function travelTo(i: number) { act('travel', String(i), ''); }
 export function openModal(k: string) { if (k === 'stats' && G.S) G.S.flags.openedStats = 1; modalKind = k; $('#modal').classList.remove('hidden'); ($('#mbody') as any).dataset.h = ''; renderModal(); }
 export function closeModal() { modalKind = null; $('#modal').classList.add('hidden'); }
 export function toggleModal(k: string) { if (modalKind === k) closeModal(); else openModal(k); }
@@ -505,13 +508,11 @@ function renderModal() {
     const bp = bpPending;
     h = bp ? `<p>${bp.w}×${bp.h} area · ${bp.ents.length} pieces · costs ${costHTML(bpCost(bp))}</p><input id="bpn" type="text" maxlength="30" placeholder="Name (e.g. Iron Plate Line)" style="width:100%;font-size:15px"><div class="row" style="margin-top:10px"><button class="go" data-act="bpsave">Save & place</button><button data-act="bpjust">Just place it</button></div>` : '';
   } else if (k === 'inv') {
-    t = 'Inventory';
-    h = '<div class="invgrid">';
-    for (const kk of ITEM_KEYS) { const n = S.inv[kk] || 0; if (n < 1 || isFluid(kk)) continue; h += `<div class="invc" data-tip="item:${kk}">${ic(kk, 36)}<b>${fmt(n)}</b><span class="sm">${ITEMS[kk].n}</span></div>`; }
-    h += '</div>';
+    t = '🎒 Inventory';
+    h = inventoryHTML();
   } else if (k === 'map') {
     t = 'World Map';
-    h = `<div class="maprow"><canvas id="bigmap" width="760" height="760"></canvas><div class="legend">${['iron_ore', 'copper_ore', 'limestone', 'coal', 'caterium_ore', 'raw_quartz', 'bauxite', 'crude_oil', 'geyser'].map(r => `<label><input type="checkbox" data-input="mapf:${r}" ${mapFilter[r] !== false ? 'checked' : ''}> ${r === 'geyser' ? '<span class="dot" style="background:#ff7040"></span>Geyser' : ic(r, 16) + ITEMS[r].n}</label>`).join('')}<button class="go" data-act="home" style="width:100%;margin-bottom:8px">🏠 Locate my HUB <kbd>G</kbd></button><p class="sm">Click the map to fly there. Better (gold ring = pure) nodes are further from the HUB. Only nodes you have <b>discovered</b> are shown — explore, or use the Scanner (<kbd>N</kbd>). 🛸 crash site · 💎 power crystal.</p></div></div>`;
+    h = `<div class="maprow"><canvas id="bigmap" width="760" height="760"></canvas><div class="legend">${['iron_ore', 'copper_ore', 'limestone', 'coal', 'caterium_ore', 'raw_quartz', 'bauxite', 'sulfur', 'crude_oil', 'geyser'].map(r => `<label><input type="checkbox" data-input="mapf:${r}" ${mapFilter[r] !== false ? 'checked' : ''}> ${r === 'geyser' ? '<span class="dot" style="background:#ff7040"></span>Geyser' : ic(r, 16) + ITEMS[r].n}</label>`).join('')}<button class="go" data-act="home" style="width:100%;margin-bottom:8px">🏠 Locate my HUB <kbd>G</kbd></button>${travelPoints().length > 1 ? '<button data-act="open:travel" style="width:100%;margin-bottom:8px">🧭 Fast travel to an Outpost <kbd>O</kbd></button>' : ''}<p class="sm">Click the map to fly there. Better (gold ring = pure) nodes are further from the HUB. Only nodes you have <b>discovered</b> are shown — explore, or use the Scanner (<kbd>N</kbd>). 🛸 crash site · 💎 power crystal.</p></div></div>`;
   } else if (k === 'help') {
     t = 'How to play Beltworks';
     h = HELP;
@@ -529,7 +530,7 @@ function renderModal() {
         <div class="icard"><b>3 · Connect</b><span>Conveyor belts, pipes, power lines, and trains for long distances.</span></div>
         <div class="icard"><b>4 · Unlock</b><span>Deliver parts to the HUB and submit Milestones to unlock new tech.</span></div>
       </div>
-      <p class="sm">Resources live in different environments: <b>plains</b> have iron, copper and limestone; <b>forests</b> have coal and trees; <b>deserts</b> hold oil, quartz and bauxite; the rocky <b>highlands</b> have caterium, bauxite and geysers. Chopped trees grow back ${mode === 'hard' ? 'slowly' : 'over time'}.</p>
+      <p class="sm">Your HUB sits on quiet <b>plains</b> with iron, copper and limestone. Further out, three big regions lie in different directions: a <b>forest</b> (coal, lots of trees), a <b>desert</b> (oil, quartz, caterium, sulfur) and rocky <b>highlands</b> (caterium, sulfur, geysers). The rarest resources, like <b>bauxite</b>, sit near the edges of the map, and the best (pure) nodes are further out too. Growing your factory means reaching across the whole map. The Scanner (<kbd>N</kbd>) helps you find things. Chopped trees grow back ${mode === 'hard' ? 'slowly' : 'over time'}.</p>
       <p class="sm">Difficulty: <b>${mode}</b>${mode === 'creative' ? '. Everything is unlocked and free, so the tutorial is skipped. Have fun!' : '. A short guided tutorial will walk you through your first production line.'}</p>
       <button class="go big" data-act="closeModal">Start building 🚀</button></div>`;
   } else if (k === 'unlock') {
@@ -564,8 +565,67 @@ function renderModal() {
     h = `<div style="text-align:center;padding:20px"><div style="font-size:54px">🚀</div><h2>You did it.</h2><p>Your factory built and launched Project Assembly in <b>${Math.floor(S.time / 60)} minutes</b>, delivering <b>${fmt(tot)}</b> items along the way.</p><p class="dim">Everything is unlocked. Keep building — optimize, go bigger, make it beautiful.</p><button class="go" data-act="closeModal">Keep building</button></div>`;
   }
   $('#mtitle').textContent = t;
-  const mb = $('#mbody'); if (mb.dataset.h !== h) { mb.innerHTML = h; mb.dataset.h = h; }
+  const mb = $('#mbody'); if (mb.dataset.h !== h) { mb.innerHTML = h; mb.dataset.h = h; if (k === 'inv') filterInventory(); }
   if (k === 'map') drawBigMap();
+}
+
+// ---------------------------------------------------------------------------
+// Inventory screen: what you have, grouped, with rates and what your goals still need
+const RAW = new Set(['iron_ore', 'copper_ore', 'limestone', 'coal', 'caterium_ore', 'raw_quartz', 'bauxite', 'sulfur', 'wood']);
+const SPECIAL = new Set(['power_shard', 'amplifier', 'hard_drive']);
+function itemGroup(k: string) {
+  if (RAW.has(k)) return 0;
+  if (SPECIAL.has(k)) return 4;
+  const i = ITEM_KEYS.indexOf(k);
+  if (i < ITEM_KEYS.indexOf('reinforced_plate') || ['compacted_coal', 'empty_canister', 'packaged_water', 'packaged_fuel', 'packaged_oil'].includes(k)) return k.endsWith('_ingot') ? 1 : 2;
+  if (i < ITEM_KEYS.indexOf('heavy_modular_frame') || k === 'heat_sink' || k === 'cooling_system') return 3;
+  return 5;
+}
+const GROUP_NAMES = ['⛏ Raw resources', '🔥 Ingots', '🔩 Basic parts', '⚙️ Components', '💎 Special', '🚀 High-tech'];
+const GROUP_ORDER = [0, 1, 2, 3, 5, 4];
+let invQuery = '';
+function inventoryHTML() {
+  const S = G.S;
+  // everything the current goals still need
+  const need: Record<string, number> = {};
+  for (const m of MILESTONES) if (m.tier <= S.maxTier && !S.done.has(m.id)) for (const kk in m.req) need[kk] = (need[kk] || 0) + m.req[kk] - (m.phase ? (S.elev[kk] || 0) : 0);
+  let total = 0, kinds = 0;
+  for (const kk of ITEM_KEYS) { const n = Math.floor(S.inv[kk] || 0); if (n > 0 && !isFluid(kk)) { total += n; kinds++; } }
+  let h = `<div class="row wrap" style="gap:10px;margin-bottom:10px"><input type="search" data-input="invq" placeholder="🔍 Search items…" value="${esc(invQuery)}" style="flex:1;min-width:180px"><span class="dim">${fmt(total)} items · ${kinds} kinds · <kbd>I</kbd> to close</span></div>`;
+  const needKeys = Object.keys(need).filter(kk => need[kk] > 0);
+  if (needKeys.length) {
+    h += '<h3 class="ch">🎯 Needed for your current goals</h3><div class="invneed">';
+    for (const kk of needKeys) { const have = Math.floor(S.inv[kk] || 0), p = Math.min(100, have / need[kk] * 100); h += `<div class="req" data-tip="item:${kk}" data-name="${esc(ITEMS[kk].n.toLowerCase())}">${ic(kk, 18)}<span class="bn">${ITEMS[kk].n}</span><div class="bar ${p >= 100 ? 'full' : ''}"><i style="width:${p}%"></i></div><span class="num">${fmt(have)}/${fmt(need[kk])}</span></div>`; }
+    h += '</div>';
+  }
+  const groups: string[][] = [[], [], [], [], [], []];
+  for (const kk of ITEM_KEYS) { if (isFluid(kk)) continue; if ((S.inv[kk] || 0) >= 1 || need[kk]) groups[itemGroup(kk)].push(kk); }
+  let any = false;
+  for (const gi of GROUP_ORDER) {
+    const list = groups[gi];
+    if (!list.length) continue;
+    any = true;
+    h += `<h3 class="ch">${GROUP_NAMES[gi]}</h3><div class="invgrid">`;
+    for (const kk of list) {
+      const n = Math.floor(S.inv[kk] || 0), made = rate(stats.P, kk), used = rate(stats.C, kk);
+      h += `<div class="invc ${n < 1 ? 'empty' : ''} ${need[kk] > 0 ? 'needed' : ''}" data-tip="item:${kk}" data-name="${esc(ITEMS[kk].n.toLowerCase())}">${ic(kk, 36)}<b>${fmt(n)}</b><span class="sm">${ITEMS[kk].n}</span>${made || used ? `<span class="sm dim">${made ? `<span class="pos">+${fmtR(made)}</span>` : ''}${made && used ? ' / ' : ''}${used ? `<span class="neg">−${fmtR(used)}</span>` : ''} /min</span>` : ''}${need[kk] > 0 ? `<span class="needtag">goal ${fmt(need[kk])}</span>` : ''}</div>`;
+    }
+    h += '</div>';
+  }
+  if (!any) h += '<p class="dim">Your inventory is empty. Belt things into the HUB, or hand-mine ore, to fill it.</p>';
+  return h + '<p class="sm dim">Anything belted into the HUB lands here. Building costs are paid from here.</p>';
+}
+/** hide inventory cards that don't match the search box (no re-render, so typing isn't interrupted) */
+function filterInventory() {
+  const q = invQuery.trim().toLowerCase();
+  document.querySelectorAll('#mbody [data-name]').forEach(el => { (el as HTMLElement).style.display = !q || (el as HTMLElement).dataset.name!.includes(q) ? '' : 'none'; });
+  // hide section headings with nothing left in them
+  document.querySelectorAll('#mbody .invgrid, #mbody .invneed').forEach(box => {
+    const any = [...box.children].some(c => (c as HTMLElement).style.display !== 'none');
+    (box as HTMLElement).style.display = any ? '' : 'none';
+    const hd = box.previousElementSibling as HTMLElement | null;
+    if (hd && hd.tagName === 'H3') hd.style.display = any ? '' : 'none';
+  });
 }
 
 const HELP = `<div class="help cols"><div>
@@ -573,7 +633,7 @@ const HELP = `<div class="help cols"><div>
 <h3>Machine ports</h3><p>Every machine has one <b style="color:#6ec8ff">blue input arrow</b> (behind it) and one <b style="color:#ffb347">orange output arrow</b> (in front). Machines that need two or more ingredients take them all through the one input — use a <b>Merger</b> to combine belts first, and keep the ratios roughly balanced. Pipes attach on any side. The HUB and Space Elevator accept belts on every side.</p>
 <h3>Power</h3><p>Everything near the HUB gets free power (30 MW). Elsewhere, place <b>Power Poles</b> — anything inside a pole's area is powered, and poles auto-wire to each other. Build <b>Biomass Burners</b> (wood), then <b>Coal Generators</b> (coal + water), <b>Fuel Generators</b>, and <b>Geothermal</b> on geysers. Overloaded grids run everything slower. Press <kbd>V</kbd> to see power areas. While placing a pole, <b>yellow rings</b> show where it can connect to existing poles; the ring turns green and a preview wire appears when it will connect.</p>
 <h3>Fluids</h3><p>Water Extractors go on lakes; Oil Extractors on oil nodes. Pipes connect to neighbours automatically — one fluid per network. Refineries make <b>byproducts</b>: if a byproduct has nowhere to go, the refinery stops. Sink it, burn it or reuse it!</p>
-<h3>Transport</h3><p><b>Trucks (Tier 1):</b> build two Truck Stations and buy a truck in one's panel — it drives over open ground, no track needed. <b>Trains (Tier 2):</b> place two Train Stations, click one and use <b>Quick Route</b>: it lays a one-way loop of track around mountains and over lakes and builds a train. Add up to 12 trains per loop (<kbd>T</kbd> lists them all). You can also drag rails yourself. <b>Drones</b> fly goods in a straight line between Drone Ports.</p><h3>Biomes</h3><p>Plains: iron, copper, limestone · Forest: coal, iron, lots of trees · Desert: oil, quartz, caterium, bauxite, limestone · Highlands (rocky dirt near mountains): caterium, bauxite, copper, geysers. Hover the ground to see what can be found there. Chopped trees grow back over time.</p>
+<h3>Transport</h3><p><b>Trucks (Tier 1):</b> build two Truck Stations and buy a truck in one's panel — it drives over open ground, no track needed. <b>Trains (Tier 2):</b> place two Train Stations, click one and use <b>Quick Route</b>: it lays a one-way loop of track around mountains and over lakes and builds a train. Add up to 12 trains per loop (<kbd>T</kbd> lists them all). You can also drag rails yourself. <b>Drones</b> fly goods in a straight line between Drone Ports.</p><h3>Biomes & distance</h3><p>Plains around the HUB: iron, copper, limestone · Forest: coal, iron, trees · Desert: oil, quartz, caterium, sulfur, bauxite · Highlands (rocky, hilly): caterium, sulfur, bauxite, geysers. In new worlds the forest, desert and highlands are big regions in different directions, and resources sit in rings: coal a little way out, oil/quartz/caterium/sulfur further, and bauxite near the edges. Better nodes are further from the HUB. Hover the ground to see what can be found there.</p>
 <h3>Day & night</h3><p>A day lasts 12 minutes. Machines keep working at night; <b>Solar Panels</b> only make power while the sun is up. Turn the cycle off any time in the ☰ menu.</p>
 <h3>Exploring</h3><p>Nodes appear on the map once you have seen them. The <b>Scanner</b> (<kbd>N</kbd>) pings the nearest resources, <b>💎 power crystals</b> (free Power Shards) and <b>🛸 crash sites</b>. Crash sites hold <b>Hard Drives</b>: analyse them in <b>Research</b> (<kbd>U</kbd>) to pick alternate recipes.</p>
 <h3>Floors</h3><p>Build up to <b>three floors above the ground</b>. Press <kbd>PageUp</kbd>/<kbd>PageDown</kbd> (or <kbd>E</kbd>/<kbd>Z</kbd>, or the floor buttons by the minimap) to change floor — the camera rises with you and the floors above fade out. Lay <b>Foundations</b> (Floors tab, click-drag a rectangle), then build on them. <b>Conveyor Lifts</b> carry items up or down one floor; <b>Pipe Lifts</b> carry fluids. Power poles power every floor in their area. Miners, stations and other ground things stay on the ground. Middle-drag up/down (or <kbd>,</kbd> <kbd>.</kbd>) tilts the camera.</p>
@@ -588,10 +648,12 @@ const HELP = `<div class="help cols"><div>
 <li>Drag empty ground / right-drag / <kbd>WASD</kbd> pan · wheel zoom · <kbd>G</kbd> or <kbd>Space</kbd> locate & fly to your HUB (the minimap arrow always points home)</li>
 <li>Middle-drag or <kbd>[</kbd> <kbd>]</kbd> rotate the camera · middle-drag up/down or <kbd>,</kbd> <kbd>.</kbd> tilt it</li>
 <li><kbd>PageUp</kbd>/<kbd>PageDown</kbd> (or <kbd>E</kbd>/<kbd>Z</kbd>) change floor</li>
-<li><kbd>H</kbd> milestones · <kbd>C</kbd> craft · <kbd>P</kbd> stats · <kbd>K</kbd> shop · <kbd>M</kbd> map · <kbd>I</kbd> inventory · <kbd>V</kbd> power areas</li>
+<li><kbd>H</kbd> milestones · <kbd>C</kbd> craft · <kbd>P</kbd> stats · <kbd>K</kbd> shop · <kbd>M</kbd> map · <kbd>I</kbd> inventory (search, rates, goal needs) · <kbd>V</kbd> power areas</li>
+<li><kbd>O</kbd> fast travel between your HUB and Outposts (not in Hard) · <kbd>G</kbd> go home</li>
 <li><kbd>T</kbd> vehicles · <kbd>N</kbd> scanner · <kbd>U</kbd> research · <kbd>J</kbd> achievements · <kbd>L</kbd> planner (Easy/Creative)</li>
 <li>Click ore to hand-mine (hold to keep going). Click or drag across trees to chop them.</li>
 <li>Right-click / <kbd>Esc</kbd> cancel</li></ul>
+<h3>Difficulty & game length</h3><p>Easy (~10–15 h), Normal (~15–30 h) and Hard (~30–50 h) differ in resource richness, starting kit and how much each later milestone and Space Elevator phase asks for. Tier 0 is the same everywhere.</p>
 <h3>Machine lights</h3><p>${status('work')}<br>${status('starve')}<br>${status('block')}<br>${status('lowpower')}<br>${status('nopower', 'No power')}</p>
 <h3>Overclocking & Shop</h3><p>Feed anything into a <b>Resource Sink</b> for points → coupons. Spend them (<kbd>K</kbd>) on Power Shards (overclock to 250%), Output Amplifiers and upgrades.</p>
 </div></div>`;
@@ -675,7 +737,9 @@ function drawBigMap() {
   g.textAlign = 'start'; g.textBaseline = 'alphabetic';
   for (const s of G.L.stations) { g.fillStyle = '#f0c040'; g.font = '10px Segoe UI'; g.fillText(s.name, s.x * k + 4, s.y * k); }
   g.strokeStyle = '#f5a524'; g.lineWidth = 2; g.strokeRect(HX * k - 3, HY * k - 3, 4 * k + 6, 4 * k + 6);
-  g.font = '16px Segoe UI Emoji, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'bottom'; g.fillText('🏠', (HX + 2) * k, HY * k - 3); g.textAlign = 'start'; g.textBaseline = 'alphabetic';
+  g.font = '16px Segoe UI Emoji, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'bottom'; g.fillText('🏠', (HX + 2) * k, HY * k - 3);
+  g.font = '14px Segoe UI Emoji, sans-serif'; for (const o of G.L.outposts || []) g.fillText('⛺', (o.x + 1.5) * k, (o.y + 1.5) * k + 6);
+  g.textAlign = 'start'; g.textBaseline = 'alphabetic';
   g.strokeStyle = '#fff'; g.lineWidth = 1.5; g.beginPath(); viewDiamond().forEach(([x, y], i) => i ? g.lineTo(x * k, y * k) : g.moveTo(x * k, y * k)); g.closePath(); g.stroke();
 }
 function viewDiamond() { return [s2w(0, 0), s2w(view.cw, 0), s2w(view.cw, view.ch), s2w(0, view.ch)]; }
@@ -821,6 +885,7 @@ export function initUI() {
     else if (k === 'tname' && t) t.name = el.value || t.name;
     else if (k === 'addstop' && t && el.value && ev.type === 'change') { t.sched.push(+el.value); if (t.state === 'noschedule' || t.state === 'nopath') { t.state = 'idle'; t.waitT = 99; } inspKey = ''; sfx('click'); }
     else if (k === 'mapf') { mapFilter[a] = el.checked; drawBigMap(); }
+    else if (k === 'invq') { invQuery = el.value; filterInventory(); }
     else extraInput(k, a, el, ev);
   };
   document.addEventListener('input', onInput);
@@ -849,7 +914,8 @@ export function uiTick(dt: number) {
   if (t4 > 0.2) {
     t4 = 0;
     renderInv(); renderTracker(); renderInspect(); updateHint(); updateMarker();
-    if (modalKind === 'stats' || modalKind === 'hub' || modalKind === 'craft' || modalKind === 'shop' || modalKind === 'inv' || (modalKind && LIVE_MODALS.has(modalKind))) renderModal();
+    const typing = document.activeElement && (document.activeElement as HTMLElement).closest?.('#mbody') && ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName);
+    if (!typing && (modalKind === 'stats' || modalKind === 'hub' || modalKind === 'craft' || modalKind === 'shop' || modalKind === 'inv' || (modalKind && LIVE_MODALS.has(modalKind)))) renderModal();
   }
   if (t1 > 1) { t1 = 0; renderHotbar(); }
   if (tMap > 2) { tMap = 0; refreshMapOverlay(); }

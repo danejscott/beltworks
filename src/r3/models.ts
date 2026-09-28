@@ -164,6 +164,46 @@ export function buildTemplates(): Record<string, Template> {
       anims: vents.map(([x, z]) => ({ key: 'fan', model: f, fn: (o: AnimOut, _e: any, t: number, real: number, busy: boolean) => { o.x = x; o.y = 2.66; o.z = z; o.ry = busy ? t * 8 : real * 0.3; } })),
     };
   }
+  // ---- Packager: canister carousel between two fluid tanks
+  {
+    const b = new B(); pad(b, 3);
+    b.box(2.6, 0.9, 1.1, 0, 0.14, -0.8, M.orange); b.box(2.65, 0.1, 1.15, 0, 1.04, -0.8, M.steelDk);
+    for (const x of [-0.85, 0.85]) { b.cyl(0.42, 1.6, x, 0.14, 0.55, M.white, 18); b.torus(0.43, 0.04, x, 1.2, 0.55, M.blue); b.cone(0.42, 0.25, x, 1.74, 0.55, M.greyLt, 18); }
+    b.box(1.0, 0.5, 1.0, 0, 0.14, 0.55, M.steelDk); b.box(0.8, 0.04, 0.8, 0, 0.64, 0.55, M.yellow);
+    b.box(0.5, 0.35, 0.02, 0.3, 0.55, -0.24, M.glass);
+    T.packager = {
+      stat: b.build(), height: 2.0, light: [1.2, 1.1, -1.2],
+      anims: [{ key: 'carousel', model: one(b2 => { b2.cyl(0.38, 0.05, 0, 0, 0, M.steel, 16); for (let i = 0; i < 6; i++) { const a = i / 6 * TAU; b2.cyl(0.07, 0.22, Math.cos(a) * 0.28, 0.05, Math.sin(a) * 0.28, M.grey, 8); } }), fn: (o, _e, t, real, busy) => { o.y = 0.68; o.z = 0.55; o.ry = busy ? t * 2 : real * 0.1; } }],
+    };
+  }
+  // ---- Blender: big mixing vat with stirrers
+  {
+    const b = new B(); pad(b, 4);
+    b.cyl(1.25, 2.1, -0.3, 0.14, 0, M.greyLt, 26); b.torus(1.27, 0.07, -0.3, 1.0, 0, M.orange); b.torus(1.27, 0.07, -0.3, 1.9, 0, M.orange);
+    b.cyl(1.3, 0.12, -0.3, 2.24, 0, M.steelDk, 26);
+    for (const z of [-1.3, 1.3]) { b.cyl(0.35, 1.5, 1.35, 0.14, z, M.white, 14); b.torus(0.36, 0.04, 1.35, 1.1, z, M.teal); }
+    b.box(0.8, 1.1, 0.9, 1.35, 0.14, 0, M.orange); b.box(0.02, 0.3, 0.5, 1.76, 0.8, 0, M.glass);
+    b.hcyl(0.1, 1.2, 0.65, 1.2, -1.0, M.steel, 'x'); b.hcyl(0.1, 1.2, 0.65, 1.2, 1.0, M.steel, 'x');
+    T.blender = {
+      stat: b.build(), height: 2.8, light: [1.35, 1.35, 0.5],
+      anims: [{ key: 'stir', model: one(b2 => { b2.cyl(0.08, 0.7, 0, 0, 0, M.steelDk, 8); b2.box(1.3, 0.08, 0.12, 0, 0.62, 0, M.steel); b2.box(0.12, 0.08, 1.3, 0, 0.62, 0, M.steel); }), fn: (o, _e, t, real, busy) => { o.x = -0.3; o.y = 2.3; o.ry = busy ? t * 4 : real * 0.15; } }],
+      glow: [[-0.3, 2.4, 0]],
+    };
+  }
+  // ---- Particle Accelerator: a glowing ring on a massive base
+  {
+    const b = new B(); pad(b, 5);
+    b.box(4.6, 0.5, 4.6, 0, 0.14, 0, M.steelDk);
+    b.torus(1.75, 0.34, 0, 1.5, 0, M.white, Math.PI / 2);
+    for (let i = 0; i < 8; i++) { const a = i / 8 * TAU; b.box(0.5, 0.9, 0.5, Math.cos(a) * 1.75, 0.64, Math.sin(a) * 1.75, M.orange, -a); b.box(0.56, 0.12, 0.56, Math.cos(a) * 1.75, 1.95, Math.sin(a) * 1.75, M.steelDk, -a); }
+    b.box(1.1, 1.6, 1.1, 0, 0.64, 0, M.grey); b.cyl(0.35, 0.6, 0, 2.24, 0, M.steel, 16);
+    b.box(0.8, 1.0, 0.8, 1.9, 0.64, 1.9, M.orange); b.box(0.02, 0.3, 0.5, 2.31, 1.1, 1.9, M.glass);
+    T.particle_accelerator = {
+      stat: b.build(), height: 2.9, light: [1.9, 1.75, 1.9],
+      anims: [{ key: 'beam', model: one(b2 => b2.torus(1.75, 0.08, 0, 0, 0, M.glowPurple)), fn: (o, _e, t, real, busy) => { o.y = 1.5; o.s = busy ? 1 + Math.sin(t * 10) * 0.01 : 0.2; o.ry = real; } }],
+      glow: [[0, 2.6, 0]],
+    };
+  }
   // ---- Harvester
   {
     const b = new B(); pad(b, 2);
@@ -307,6 +347,19 @@ export function buildTemplates(): Record<string, Template> {
     b.box(0.08, 0.02, 1.2, -0.3, 0.46, 0, M.white); b.box(0.08, 0.02, 1.2, 0.3, 0.46, 0, M.white); b.box(0.6, 0.02, 0.08, 0, 0.46, 0, M.white);
     b.box(0.7, 1.2, 0.7, 1.05, 0.45, -1.05, M.orange); b.cyl(0.04, 0.8, 1.05, 1.65, -1.05, M.steel, 6);
     T.drone_port = { stat: b.build(), height: 1.6, light: [-1.3, 0.5, 1.3], anims: [] };
+  }
+  // ---- Outpost: a small field base with a comms mast and a beacon
+  {
+    const b = new B();
+    b.box(2.9, 0.25, 2.9, 0, 0, 0, M.concrete);
+    b.box(2.9, 0.03, 0.12, 0, 0.25, 1.39, M.yellow); b.box(0.12, 0.03, 2.9, 1.39, 0.25, 0, M.yellow);
+    b.box(1.5, 1.2, 1.2, -0.55, 0.25, -0.5, M.orange); b.box(1.56, 0.1, 1.26, -0.55, 1.45, -0.5, M.steelDk);
+    b.box(1.1, 0.35, 0.02, -0.55, 0.8, 0.11, M.glass); b.box(0.45, 0.8, 0.03, 0.05, 0.25, 0.11, M.black);
+    b.box(0.6, 0.5, 0.6, 0.8, 0.25, 0.8, M.wood); b.box(0.45, 0.4, 0.45, 0.8, 0.75, 0.8, M.wood);
+    b.cyl(0.07, 3.0, 0.9, 0.25, -0.9, M.steel, 8); b.beam([0.9, 3.2, -0.9], [0.5, 2.3, -0.9], 0.03, M.steelDk);
+    b.box(0.5, 0.3, 0.02, 1.15, 2.7, -0.9, M.orange);
+    b.box(0.5, 0.45, 0.5, -1.0, 0.25, 0.9, M.grey); b.box(0.3, 0.06, 0.02, -1.0, 0.55, 1.16, M.glowGreen);
+    T.outpost = { stat: b.build(), height: 1.7, light: [0.9, 3.3, -0.9], anims: [{ key: 'odish', model: one(b2 => { b2.add(new THREE.SphereGeometry(0.4, 14, 5, 0, TAU, 0, 0.9), M.white, 0, 0.5, 0, Math.PI * 0.35); b2.cyl(0.04, 0.3, 0, 0, 0, M.steelDk, 6); }), fn: (o, _e, _t, real) => { o.x = -0.55; o.y = 1.55; o.z = -0.5; o.ry = real * 0.5; } }] };
   }
   // ---- Truck station: loading dock + canopy over the parking bay
   {

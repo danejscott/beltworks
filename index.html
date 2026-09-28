@@ -106,6 +106,9 @@ table.st td,table.st th{padding:4px 8px;border-bottom:1px solid #262e3a;text-ali
 table.st td:first-child,table.st th:first-child{text-align:left}
 table.st th{color:var(--dim);font-weight:600;font-size:12px}
 .invgrid{display:grid;grid-template-columns:repeat(auto-fill,minmax(110px,1fr));gap:8px}
+.invneed{display:grid;grid-template-columns:repeat(auto-fill,minmax(260px,1fr));gap:4px 16px;margin-bottom:6px}
+.invneed .req .bn{width:120px;flex:none;font-size:12px;overflow:hidden;white-space:nowrap;text-overflow:ellipsis}
+.invc.empty{opacity:.5}.invc.needed{border-color:#f5a52488}.needtag{font-size:10px;color:var(--accent);font-weight:700}
 .invc{background:var(--panel2);border:1px solid var(--line);border-radius:10px;padding:8px;display:flex;flex-direction:column;align-items:center;gap:2px;text-align:center}
 .maprow{display:flex;gap:14px}.maprow canvas{width:min(760px,70vh);height:min(760px,70vh);border-radius:8px;border:1px solid var(--line);cursor:crosshair;image-rendering:auto}
 .legend{display:flex;flex-direction:column;gap:5px;min-width:180px}.legend label{display:flex;align-items:center;gap:5px;cursor:pointer}
@@ -141,6 +144,7 @@ table.st th{color:var(--dim);font-weight:600;font-size:12px}
 .empty{color:var(--dim);padding:20px;text-align:center;border:1px dashed var(--line);border-radius:10px}
 .flabel{display:block;margin:12px 0 6px;color:var(--dim);font-size:11px;text-transform:uppercase;letter-spacing:1px;font-weight:700}
 .opts{display:grid;grid-template-columns:repeat(3,1fr);gap:6px}.opts.two{grid-template-columns:repeat(2,1fr)}
+.opt b .hrs{float:right;font-size:11px;font-weight:600;color:var(--accent)}
 .scang{display:grid;grid-template-columns:repeat(auto-fill,minmax(120px,1fr));gap:8px;margin:6px 0}
 .scanb{display:flex;flex-direction:column;align-items:center;gap:6px;padding:12px 6px;border:2px solid;border-radius:12px;background:var(--panel2)}
 .scanb:hover{background:#2a3140}.scanb .big{font-size:24px}
@@ -180,6 +184,7 @@ body.intitle #top,body.intitle #tracker,body.intitle #hotbar,body.intitle #hint,
   <div id="inv"></div>
   <div class="stats"><span id="pwr"></span><span id="cpn" data-act="open:shop" style="cursor:pointer"></span></div>
   <div class="btns">
+    <button data-act="open:inv">Inventory <kbd>I</kbd></button>
     <button data-act="open:hub">Milestones <kbd>H</kbd></button>
     <button data-act="open:craft">Craft <kbd>C</kbd></button>
     <button data-act="open:stats">Stats <kbd>P</kbd></button>

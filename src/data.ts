@@ -16,6 +16,7 @@ export const ITEMS: Record<string, ItemDef> = {
   caterium_ore: { n: 'Caterium Ore', c: '#e8c547', s: 'ore' },
   raw_quartz: { n: 'Raw Quartz', c: '#f07ab8', s: 'crystal' },
   bauxite: { n: 'Bauxite', c: '#c9583e', s: 'ore' },
+  sulfur: { n: 'Sulfur', c: '#e2cf3a', s: 'ore' },
   wood: { n: 'Wood', c: '#9a6b3f', s: 'log' },
   // fluids
   water: { n: 'Water', c: '#3f8fe0', s: 'drop', fluid: true },
@@ -23,6 +24,7 @@ export const ITEMS: Record<string, ItemDef> = {
   heavy_oil: { n: 'Heavy Oil Residue', c: '#9a4db5', s: 'drop', fluid: true },
   fuel: { n: 'Fuel', c: '#e8962e', s: 'drop', fluid: true },
   alumina_solution: { n: 'Alumina Solution', c: '#c8d8e4', s: 'drop', fluid: true },
+  turbofuel: { n: 'Turbofuel', c: '#d0402e', s: 'drop', fluid: true },
   // ingots
   iron_ingot: { n: 'Iron Ingot', c: '#bcc3cc', s: 'ingot' },
   copper_ingot: { n: 'Copper Ingot', c: '#e8905a', s: 'ingot' },
@@ -75,6 +77,16 @@ export const ITEMS: Record<string, ItemDef> = {
   power_shard: { n: 'Power Shard', c: '#6fd0ff', s: 'shard' },
   amplifier: { n: 'Output Amplifier', c: '#c070ff', s: 'amp' },
   hard_drive: { n: 'Hard Drive', c: '#5a7a9a', s: 'chip' },
+  // late-game parts
+  compacted_coal: { n: 'Compacted Coal', c: '#2e2a26', s: 'block' },
+  empty_canister: { n: 'Empty Canister', c: '#8a96a4', s: 'casing' },
+  packaged_water: { n: 'Packaged Water', c: '#3f8fe0', s: 'casing' },
+  packaged_fuel: { n: 'Packaged Fuel', c: '#e8962e', s: 'casing' },
+  packaged_oil: { n: 'Packaged Oil', c: '#3a2f48', s: 'casing' },
+  heat_sink: { n: 'Heat Sink', c: '#b8c8d8', s: 'hsc' },
+  cooling_system: { n: 'Cooling System', c: '#5ab4d8', s: 'engine' },
+  turbo_motor: { n: 'Turbo Motor', c: '#d85a3a', s: 'motor' },
+  quantum_core: { n: 'Quantum Core', c: '#9a6af0', s: 'acu' },
 };
 export const ITEM_KEYS = Object.keys(ITEMS);
 export const isFluid = (k: string) => !!ITEMS[k]?.fluid;
@@ -139,6 +151,18 @@ R('crystal_oscillator', 'manufacturer', 60, { quartz_crystal: 36, cable: 28, rei
 R('high_speed_connector', 'manufacturer', 8, { quickwire: 56, cable: 10, circuit_board: 1 }, { high_speed_connector: 1 });
 R('supercomputer', 'manufacturer', 16, { computer: 2, ai_limiter: 2, high_speed_connector: 3, plastic: 28 }, { supercomputer: 1 });
 R('radio_control_unit', 'manufacturer', 24, { alu_casing: 32, crystal_oscillator: 1, computer: 1 }, { radio_control_unit: 2 });
+// Late game: sulfur, packaging, blending and particle physics
+R('compacted_coal', 'assembler', 12, { coal: 5, sulfur: 5 }, { compacted_coal: 5 });
+R('empty_canister', 'constructor', 4, { plastic: 2 }, { empty_canister: 4 });
+R('packaged_water', 'packager', 2, { water: 2, empty_canister: 2 }, { packaged_water: 2 });
+R('packaged_fuel', 'packager', 3, { fuel: 2, empty_canister: 2 }, { packaged_fuel: 2 });
+R('packaged_oil', 'packager', 4, { crude_oil: 2, empty_canister: 2 }, { packaged_oil: 2 });
+R('unpack_fuel', 'packager', 2, { packaged_fuel: 2 }, { fuel: 2, empty_canister: 2 }, 'Unpack Fuel');
+R('heat_sink', 'assembler', 8, { alclad_sheet: 5, copper_sheet: 3 }, { heat_sink: 1 });
+R('cooling_system', 'blender', 10, { heat_sink: 2, rubber: 2, water: 5 }, { cooling_system: 1 });
+R('turbofuel', 'blender', 8, { fuel: 6, compacted_coal: 4 }, { turbofuel: 5 });
+R('turbo_motor', 'manufacturer', 32, { cooling_system: 4, radio_control_unit: 2, motor: 4, rubber: 24 }, { turbo_motor: 1 });
+R('quantum_core', 'particle', 60, { cooling_system: 2, crystal_oscillator: 1, alclad_sheet: 10 }, { quantum_core: 1 });
 
 // Alternate recipes: found by analysing Hard Drives from crash sites (Research, U)
 function A(id: string, m: string, t: number, inp: Cost, out: Cost, n: string) { R(id, m, t, inp, out, n); RECIPES[id].alt = true; }
@@ -162,7 +186,7 @@ A('alt_plastic_smart', 'manufacturer', 24, { reinforced_plate: 1, rotor: 1, plas
 export const ALT_IDS = Object.keys(RECIPES).filter(k => RECIPES[k].alt);
 
 export const HANDCRAFT = new Set(['smelter', 'constructor', 'assembler']);
-export const MACHINE_NAMES: Record<string, string> = { smelter: 'Smelter', constructor: 'Constructor', assembler: 'Assembler', foundry: 'Foundry', refinery: 'Refinery', manufacturer: 'Manufacturer' };
+export const MACHINE_NAMES: Record<string, string> = { smelter: 'Smelter', constructor: 'Constructor', assembler: 'Assembler', foundry: 'Foundry', refinery: 'Refinery', manufacturer: 'Manufacturer', packager: 'Packager', blender: 'Blender', particle: 'Particle Accelerator' };
 
 // ---------------------------------------------------------------------------
 export interface BDef {
@@ -200,6 +224,9 @@ export const BLD: Record<string, BDef> = {
   foundry: { n: 'Foundry', w: 3, h: 3, cat: 'prod', kind: 'machine', machine: 'foundry', power: 16, cost: { modular_frame: 10, rotor: 10, concrete: 20 }, col: '#c23e66', desc: 'Two-input smelting: Steel and Aluminum.' },
   refinery: { n: 'Refinery', w: 4, h: 4, cat: 'prod', kind: 'machine', machine: 'refinery', power: 30, cost: { motor: 10, encased_beam: 10, steel_pipe: 30, copper_sheet: 20 }, col: '#c4913a', desc: 'Processes fluids. Pipes attach on any side; items use belts. Byproducts must go somewhere or it stops!' },
   manufacturer: { n: 'Manufacturer', w: 4, h: 4, cat: 'prod', kind: 'machine', machine: 'manufacturer', power: 55, cost: { motor: 5, modular_frame: 20, cable: 50, plastic: 50 }, col: '#2fa596', desc: 'Combines up to four ingredients into high-tech components. Merge the ingredient belts into its single input.' },
+  packager: { n: 'Packager', w: 3, h: 3, cat: 'prod', kind: 'machine', machine: 'packager', power: 10, cost: { steel_beam: 20, rubber: 10, plastic: 10 }, col: '#4a8ac2', desc: 'Puts fluids into canisters (and back out). Packaged Fuel rides belts, trucks and trains, and Fuel Generators burn it. Fluids by pipe on any side.' },
+  blender: { n: 'Blender', w: 4, h: 4, cat: 'prod', kind: 'machine', machine: 'blender', power: 75, cost: { motor: 20, heavy_modular_frame: 10, alu_casing: 50, computer: 10 }, col: '#3aa0a0', desc: 'Mixes fluids and items into advanced products: Cooling Systems and Turbofuel. Merge item belts into its input; fluids by pipe.' },
+  particle_accelerator: { n: 'Particle Accelerator', w: 5, h: 5, cat: 'prod', kind: 'machine', machine: 'particle', power: 400, cost: { radio_control_unit: 25, cooling_system: 50, heavy_modular_frame: 20, alclad_sheet: 200 }, col: '#7a5ae0', desc: 'Makes Quantum Cores for the final Space Elevator phase. Uses a huge 400 MW while running — build serious power first!' },
   water_extractor: { n: 'Water Extractor', w: 2, h: 2, cat: 'prod', kind: 'extractor', on: 'water', rate: 240, power: 20, cost: { copper_sheet: 20, reinforced_plate: 10, rotor: 10 }, col: '#3f8fe0', desc: 'Place fully on water. Pumps 240 Water/min into an adjacent pipe.' },
   oil_extractor: { n: 'Oil Extractor', w: 2, h: 2, cat: 'prod', kind: 'extractor', on: 'oil', rate: 240, power: 40, cost: { motor: 15, encased_beam: 20, cable: 60 }, col: '#6a4a8a', desc: 'Place on an oil node. Pumps Crude Oil into an adjacent pipe. Impure 120 · Normal 240 · Pure 480 /min.' },
 
@@ -227,8 +254,8 @@ export const BLD: Record<string, BDef> = {
   pole2: { n: 'Power Pole Mk2', w: 1, h: 1, cat: 'power', kind: 'pole', area: 5, reach: 16, logistic: true, cost: { steel_pipe: 2, cable: 4 }, col: '#d8b870', desc: '11×11 area, 16-tile wire reach.' },
   tower: { n: 'Power Tower', w: 2, h: 2, cat: 'power', kind: 'pole', area: 2, reach: 60, logistic: true, cost: { concrete: 30, iron_rod: 20, cable: 50 }, col: '#e8c870', desc: 'Long-distance power: wires reach 60 tiles to other towers.' },
   biomass_burner: { n: 'Biomass Burner', w: 2, h: 2, cat: 'power', kind: 'gen', mw: 30, fuels: { wood: 4, biomass: 8 }, cost: { iron_plate: 15, iron_rod: 15 }, col: '#8a6a3a', desc: '30 MW. Burns Wood or Biomass (belt it in or load from inventory).' },
-  coal_gen: { n: 'Coal Generator', w: 3, h: 3, cat: 'power', kind: 'gen', mw: 75, fuels: { coal: 2 }, water: 90, cost: { rotor: 10, cable: 30, reinforced_plate: 20 }, col: '#4a4a55', desc: '75 MW. Needs Coal (30/min) by belt and Water (90/min) by pipe.' },
-  fuel_gen: { n: 'Fuel Generator', w: 3, h: 3, cat: 'power', kind: 'gen', mw: 150, fuels: { fuel: 2.5 }, cost: { computer: 5, heavy_modular_frame: 5, motor: 15, rubber: 50 }, col: '#c86a2a', desc: '150 MW. Burns Fuel (24/min) delivered by pipe.' },
+  coal_gen: { n: 'Coal Generator', w: 3, h: 3, cat: 'power', kind: 'gen', mw: 75, fuels: { coal: 2, compacted_coal: 8.4 }, water: 90, cost: { rotor: 10, cable: 30, reinforced_plate: 20 }, col: '#4a4a55', desc: '75 MW. Needs Coal (30/min) or Compacted Coal by belt, and Water (90/min) by pipe.' },
+  fuel_gen: { n: 'Fuel Generator', w: 3, h: 3, cat: 'power', kind: 'gen', mw: 150, fuels: { fuel: 2.5, turbofuel: 7.5, packaged_fuel: 2.5 }, cost: { computer: 5, heavy_modular_frame: 5, motor: 15, rubber: 50 }, col: '#c86a2a', desc: '150 MW. Burns Fuel (24/min) or Turbofuel (3× longer) by pipe, or Packaged Fuel by belt.' },
   geothermal: { n: 'Geothermal Generator', w: 2, h: 2, cat: 'power', kind: 'gen', on: 'geyser', mw: 150, cost: { motor: 10, modular_frame: 10, cable: 50 }, col: '#d65a3a', desc: 'Free power on a geyser: Impure 75 · Normal 150 · Pure 300 MW.' },
   solar: { n: 'Solar Panel', w: 3, h: 3, cat: 'power', kind: 'gen', solar: true, mw: 20, cost: { reinforced_plate: 10, wire: 60, copper_sheet: 10 }, col: '#2f5f9a', desc: 'Free, clean power from the sun: 20 MW at noon, fading at dusk and nothing at night. Pair with Power Storage to keep the lights on. (Always full power if the day/night cycle is off.)', noRotate: true },
   battery: { n: 'Power Storage', w: 2, h: 2, cat: 'power', kind: 'battery', cap: 6000, mw: 100, cost: { encased_beam: 10, automated_wiring: 5, cable: 50 }, col: '#4ac0a0', desc: 'Stores 6000 MJ (100 MW for a minute). Charges from surplus, discharges during shortages.' },
@@ -238,6 +265,7 @@ export const BLD: Record<string, BDef> = {
   station: { n: 'Train Station', w: 3, h: 3, cat: 'trans', kind: 'station', power: 20, cap: 4000, cost: { concrete: 50, cable: 25, iron_plate: 40 }, col: '#b58a4a', desc: 'Place it anywhere, then use Quick Route in its panel to auto-build track and a train to another station. Set Load or Unload. Belts go into the blue input arrow; unloading stations send items out of the orange arrow.' },
   locomotive: { n: 'Locomotive', w: 1, h: 1, cat: 'trans', kind: 'train', cost: { rotor: 10, reinforced_plate: 20, cable: 50 }, col: '#d0503a', desc: 'Click a railway to place a train. Click the train to add wagons and a schedule.', noRotate: false },
   wagon: { n: 'Freight Wagon', w: 1, h: 1, cat: 'trans', kind: 'wagon', hidden: true, cost: { iron_plate: 40, reinforced_plate: 10 }, col: '#8a7a6a', desc: 'Holds 2000 items.' },
+  outpost: { n: 'Outpost', w: 3, h: 3, cat: 'trans', kind: 'outpost', area: 8, reach: 16, mw: 10, noRotate: true, cost: { concrete: 60, iron_plate: 80, cable: 40 }, col: '#e89a3a', desc: 'A second base for far-away regions: 10 MW of free power in its area, wires to your grid like a pole, and a fast-travel point (O) in Easy, Normal and Creative. Items still have to be shipped home to the HUB.' },
   truck_station: { n: 'Truck Station', w: 3, h: 3, cat: 'trans', kind: 'tstation', power: 10, cap: 2000, cost: { iron_plate: 30, rotor: 4, concrete: 20 }, col: '#c98a3a', desc: 'Trucks drive between Truck Stations over open ground — no track needed. Belt items into the blue input; set Load or Unload; buy trucks in its panel.' },
   truck: { n: 'Truck', w: 1, h: 1, cat: 'trans', kind: 'vehicle', hidden: true, cost: { rotor: 6, iron_plate: 30, cable: 20 }, col: '#e2742a', desc: 'Carries 800 items between Truck Stations.' },
   drone_port: { n: 'Drone Port', w: 3, h: 3, cat: 'trans', kind: 'drone', power: 50, cap: 2000, cost: { heavy_modular_frame: 10, computer: 10, alclad_sheet: 50 }, col: '#5a9ad8', desc: 'Pick a destination port. Its drone flies anything belted in straight there — no track needed.' },
@@ -257,10 +285,11 @@ export const BLD: Record<string, BDef> = {
 
 export const CATS = [
   { id: 'prod', n: 'Production', types: [['miner3', 'miner2', 'miner1'], 'smelter', 'constructor', 'assembler', 'foundry', 'refinery', 'manufacturer', 'harvester', 'water_extractor', 'oil_extractor'] },
+  { id: 'adv', n: 'Advanced', types: ['packager', 'blender', 'particle_accelerator'] },
   { id: 'log', n: 'Logistics', types: [['belt4', 'belt3', 'belt2', 'belt1'], 'tunnel', 'splitter', 'merger', 'sorter', ['storage2', 'storage'], 'sink'] },
   { id: 'power', n: 'Power', types: ['pole1', 'pole2', 'tower', 'biomass_burner', 'coal_gen', 'fuel_gen', 'geothermal', 'solar', 'battery'] },
   { id: 'fluid', n: 'Fluids', types: [['pipe2', 'pipe1'], 'ptunnel', 'tank'] },
-  { id: 'trans', n: 'Transport', types: ['rail', 'station', 'locomotive', 'truck_station', 'drone_port'] },
+  { id: 'trans', n: 'Transport', types: ['rail', 'station', 'locomotive', 'truck_station', 'outpost', 'drone_port'] },
   { id: 'struct', n: 'Floors', types: ['foundation', 'lift_up', 'lift_down', 'pipe_lift'] },
   { id: 'special', n: 'Special', types: ['elevator', 'statue', 'lamp'] },
 ] as { id: string; n: string; types: (string | string[])[] }[];
@@ -273,10 +302,10 @@ export const START_UNLOCKS = ['belt1', 'miner1', 'smelter', 'pole1', 'iron_ingot
 export const MILESTONES: Milestone[] = [
   { id: 't0a', tier: 0, n: 'HUB Online', req: { iron_ingot: 20 }, un: ['constructor'] },
   { id: 't0b', tier: 0, n: 'Basic Parts', req: { iron_plate: 150, iron_rod: 150 }, un: ['screw', 'concrete', 'storage', 'biomass', 'biomass_burner', 'harvester'], tip: 'Power! Biomass Burners burn Wood — click trees to chop them, or build a Tree Harvester.' },
-  { id: 't0c', tier: 0, n: 'Copper Age', req: { screw: 150, concrete: 50 }, un: ['copper_ingot', 'wire', 'cable', 'merger', 'splitter', 'foundation', 'lift_up', 'lift_down'], tip: 'Short on space? Foundations let you build on up to three floors above the ground. Press PageUp to go up a floor, lay Foundations, and move items between floors with Conveyor Lifts.' },
+  { id: 't0c', tier: 0, n: 'Copper Age', req: { screw: 150, concrete: 50 }, un: ['copper_ingot', 'wire', 'cable', 'merger', 'splitter'], tip: 'Mergers combine belts. Machines that need two ingredients take both through their one blue input, so merge the ingredient belts first.' },
 
   { id: 't1a', tier: 1, n: 'Part Assembly', req: { wire: 200, cable: 100, iron_plate: 200 }, un: ['assembler', 'reinforced_plate', 'rotor', 'copper_sheet'] },
-  { id: 't1b', tier: 1, n: 'Logistics Mk2', req: { reinforced_plate: 50, screw: 500 }, un: ['belt2', 'tunnel', 'sorter', 'truck_station', 'truck'], tip: 'Trucks! Place two Truck Stations and buy a truck in one of their panels. Belt Tunnels let belts cross each other. Blueprints (Ctrl+C / B) are always available — copy a line, paste it five times!' },
+  { id: 't1b', tier: 1, n: 'Logistics Mk2', req: { reinforced_plate: 50, screw: 500 }, un: ['belt2', 'tunnel', 'sorter', 'truck_station', 'truck', 'outpost', 'foundation', 'lift_up', 'lift_down'], tip: 'Outposts give far-away regions free starter power and a fast-travel point (O). Build upward! Foundations (Floors tab, or press PageUp) let you build on up to three floors, and Conveyor Lifts move items between them. Trucks: place two Truck Stations and buy a truck in one of their panels. Belt Tunnels let belts cross each other. Blueprints (Ctrl+C / B) are always available — copy a line, paste it five times!' },
   { id: 't1c', tier: 1, n: 'Resource Sink', req: { reinforced_plate: 50, rotor: 25, cable: 100 }, un: ['sink'], tip: 'Anything fed into a Resource Sink earns Points → Coupons → Shop (K).' },
   { id: 't2a', tier: 2, n: 'Frameworks', req: { rotor: 50, reinforced_plate: 100 }, un: ['modular_frame', 'smart_plating', 'elevator'], tip: 'The Space Elevator (Special tab) is your big goal. Belt Smart Plating into it!' },
   { id: 't2c', tier: 2, n: 'Railways', req: { reinforced_plate: 100, rotor: 40, cable: 200 }, un: ['rail', 'station', 'locomotive', 'wagon', 'tower'], tip: 'Place two Train Stations, click one and use Quick Route: it lays the track and builds a train for you. Great for far-away resources!' },
@@ -290,17 +319,36 @@ export const MILESTONES: Milestone[] = [
   { id: 'p2', tier: 4, phase: 2, n: 'Elevator Phase 2', req: { smart_plating: 300, versatile_framework: 300, automated_wiring: 100 }, unlockTiers: [5, 6] },
 
   { id: 't5a', tier: 5, n: 'Oil Processing', req: { motor: 100, encased_beam: 200, automated_wiring: 50 }, un: ['oil_extractor', 'refinery', 'plastic', 'rubber', 'fuel', 'residual_fuel', 'residual_plastic', 'residual_rubber', 'fuel_gen', 'pipe2'], tip: 'Refineries make byproducts. If a byproduct has nowhere to go, the refinery stops. Sink it or reuse it!' },
-  { id: 't5b', tier: 5, n: 'Industrial Manufacturing', req: { plastic: 300, rubber: 300, modular_frame: 100 }, un: ['manufacturer', 'heavy_modular_frame', 'computer', 'circuit_board'] },
+  { id: 't5b', tier: 5, n: 'Industrial Manufacturing', req: { plastic: 300, rubber: 300, modular_frame: 100 }, un: ['manufacturer', 'heavy_modular_frame', 'computer', 'circuit_board', 'packager', 'empty_canister', 'packaged_water', 'packaged_fuel', 'packaged_oil', 'unpack_fuel'], tip: 'The Packager (Advanced tab) puts fluids in canisters, so trucks and trains can haul fuel to far-away generators.' },
   { id: 't5c', tier: 5, n: 'Advanced Logistics', req: { heavy_modular_frame: 20, rubber: 200, computer: 10 }, un: ['belt4', 'miner3', 'geothermal', 'battery'] },
   { id: 't6a', tier: 6, n: 'Quartz Technology', req: { computer: 25, heavy_modular_frame: 25 }, un: ['quartz_crystal', 'silica', 'crystal_oscillator', 'high_speed_connector'] },
-  { id: 't6b', tier: 6, n: 'Modular Engines', req: { circuit_board: 200, rubber: 300, motor: 100 }, un: ['modular_engine', 'adaptive_control_unit'] },
+  { id: 't6b', tier: 6, n: 'Modular Engines', req: { circuit_board: 200, rubber: 300, motor: 100 }, un: ['modular_engine', 'adaptive_control_unit', 'compacted_coal'], tip: 'Sulfur lives out in the highlands and deserts — the Scanner (N) will find it. Compacted Coal burns far longer in Coal Generators.' },
   { id: 'p3', tier: 6, phase: 3, n: 'Elevator Phase 3', req: { versatile_framework: 500, modular_engine: 100, adaptive_control_unit: 50 }, unlockTiers: [7] },
 
-  { id: 't7a', tier: 7, n: 'Aluminum', req: { crystal_oscillator: 50, high_speed_connector: 50 }, un: ['alumina_solution', 'aluminum_scrap', 'aluminum_ingot', 'alclad_sheet', 'alu_casing', 'radio_control_unit'] },
-  { id: 't7b', tier: 7, n: 'Supercomputing', req: { adaptive_control_unit: 50, high_speed_connector: 100 }, un: ['supercomputer', 'assembly_director', 'drone_port'], tip: 'Drone Ports fly goods across the map in a straight line. Perfect for remote outposts.' },
-  { id: 'p4', tier: 7, phase: 4, n: 'Launch Project Assembly', req: { assembly_director: 50, radio_control_unit: 100, supercomputer: 100, heavy_modular_frame: 200 }, win: true },
+  { id: 't7a', tier: 7, n: 'Aluminum', req: { crystal_oscillator: 50, high_speed_connector: 50 }, un: ['alumina_solution', 'aluminum_scrap', 'aluminum_ingot', 'alclad_sheet', 'alu_casing', 'radio_control_unit', 'heat_sink', 'blender', 'cooling_system', 'turbofuel'], tip: 'Bauxite sits near the edges of the map. The Blender makes Cooling Systems and Turbofuel (3× longer burn in Fuel Generators).' },
+  { id: 't7b', tier: 7, n: 'Supercomputing', req: { adaptive_control_unit: 50, high_speed_connector: 100 }, un: ['supercomputer', 'assembly_director', 'drone_port', 'turbo_motor', 'particle_accelerator', 'quantum_core'], tip: 'The Particle Accelerator makes Quantum Cores for the final launch. It needs 400 MW, so plan your power grid.' },
+  { id: 'p4', tier: 7, phase: 4, n: 'Launch Project Assembly', req: { assembly_director: 40, turbo_motor: 25, quantum_core: 20, supercomputer: 80 }, win: true },
 ];
 export const MAX_TIER = 7;
+/** the original final phase, kept for worlds created before the endgame update */
+const P4_LEGACY: Cost = { assembly_director: 50, radio_control_unit: 100, supercomputer: 100, heavy_modular_frame: 200 };
+const BASE_REQ = new Map<string, Cost>(MILESTONES.map(m => [m.id, { ...m.req }]));
+/** round to friendly numbers (5, 10, 25, 50...) */
+function nice(n: number) {
+  if (n <= 20) return Math.max(1, Math.round(n));
+  const step = n < 100 ? 5 : n < 400 ? 10 : n < 1500 ? 25 : 50;
+  return Math.round(n / step) * step;
+}
+/** set every milestone's requirement for this world: scaled by difficulty (new worlds) or the original amounts */
+export function applyGameLength(mult: (tier: number) => number, legacy: boolean) {
+  for (const m of MILESTONES) {
+    const base = legacy && m.id === 'p4' ? P4_LEGACY : BASE_REQ.get(m.id)!;
+    const k = legacy ? 1 : mult(m.tier);
+    const r: Cost = {};
+    for (const i in base) r[i] = k === 1 ? base[i] : nice(base[i] * k);
+    m.req = r;
+  }
+}
 export const TIER_NAMES = ['Onboarding', 'Field Research', 'Base Building', 'Steel & Motors', 'Rail & Caterium', 'Oil & Industry', 'Quartz & Engines', 'Space Race'];
 
 // ---------------------------------------------------------------------------
@@ -319,7 +367,7 @@ export const SHOP: ShopItem[] = [
 
 // ---------------------------------------------------------------------------
 // Sink point values (computed from recipe depth)
-const RAW_VAL: Record<string, number> = { iron_ore: 1, copper_ore: 2, limestone: 1, coal: 2, caterium_ore: 4, raw_quartz: 4, bauxite: 4, wood: 1, water: 0, crude_oil: 1, heavy_oil: 1, fuel: 2, alumina_solution: 2, power_shard: 500, amplifier: 3000, hard_drive: 800 };
+const RAW_VAL: Record<string, number> = { iron_ore: 1, copper_ore: 2, limestone: 1, coal: 2, caterium_ore: 4, raw_quartz: 4, bauxite: 4, wood: 1, water: 0, crude_oil: 1, heavy_oil: 1, fuel: 2, alumina_solution: 2, power_shard: 500, amplifier: 3000, hard_drive: 800, sulfur: 3, turbofuel: 6 };
 export function computeValues() {
   const val: Record<string, number> = { ...RAW_VAL };
   for (let pass = 0; pass < 12; pass++) {
@@ -353,7 +401,7 @@ export const primaryOut = (r: Recipe) => Object.keys(r.out)[0];
 export const HEIGHT: Record<string, number> = {
   miner1: 0.85, miner2: 0.95, miner3: 1.05, harvester: 0.7, smelter: 1.1, constructor: 0.9, assembler: 1.25, foundry: 1.45,
   refinery: 1.7, manufacturer: 1.6, water_extractor: 0.55, oil_extractor: 1.0, storage: 0.9, storage2: 1.2, sink: 0.8,
-  tank: 1.3, biomass_burner: 0.9, coal_gen: 1.4, solar: 0.9, truck_station: 0.35, fuel_gen: 1.5, geothermal: 0.7, battery: 1.0, station: 0.35, drone_port: 0.4,
+  tank: 1.3, biomass_burner: 0.9, coal_gen: 1.4, solar: 0.9, outpost: 1.0, packager: 1.6, blender: 2.2, particle_accelerator: 2.6, truck_station: 0.35, fuel_gen: 1.5, geothermal: 0.7, battery: 1.0, station: 0.35, drone_port: 0.4,
   hub: 1.15, elevator: 0.6, statue: 0.5, lamp: 0.25, splitter: 0.32, merger: 0.32, sorter: 0.32, tower: 0.3, pole1: 0, pole2: 0,
 };
 export const heightOf = (type: string) => HEIGHT[type] ?? 0.8;

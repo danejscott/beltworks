@@ -541,10 +541,11 @@ export function initInput(canvas: HTMLCanvasElement) {
     if (ev.ctrlKey && k === 'v') { ev.preventDefault(); if (clipboard) setTool({ k: 'paste', bp: clipboard, prot: 0 }); else UI.toast('Clipboard is empty — Ctrl+C first', 'bad'); return; }
     if (ev.ctrlKey && k === 's') { ev.preventDefault(); UI.saveNow(); return; }
     if (ev.ctrlKey) return;
-    if (UI.modalOpen() && !['h', 'c', 'p', 'k', 'b', 'm', 'i'].includes(k)) return;
+    if (UI.modalOpen() && UI.currentModal() === 'travel' && k >= '1' && k <= '9') { UI.travelTo(+k - 1); return; }
+    if (UI.modalOpen() && !['h', 'c', 'p', 'k', 'b', 'm', 'i', 'o'].includes(k)) return;
     if (k >= '0' && k <= '9') { selectSlot(k === '0' ? 9 : +k - 1); return; }
     if (k === 'tab') { ev.preventDefault(); setCat(curCat + (ev.shiftKey ? -1 : 1)); return; }
-    if (k === 'f') { selectType(bestOf(CATS[1].types[0])); return; }
+    if (k === 'f') { selectType(bestOf(CATS.find(c => c.id === 'log')!.types[0])); return; }
     if (k === 'r') {
       if (drag) { drag.axis = drag.axis === 'v' ? 'h' : 'v'; sfx('click'); return; }
       if (tool.t && tool.t.k === 'paste') { tool.t.prot = ((tool.t.prot || 0) + (ev.shiftKey ? 3 : 1)) & 3; sfx('click'); return; }
@@ -568,6 +569,7 @@ export function initInput(canvas: HTMLCanvasElement) {
     if (k === 'i') return UI.toggleModal('inv');
     if (k === 't') return UI.toggleModal('vehicles');
     if (k === 'n') return UI.toggleModal('scan');
+    if (k === 'o') return UI.toggleModal('travel');
     if (k === 'u') return UI.toggleModal('research');
     if (k === 'j') return UI.toggleModal('ach');
     if (k === 'l') { if (!plannerAllowed()) { UI.toast('The Production Planner is available in Easy and Creative worlds', 'bad'); return; } return UI.toggleModal('planner'); }
