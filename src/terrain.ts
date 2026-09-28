@@ -222,7 +222,8 @@ function genTerrainV3(seed: number, mode: string, v = 3): Terrain {
   const R = Math.min(W, H) / 2;                       // "map radius" used for all rings
   const scale = 110 + r() * 110, mscale = (70 + r() * 90) * 2.75;   // biomes ~2.75x the old size
   const warp = r() < 0.75 ? 20 + r() * 110 : 0;
-  const pWater = 0.06 + r() * 0.1, pDeep = pWater * (0.35 + r() * 0.3), pSand = pWater + 0.015 + r() * 0.03;
+  // v5: more water overall (and more still on Hard)
+  const pWater = (v >= 5 ? 0.15 + r() * 0.07 + (mode === 'hard' ? 0.06 : 0) : 0.06 + r() * 0.1), pDeep = pWater * (0.35 + r() * 0.3), pSand = pWater + 0.015 + r() * 0.03;
   const pRock = 1 - (0.035 + r() * 0.06), pDirt = pRock - (0.04 + r() * 0.04);
   const edge = Math.min(W * 0.08, 18 + r() * 26);
   // three big regions spread around the HUB
@@ -232,7 +233,8 @@ function genTerrainV3(seed: number, mode: string, v = 3): Terrain {
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
     let wx = x, wy = y;
     if (warp) { wx += (fbm(x / 260, y / 260, seed + 41, 2) - 0.5) * warp * 2; wy += (fbm(x / 260 + 50, y / 260, seed + 43, 2) - 0.5) * warp * 2; }
-    hs[y * W + x] = fbm(wx / scale, wy / scale, seed, 4);
+    // v5: a very broad layer joins low ground into bigger lakes and bays
+    hs[y * W + x] = v >= 5 ? fbm(wx / scale, wy / scale, seed, 4) * 0.62 + fbm(wx / (scale * 2.6), wy / (scale * 2.6), seed + 51, 3) * 0.38 : fbm(wx / scale, wy / scale, seed, 4);
   }
   const sample: number[] = [];
   const stepS = Math.max(37, Math.floor(W * H / 40000));

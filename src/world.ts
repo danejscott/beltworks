@@ -409,7 +409,7 @@ export function newState(seed: number, o: { name?: string; mode?: string; size?:
     seed, inv, unlocked: new Set(START_UNLOCKS), done: new Set(), maxTier: 0, elev: {}, time: 0, won: false,
     flags: {}, delivered: {}, speed: 1, points: 0, coupons: 0, couponsEarned: 0, shop: {}, stationSeq: 0, trainSeq: 0,
     name: o.name || 'New World', mode, size: o.size || 1024, regrow: [],
-    dayNight: o.dayNight !== false, genV: 4, portsV: 1, lenV: 1, lines: [], looted: [], alts: [], altOffer: null, ach: {}, made: {}, discN: null, discF: null, truckSeq: 0, lineSeq: 0,
+    dayNight: o.dayNight !== false, genV: 5, portsV: 1, lenV: 1, lines: [], looted: [], alts: [], altOffer: null, ach: {}, made: {}, discN: null, discF: null, truckSeq: 0, lineSeq: 0,
   };
   if (mode === 'creative') {
     for (const k in BLD) S.unlocked.add(k);

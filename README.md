@@ -44,6 +44,7 @@ After building, copy `dist/index.html` over `Play Beltworks.html` to update the 
   - A forest, a desert and mountainous highlands lie in different directions from the HUB, each about 4× the old biome size.
   - Resources sit in rings that scale with the map: coal a little way out; oil, quartz, caterium and sulfur further; bauxite and uranium near the edges.
   - Deserts stay dry: no big lakes or sea next to them.
+  - Water: bigger lakes and bays, about 14% of the map on Easy/Normal and about 18% on Hard (with much larger lakes).
   - Mountains cover up to 2× the old amount, with foothills around them and guaranteed passes, so they're an obstacle until trains can tunnel through.
 - **Every new world is randomized:** HUB position, amount of water and mountains, biome mix, lake placement and landmass shape.
 - **Three world sizes** (512², 1024², 2304²), multiple named saves and a title screen.
