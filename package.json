@@ -8,19 +8,22 @@
     "check": "tsc --noEmit",
     "preview": "vite preview --port 4173 --strictPort",
     "build:server": "node server/build.mjs",
-    "server": "node server/dist/server.mjs"
+    "server": "node server/dist/relay-node.mjs",
+    "deploy:relay": "wrangler deploy"
   },
   "keywords": [],
   "author": "",
   "license": "ISC",
   "type": "module",
   "devDependencies": {
+    "@cloudflare/workers-types": "^5.20260929.1",
     "@types/node": "^26.6.3",
     "@types/three": "^0.186.0",
     "@types/ws": "^8.18.2",
     "typescript": "^7.0.2",
     "vite": "^8.3.1",
-    "vite-plugin-singlefile": "^2.3.3"
+    "vite-plugin-singlefile": "^2.3.3",
+    "wrangler": "^4.143.1"
   },
   "dependencies": {
     "three": "^0.186.1",

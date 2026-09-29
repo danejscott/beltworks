@@ -11,7 +11,7 @@ import { analyseDrive, collectCrystal, lootSite, pickAlt } from './explore';
 import { buyShop, loadElevator, submitMilestone } from './progress';
 import { flushNet, fluidsTouching, myCraft, setRecipe } from './sim';
 import { asTeam, MP } from './teams';
-import { nearRivalBase } from './online';
+import { joinTeam, leaveTeam, nearRivalBase, spawnTeam } from './online';
 import { addInv, canAfford, canPlace, canRemove, chopTree, Ent, entAt, floorBlocked, G, groundOnly, hasFloor, markDirty, missingText, nodeAt, pairBit, PAIRS, pay, place, refund, remove, rotateEnt, setFloor } from './world';
 import { clamp } from './util';
 
@@ -400,6 +400,17 @@ function exec(c: Cmd): any {
     }
     case 'vname': { const v: any = c.v === 'k' ? findTruck(c.id) : findShip(c.id); if (mine(v)) v.name = String(c.name).slice(0, 40) || v.name; return; }
     // ---- system messages from the server (never accepted from players)
+    case '_join': {   // a player arrives: a brand-new player gets a base somewhere fair
+      let p = MP.players.get(c.pid);
+      if (!p) {
+        p = { id: c.pid, name: c.name, team: c.team, col: c.col, online: true };
+        MP.players.set(c.pid, p);
+        if (!MP.teams!.has(c.team)) spawnTeam(c.team, c.name, c.col, c.pid);
+      } else { p.online = true; p.name = c.name || p.name; }
+      return;
+    }
+    case '_team': joinTeam(c.pid, c.to); return;
+    case '_leave': leaveTeam(c.pid, c.team, c.col); return;
     case '_presence': {
       MP.paused = new Set(c.paused);
       for (const p of MP.players.values()) p.online = c.online.includes(p.id);

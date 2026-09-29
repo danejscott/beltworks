@@ -16,21 +16,26 @@ On the title screen, **🌐 Play online** lets you create a server or join one w
 - **Economy only:** nobody can remove or change another player's buildings, and you can't build right next to someone else's HUB. You *can* run a belt out of a rival's open output port and take what comes out.
 - **Teams:** invite a player from the Players panel. Teammates share inventory, research, power and colour; a player who was on their own brings their whole base along.
 - **Your colour** replaces the orange trim on your buildings and vehicles, and your name floats above your HUB.
-- **Always on:** the server saves everything (with hourly backups). Your factory pauses while you're offline.
+- **No host needed:** anyone with the code can start or join the world at any time; the world runs in the players' browsers while anyone is online, and your factory pauses while you're away.
 - **Enormous** maps (4608² of land, 4× Large) are available for servers; they need a desktop computer with plenty of memory.
 - Chat with **Enter**. Fast travel works between your own team's bases.
 
-### Running a server
+### How online works (and running the relay)
+
+There is no game server. Every player's browser runs the world. A tiny **relay** on Cloudflare's free tier (`server/worker.ts`, one Durable Object per world) keeps each world's code, players, latest save and the actions since then. While anyone is connected it:
+- puts everyone's actions in order and tags each with the tick it applies at;
+- every 2 minutes, asks the longest-connected player's game for a compressed save;
+- compares the players' world fingerprints every 5 seconds and reloads anyone who drifts (the majority wins; with two players, the one online longest).
+
+A joiner downloads the latest save and replays the actions since it.
 
 ```bash
-npm install
-npm run build:server   # bundles server/server.ts + server/world.ts into server/dist/
-npm run server         # node server/dist/server.mjs --port 8787 --data ./data
+npm run deploy:relay   # wrangler deploy (needs `npx wrangler login` once)
+npm run build:server   # bundles the same relay for Node: server/dist/relay-node.mjs
+npm run server         # local relay on ws://localhost:8787 (used automatically when the game runs on localhost)
 ```
 
-The game connects to `ws://localhost:8787` when it's opened from `localhost`, otherwise to the public server (change it under **Play online → Server address**). Browsers need `wss://` for the GitHub Pages site, so put the server behind HTTPS (for example Caddy with a free DuckDNS name).
-
-How it stays in sync: every player's copy runs the same simulation. The server puts all commands in one order and tags each with the tick it applies at. Every 5 seconds the copies compare a fingerprint of the world, and any copy that drifts reloads from a snapshot.
+The public relay is `wss://beltworks-relay.beltworks.workers.dev`. You can change the address under **Play online → Server address**.
 
 ## Keys
 
@@ -129,5 +134,6 @@ After building, copy `dist/index.html` over `Play Beltworks.html` to update the 
 | `cmd.ts` | Every player action as a command (applied at once offline, via the server online) |
 | `teams.ts` | Team states for online worlds (per-team inventory, research, stats), deterministic randomness |
 | `online.ts` | Join codes, spawning new players, team merging, leaderboard score, base buffer zones |
-| `net.ts`, `ui3.ts` | Online client (lockstep ticks, resyncs) and its HUD: code badge, players, chat |
-| `../server/` | The Node server: `server.ts` (connections, codes), `world.ts` (one worker thread per world) |
+| `net.ts`, `ui3.ts` | Online client (lockstep ticks, save uploads, catch-up, resyncs) and its HUD: code badge, players, chat |
+| `codes.ts` | Join codes (shared with the relay) |
+| `../server/` | The relay: `relay.ts` (logic), `worker.ts` (Cloudflare Durable Object), `relay-node.ts` (Node) |

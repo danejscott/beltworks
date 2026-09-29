@@ -2,19 +2,12 @@
 // Pure game logic — used by the server (to run the world) and by the client (to read team info).
 import { BLD, ITEMS } from './data';
 import { biomeAtTiles, isLand, TT, W, H } from './terrain';
-import { addTeam, enableTeams, MP, TeamInfo } from './teams';
+import { addTeam, enableTeams, MP, TeamInfo, wrand } from './teams';
 import { canPlace, G, newState, place, resetWorld } from './world';
 
 // ---------------------------------------------------------------------------
-// Join codes: 8 characters, no look-alikes (0/O, 1/I/L)
-export const CODE_ABC = 'ABCDEFGHJKMNPQRSTUVWXYZ23456789';
-export function newCode(rand: () => number = Math.random) { let s = ''; for (let i = 0; i < 8; i++) s += CODE_ABC[Math.floor(rand() * CODE_ABC.length)]; return s; }
-export const fmtCode = (c: string) => c.length === 8 ? c.slice(0, 4) + '-' + c.slice(4) : c;
-/** tidy what a player typed into a code (or '' if it can't be one) */
-export function normCode(s: string) {
-  const c = s.toUpperCase().replace(/[^A-Z0-9]/g, '');
-  return c.length === 8 && [...c].every(ch => CODE_ABC.includes(ch)) ? c : '';
-}
+// Join codes live in codes.ts (no game imports, so the relay can use them too)
+export { CODE_ABC, newCode, fmtCode, normCode } from './codes';
 
 export const PLAYER_COLS = ['#e8543f', '#3a7bd5', '#2fb86b', '#f2c12e', '#9b59d6', '#1fb5b5', '#ff7fb0', '#8d6e4f', '#e67e22', '#d0d4dc', '#6a8f2f', '#2c3e8f'];
 
@@ -42,7 +35,7 @@ function waterNear(x: number, y: number, r: number) {
 }
 
 /** the best place for a new player's HUB: far from everyone else, in a biome nobody has yet, with resources nearby */
-export function pickSpawn(rand: () => number = Math.random): { x: number; y: number } | null {
+export function pickSpawn(rand: () => number = wrand): { x: number; y: number } | null {
   const hubs = [...G.ents.values()].filter(e => BLD[e.type].kind === 'hub');
   const land = G.S.size, minSep = land * 0.16;
   const taken = new Set([...MP.info.values()].map(i => (i as any).biome).filter(Boolean));
@@ -102,7 +95,7 @@ function ensureStarter(x: number, y: number, rand: () => number) {
 }
 
 /** create a new team for a player at the best free spot; returns its info */
-export function spawnTeam(id: number, name: string, col: string, leader: number, rand: () => number = Math.random): TeamInfo | null {
+export function spawnTeam(id: number, name: string, col: string, leader: number, rand: () => number = wrand): TeamInfo | null {
   const sp = pickSpawn(rand);
   if (!sp) return null;
   const biome = biomeAtTiles(G.tiles, sp.x + 2, sp.y + 2);
@@ -153,13 +146,13 @@ export function joinTeam(pid: number, to: number) {
   return true;
 }
 /** player `pid` leaves their team and starts over on their own somewhere new */
-export function leaveTeam(pid: number, rand: () => number = Math.random) {
+export function leaveTeam(pid: number, id: number, col: string, rand: () => number = wrand) {
   const p = MP.players.get(pid);
   if (!p) return false;
   const mates = [...MP.players.values()].filter(q => q.team === p.team && q.id !== pid);
   if (!mates.length) return false;
-  const id = Math.max(0, ...MP.teams!.keys()) + 1;
-  const info = spawnTeam(id, p.name, p.col, pid, rand);
+  p.col = col;
+  const info = spawnTeam(id, p.name, col, pid, rand);
   if (!info) return false;
   p.team = id;
   // the team keeps its colour: make sure the leader is still on it

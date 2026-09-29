@@ -28,7 +28,7 @@ export function serialize() {
     // team world: the shared world fields, then each team's own state
     mp = {
       teams: [...MP.teams.entries()].map(([id, t]) => [id, teamFields(t)]),
-      info: [...MP.info.values()], players: [...MP.players.values()].map(p => ({ ...p, online: false })),
+      info: [...MP.info.values()], players: [...MP.players.values()].map(p => ({ ...p })), paused: [...MP.paused],
     };
   }
   const plain = MP.teams ? { ...MP.world, unlocked: [], done: [] } : { ...S, unlocked: [...S.unlocked], done: [...S.done] };
@@ -53,6 +53,7 @@ export function deserialize(o: any, keepTerrain = false) {
     for (const [id, f] of o.mp.teams) MP.teams.set(id, makeTeamState(world, { ...f, unlocked: new Set(f.unlocked), done: new Set(f.done) }));
     for (const i of o.mp.info || []) MP.info.set(i.id, i);
     for (const p of o.mp.players || []) MP.players.set(p.id, p);
+    MP.paused = new Set(o.mp.paused || []);
     const first = MP.teams.has(MP.myTeam) ? MP.myTeam : MP.teams.keys().next().value ?? 0;
     S = MP.teams.get(first)!; MP.cur = first;
   } else clearTeams();
