@@ -104,6 +104,7 @@ wss.on('connection', ws => {
       rec.w.postMessage({ k: 'cmd', conn: c.id, c: m.c });
     } else if (m.t === 'resync') rec.w.postMessage({ k: 'resync', conn: c.id });
     else if (m.t === 'chat') rec.w.postMessage({ k: 'chat', conn: c.id, text: m.text });
+    else if (m.t === 'team') rec.w.postMessage({ k: 'team', conn: c.id, op: m.op, pid: m.pid, team: m.team });
     else if (m.t === 'ping') ws.send(JSON.stringify({ t: 'pong', at: m.at }));
   });
   ws.on('close', () => {

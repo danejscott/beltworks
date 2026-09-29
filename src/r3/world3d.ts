@@ -18,6 +18,36 @@ import { C, screenRay } from './core';
 import { B, M, Model, std } from './mat';
 import * as MD from './models';
 import { T3, tunnelInside, updateCuts } from './terrain3d';
+import { MP } from '../teams';
+
+// ---------------------------------------------------------------------------
+// Team colours (online): the orange trim of a player's buildings and vehicles becomes their colour
+const tintCache = new WeakMap<object, Map<string, THREE.Material[]>>();
+const accentMats = new Map<string, THREE.Material>();
+function accent(col: string, dark: boolean) {
+  const k = col + (dark ? 'd' : '');
+  let m = accentMats.get(k);
+  if (!m) { const c = new THREE.Color(col); if (dark) c.multiplyScalar(0.62); m = std('#' + c.getHexString(), dark ? 0.55 : 0.48, 0.3); accentMats.set(k, m); }
+  return m;
+}
+/** a team's colour, or '' for the default orange */
+const teamHex = (o: number | undefined) => (MP.teams && o ? MP.info.get(o)?.col || '' : '');
+/** the material list with orange swapped for the team's colour */
+function tint(mats: THREE.Material | THREE.Material[], o: number | undefined): THREE.Material | THREE.Material[] {
+  const col = teamHex(o);
+  if (!col || !Array.isArray(mats)) return mats;
+  let m = tintCache.get(mats);
+  if (!m) tintCache.set(mats, m = new Map());
+  let r = m.get(col);
+  if (!r) { r = mats.map(x => x === M.orange ? accent(col, false) : x === M.orangeDk ? accent(col, true) : x); m.set(col, r); }
+  return r;
+}
+const tkey = (o: number | undefined) => { const c = teamHex(o); return c ? '|' + c : ''; };
+/** "Dane" or "Dane & Sam" (a team's players), falling back to the team's name */
+function teamLabel(o: number) {
+  const names = [...MP.players.values()].filter(p => p.team === o).map(p => p.name);
+  return names.length ? names.slice(0, 3).join(' & ') + (names.length > 3 ? ' +' + (names.length - 3) : '') : MP.info.get(o)?.name || '';
+}
 
 const HP = Math.PI / 2;
 export const poleReachT = (type: string) => (BLD[type].reach || 0) * (G.S && G.S.shop.wires ? 1.5 : 1);
@@ -157,11 +187,11 @@ export function visHeight(e: Ent) {
   return TPL[e.type] ? TPL[e.type].height : 1;
 }
 
-function pushTemplate(L: Layer, key: string, t: MD.Template, m: THREE.Matrix4, mat?: THREE.Material) {
-  L.get(key, t.stat.geo, mat || t.stat.mats).push(m);
+function pushTemplate(L: Layer, key: string, t: MD.Template, m: THREE.Matrix4, mat?: THREE.Material, o?: number) {
+  L.get(key + (mat ? '' : tkey(o)), t.stat.geo, mat || tint(t.stat.mats, o)).push(m);
 }
-function pushModel(L: Layer, key: string, model: Model, m: THREE.Matrix4, mat?: THREE.Material, shadow = true) {
-  L.get(key, model.geo, mat || model.mats, shadow).push(m);
+function pushModel(L: Layer, key: string, model: Model, m: THREE.Matrix4, mat?: THREE.Material, shadow = true, o?: number) {
+  L.get(key + (mat ? '' : tkey(o)), model.geo, mat || tint(model.mats, o), shadow).push(m);
 }
 /** orange arrow in front (output) and blue arrow behind (input) for every building with ports */
 const OUT_KINDS = new Set(['machine', 'miner', 'harvester', 'storage', 'station', 'tstation', 'port', 'drone']);
@@ -282,7 +312,7 @@ function rebuildStatic(real: number) {
     let sy = 1;
     if (age < 0.45) { sy = Math.max(0.02, easeOutBack(Math.max(0, age / 0.45))); popping = true; }
     const m = compose(e.x + e.w / 2, 0, e.y + e.h / 2, rotOf(e), 1, sy, 1);
-    pushTemplate(SL, 'T:' + e.type, t, m);
+    pushTemplate(SL, 'T:' + e.type, t, m, undefined, e.o);
     if (t.anims.length || t.light || t.smoke || t.glow) animEnts.push(e);
     if (e.type === 'lamp') lampEnts.push(e);
     pushPortArrows(SL, e, '');
@@ -401,7 +431,7 @@ export function update3D(time: number, real: number, dt: number, labels: Label3[
       a.fn(AO, e, time, real, !!busy);
       EU.set(AO.rx, AO.ry, AO.rz); Q.setFromEuler(EU); V.set(AO.x, AO.y, AO.z); SV.set(AO.s, AO.s, AO.s);
       const m = AM.compose(V, Q, SV).premultiply(baseM);
-      DL.get('A:' + e.type + ':' + a.key, a.model.geo, a.model.mats).push(m);
+      DL.get('A:' + e.type + ':' + a.key + tkey(e.o), a.model.geo, tint(a.model.mats, e.o)).push(m);
     }
     const co = Math.cos(ry), si = Math.sin(ry);
     const loc = (p: number[]) => [cx + p[0] * co + p[2] * si, cy - p[0] * si + p[2] * co, p[1] + zoff];
@@ -467,7 +497,7 @@ export function update3D(time: number, real: number, dt: number, labels: Label3[
       if (!f || !r) continue;
       const x = (f[0] + r[0]) / 2, y = (f[1] + r[1]) / 2, a = Math.atan2(f[1] - r[1], f[0] - r[0]);
       const loco = tr.cars[i] === 'loco';
-      pushModel(DL, loco ? 'loco' : 'wagon', mdl(loco ? 'loco' : 'wagon', loco ? MD.locoModel : MD.wagonModel), compose(x, 0.05, y, -a));
+      pushModel(DL, loco ? 'loco' : 'wagon', mdl(loco ? 'loco' : 'wagon', loco ? MD.locoModel : MD.wagonModel), compose(x, 0.05, y, -a), undefined, true, tr.o);
       if (!loco && tr.tot > 0) {
         const k = Object.keys(tr.cargo)[0];
         if (k) { COL.set(ITEMS[k].c); DL.get('cargo', mdl('cargo', () => ({ geo: new THREE.BoxGeometry(1.6, 0.25, 0.55).translate(0, 0.9, 0), mats: [] })).geo, cargoMat || (cargoMat = std('#ffffff', 0.7, 0.1)), true, true).push(compose(x, 0.05, y, -a, 1, Math.min(1, tr.tot / (2000 * tr.cars.filter((c: string) => c === 'wagon').length) + 0.2), 1), COL); }
@@ -488,7 +518,7 @@ export function update3D(time: number, real: number, dt: number, labels: Label3[
   for (const sp of G.ships) {
     if (Math.abs(sp.x - tgx) > VR * 1.5 || Math.abs(sp.y - tgy) > VR * 1.5) continue;
     const bob = Math.sin(real * 1.3 + sp.id % 7) * 0.04;
-    pushModel(DL, 'ship', mdl('ship', MD.shipModel), compose(sp.x, -0.32 + bob, sp.y, -sp.a));
+    pushModel(DL, 'ship', mdl('ship', MD.shipModel), compose(sp.x, -0.32 + bob, sp.y, -sp.a), undefined, true, sp.o);
     if (sp.v > 0.5 && near && Math.random() < 0.3) spawn(sp.x - Math.cos(sp.a) * 1.4, sp.y - Math.sin(sp.a) * 1.4, { z: -0.1, vz: 0.2, life: 1.2, spr: 'glow', size: 0.35, col: rgba(0.9, 0.95, 1, 0.5), grow: 0.8, vr: 0 });
     if (close) labels.push({ x: sp.x, y: sp.y, z: 1.6, t: sp.name, c: '#bfe0ff' });
   }
@@ -505,7 +535,7 @@ export function update3D(time: number, real: number, dt: number, labels: Label3[
   // trucks
   for (const tk of G.trucks) {
     if (Math.abs(tk.x - tgx) > VR * 1.5 || Math.abs(tk.y - tgy) > VR * 1.5) continue;
-    pushModel(DL, 'truck', mdl('truck', MD.truckModel), compose(tk.x, 0.02, tk.y, -tk.a));
+    pushModel(DL, 'truck', mdl('truck', MD.truckModel), compose(tk.x, 0.02, tk.y, -tk.a), undefined, true, tk.o);
     if (close) labels.push({ x: tk.x, y: tk.y, z: 1.3, t: tk.name, c: '#ffe0b0' });
   }
   const night = nightness();
@@ -547,15 +577,22 @@ export function update3D(time: number, real: number, dt: number, labels: Label3[
   for (const p of G.L.drones) {
     const pos = dronePos(p);
     const [x, y, a, alt] = pos || [p.x + 1.5, p.y + 1.5, 0, 0];
-    pushModel(DL, 'drone', mdl('drone', MD.droneModel), compose(x, pos ? 1.2 + alt * 4 : 0.5, y, -a));
+    pushModel(DL, 'drone', mdl('drone', MD.droneModel), compose(x, pos ? 1.2 + alt * 4 : 0.5, y, -a), undefined, true, p.o);
     if (p.name && near) labels.push({ x: p.x + 1.5, y: p.y + 1.5, z: 2.2, t: p.name, c: '#a8d8ff' });
   }
   for (const s of G.L.stations) if (near) labels.push({ x: s.x + 1.5, y: s.y + 1.5, z: 2.9, t: s.name + (s.mode === 'load' ? ' ⬆' : ' ⬇'), c: '#ffe08a' });
-  for (const s of G.L.outposts || []) labels.push({ x: s.x + 1.5, y: s.y + 1.5, z: 3.9, t: '⛺ ' + s.name, c: '#ffc070' });
+  for (const s of G.L.outposts || []) labels.push({ x: s.x + 1.5, y: s.y + 1.5, z: 3.9, t: '⛺ ' + (MP.teams && s.o && s.o !== MP.myTeam ? teamLabel(s.o) : s.name), c: MP.teams && s.o ? MP.info.get(s.o)?.col || '#ffc070' : '#ffc070' });
   for (const s of G.L.ports || []) if (near) labels.push({ x: s.x + 1.5, y: s.y + 1.5, z: 2.9, t: '⚓ ' + s.name + (s.mode === 'load' ? ' ⬆' : ' ⬇'), c: '#a8d0ff' });
   for (const s of G.L.tstations) if (near) labels.push({ x: s.x + 1.5, y: s.y + 1.5, z: 2.6, t: s.name + (s.mode === 'load' ? ' ⬆' : ' ⬇'), c: '#ffd0a0' });
   if (G.L.elevator) { const e = G.L.elevator; labels.push({ x: e.x + 2.5, y: e.y + 2.5, z: 13.5, t: 'SPACE ELEVATOR', c: '#e0d4ff' }); }
   if (G.L.hub) { const e = G.L.hub; if (near) labels.push({ x: e.x + 2, y: e.y + 2, z: 4.3, t: 'HUB', c: '#ffd08a' }); }
+  // online: every player's name floats above their HUB (and outposts), in their colour
+  if (MP.teams) for (const h of G.L.hubs) {
+    const inf = MP.info.get(h.o || 0);
+    if (!inf || !h.o || Math.abs(h.x - tgx) > VR * 3 || Math.abs(h.y - tgy) > VR * 3) continue;
+    const who = teamLabel(h.o);
+    labels.push({ x: h.x + 2, y: h.y + 2, z: 6.2, t: who, c: inf.col });
+  }
   // purity markers on nodes
   if (close) for (const n of G.nodes) {
     if (Math.abs(n.x - tgx) > VR || Math.abs(n.y - tgy) > VR || G.grid[n.y * W + n.x]) continue;

@@ -137,7 +137,13 @@ export function buildTerrain() {
   };
   const group = new THREE.Group();
   T3.mat = mat;
+  // open ocean needs no terrain: the (opaque) water plane covers it
+  const allDeep = (ci: number, cj: number) => {
+    for (let y = Math.max(0, cj * CH - 1); y <= Math.min(H - 1, cj * CH + CH); y++) for (let x = Math.max(0, ci * CH - 1); x <= Math.min(W - 1, ci * CH + CH); x++) if (G.tiles[y * W + x] !== TT.DEEP) return false;
+    return true;
+  };
   for (let cj = 0; cj < H / CH; cj++) for (let ci = 0; ci < W / CH; ci++) {
+    if (allDeep(ci, cj)) continue;
     const m = new THREE.Mesh(chunkGeo(ci, cj, 8), mat);
     m.userData.lod = 3; m.userData.ci = ci; m.userData.cj = cj; m.userData.cx = ci * CH + CH / 2; m.userData.cy = cj * CH + CH / 2;
     m.receiveShadow = true; m.castShadow = true;

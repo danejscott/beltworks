@@ -11,7 +11,7 @@ import { deserialize, serialize, stateHash } from '../src/save';
 import { applyCmd, Cmd } from '../src/cmd';
 import { ensureFresh, update } from '../src/sim';
 import { MP } from '../src/teams';
-import { createServerWorld, PLAYER_COLS, spawnTeam } from '../src/online';
+import { createServerWorld, joinTeam, leaveTeam, PLAYER_COLS, spawnTeam } from '../src/online';
 import { G } from '../src/world';
 import { BLD } from '../src/data';
 
@@ -72,6 +72,17 @@ function save() {
   } catch (e) { log('save failed', e); }
 }
 let lastResync = 0, resyncPending = false;
+const invites = new Map<number, { team: number; at: number }>();
+/** a player's team changed: tell them, then everyone reloads the new state */
+function teamChanged(pid: number) {
+  const p = MP.players.get(pid)!;
+  for (const [c, id] of conns) if (id === pid) send(c, { t: 'you', team: p.team });
+  dirty = true;
+  refreshPaused();
+  lastResync = 0;
+  resyncAll();
+  send('all', { t: 'players', list: players() });
+}
 /** everyone (server included) reloads from one snapshot, so all copies are identical from this tick on */
 function resyncAll() {
   const now = Date.now();
@@ -106,7 +117,10 @@ function onMessage(m: any) {
     if (!p) {
       const id = Math.max(0, ...MP.players.keys()) + 1;
       const team = Math.max(0, ...MP.teams!.keys()) + 1;
-      const c = /^#[0-9a-f]{6}$/i.test(col) ? col : PLAYER_COLS[id % PLAYER_COLS.length];
+      // every team gets its own colour: if the one asked for is taken, use the first free one
+      const used = new Set([...MP.info.values()].filter(i => i.id).map(i => i.col.toLowerCase()));
+      const want = /^#[0-9a-f]{6}$/i.test(col) ? col.toLowerCase() : '';
+      const c = want && !used.has(want) ? want : PLAYER_COLS.find(q => !used.has(q.toLowerCase())) || PLAYER_COLS[id % PLAYER_COLS.length];
       const info = spawnTeam(team, String(name).slice(0, 24) || 'Player', c, id);
       if (!info) { send(conn, { t: 'err', msg: 'This world is full — no room left to start a new base.' }); return; }
       p = { id, name: String(name).slice(0, 24) || 'Player', team, col: c, online: true } as any;
@@ -139,6 +153,22 @@ function onMessage(m: any) {
   } else if (m.k === 'chat') {
     const pid = conns.get(m.conn), p = pid ? MP.players.get(pid) : null;
     if (p) send('all', { t: 'chat', from: p.name, col: MP.info.get(p.team)?.col, text: String(m.text).slice(0, 200) });
+  } else if (m.k === 'team') {
+    const pid = conns.get(m.conn), p = pid ? MP.players.get(pid) : null;
+    if (!p) return;
+    if (m.op === 'invite') {
+      const q = MP.players.get(+m.pid);
+      if (!q || q.team === p.team || !q.online) return;
+      invites.set(q.id, { team: p.team, at: Date.now() });
+      for (const [c, id] of conns) if (id === q.id) send(c, { t: 'invite', from: p.name, team: p.team, col: MP.info.get(p.team)?.col || p.col });
+    } else if (m.op === 'accept') {
+      const inv = invites.get(p.id);
+      if (!inv || inv.team !== +m.team || Date.now() - inv.at > 120_000 || !MP.teams!.has(inv.team)) { send(m.conn, { t: 'err-soft', msg: 'That invitation has expired' }); return; }
+      invites.delete(p.id);
+      if (joinTeam(p.id, inv.team)) { teamChanged(p.id); log(p.name, 'joined team', inv.team); }
+    } else if (m.op === 'leave') {
+      if (leaveTeam(p.id)) { teamChanged(p.id); log(p.name, 'left their team'); }
+    }
   } else if (m.k === 'stop') {
     save(); process.exit(0);
   }

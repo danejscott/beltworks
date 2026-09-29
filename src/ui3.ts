@@ -1,6 +1,6 @@
 // Online HUD: the server badge (join code + who's here), chat, the players panel and the "disconnected" screen.
 import { NET, sendChat } from './net';
-import { fmtCode } from './online';
+import { empireScore, fmtCode } from './online';
 import { MP } from './teams';
 import { G } from './world';
 import { esc } from './util';
@@ -77,16 +77,34 @@ export function chatMessage(c: { from: string; col: string; text: string }) {
 function playersHTML(): [string, string] {
   const teams = new Map<number, typeof NET.players>();
   for (const p of NET.players) { let l = teams.get(p.team); if (!l) teams.set(p.team, l = []); l.push(p); }
-  let h = `<div id="plist"><p class="sm" style="margin-top:0">Share the join code <b style="color:#ffd48a;font-size:15px">${fmtCode(NET.code)}</b> — anyone with it can join this world and start their own base.</p>`;
-  for (const [t, l] of teams) {
-    const inf = MP.info.get(t), mine = t === MP.myTeam;
-    h += `<div class="plrow"><span class="sw" style="background:${inf?.col || '#888'}"></span><b>${esc(inf?.name || 'Team ' + t)}</b>${mine ? ' <span class="dim">(you)</span>' : ''}<span class="st">Tier ${MP.teams?.get(t)?.maxTier ?? 0}</span></div>`;
-    for (const p of l) h += `<div class="plrow" style="padding-left:24px"><span>${esc(p.name)}</span><span class="st ${p.online ? 'on' : 'off'}">${p.online ? '● online' : '○ offline (their factory is paused)'}</span></div>`;
-  }
+  const ranked = [...teams.keys()].map(t => ({ t, ...empireScore(t) })).sort((a, b) => b.score - a.score);
+  const myMates = NET.players.filter(p => p.team === MP.myTeam).length;
+  let h = `<div id="plist"><p class="sm" style="margin-top:0">Share the join code <b style="color:#ffd48a;font-size:15px">${fmtCode(NET.code)}</b> — anyone with it can join this world and start their own base.</p><h3 class="ch">🏆 Leaderboard</h3>`;
+  ranked.forEach((r, i) => {
+    const t = r.t, l = teams.get(t)!, inf = MP.info.get(t), mine = t === MP.myTeam;
+    h += `<div class="plrow"${mine ? ' style="background:#2b261655"' : ''}><b style="width:22px">${i + 1}.</b><span class="sw" style="background:${inf?.col || '#888'}"></span><b>${esc(l.map(p => p.name).join(' & '))}</b>${mine ? ' <span class="dim">(you)</span>' : ''}<span class="st">Tier ${r.tier} · ${r.built} built · <b style="color:#ffd48a">${r.score.toLocaleString()}</b></span></div>`;
+    for (const p of l) {
+      const btn = !mine && p.online ? `<button class="mini" data-act="tinvite:${p.id}">Invite to my team</button>` : mine && p.id === MP.me && myMates > 1 ? `<button class="mini danger" data-act="tleave">Leave team</button>` : '';
+      h += `<div class="plrow" style="padding-left:30px"><span>${esc(p.name)}</span>${btn}<span class="st ${p.online ? 'on' : 'off'}">${p.online ? '● online' : '○ offline (paused)'}</span></div>`;
+    }
+  });
+  h += `<p class="sm dim">Score = tiers and milestones reached, plus the value of everything your factory has ever made, plus what you've built. Teams share everything: inventory, research, power and colour.</p>`;
   h += `<p class="sm dim">Press <kbd>Enter</kbd> to chat.</p></div>`;
   return ['Players', h];
 }
 export function openPlayers() { if (NET.on) openModal('players'); }
+
+/** another player invited you to their team */
+export function showInvite(m: { from: string; team: number; col: string }) {
+  build();
+  const d = document.createElement('div');
+  d.className = 'toast big';
+  d.style.cssText = 'position:fixed;left:50%;top:90px;transform:translateX(-50%);z-index:96;background:#161b24;border:1px solid ' + m.col + ';border-radius:12px;padding:12px 16px;color:#e4e8ef';
+  d.innerHTML = `🤝 <b style="color:${m.col}">${esc(m.from)}</b> invited you to join their team. You'd share everything — inventory, research, power — and your base joins theirs. <div style="margin-top:8px;display:flex;gap:8px;justify-content:center"><button class="go" data-act="taccept:${m.team}">Join their team</button><button data-x="1">No thanks</button></div>`;
+  document.body.appendChild(d);
+  d.addEventListener('pointerdown', ev => { const t = ev.target as HTMLElement; if (t.closest('button')) setTimeout(() => d.remove(), 50); });
+  setTimeout(() => d.remove(), 60000);
+}
 
 /** lost the server: stop and offer a way out */
 export function showDisconnected(msg: string, toTitle: () => void) {

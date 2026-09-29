@@ -1,5 +1,7 @@
 // UI for the newer systems: vehicles list, scanner, research, planner, achievements, crash sites, trucks.
 import { sfx } from './audio';
+import { send as netSend } from './net';
+import { MP } from './teams';
 import { online, run } from './cmd';
 import { ALT_IDS, BLD, isFluid, ITEMS, MACHINE_NAMES, RECIPES } from './data';
 import { ACHS } from './achievements';
@@ -25,7 +27,7 @@ export const fastTravelAllowed = () => G.S.mode !== 'hard';
 export function travelPoints(): { name: string; x: number; y: number; e: Ent }[] {
   const out: { name: string; x: number; y: number; e: Ent }[] = [];
   if (G.L && G.L.hub) out.push({ name: '🏠 HUB', x: G.L.hub.x + 2, y: G.L.hub.y + 2, e: G.L.hub });
-  for (const o of (G.L && G.L.outposts) || []) out.push({ name: '⛺ ' + o.name, x: o.x + 1.5, y: o.y + 1.5, e: o });
+  for (const o of (G.L && G.L.outposts) || []) if ((o.o || 0) === MP.myTeam) out.push({ name: '⛺ ' + o.name, x: o.x + 1.5, y: o.y + 1.5, e: o });
   return out;
 }
 let pendingSite: Feat | null = null;
@@ -184,6 +186,9 @@ export function extraAct(cmd: string, a: string, b: string): boolean {
     case 'kdel': if (k) run({ k: 'vdel', v: 'k', id: k.id, i: +a }); return true;
     case 'travel': { const p = travelPoints()[+a]; if (p && fastTravelAllowed()) { flyTo(p.x, p.y); closeModal(); toast(`🧭 ${esc(p.name)}`, ''); sfx('click'); } return true; }
     case 'tlreplay': startTimelapse(null); return true;
+    case 'tinvite': netSend({ t: 'team', op: 'invite', pid: +a }); toast('Invitation sent', 'good'); return true;
+    case 'taccept': netSend({ t: 'team', op: 'accept', team: +a }); return true;
+    case 'tleave': if (confirm('Leave your team? You will start over with a brand-new base somewhere else (your team keeps everything).')) netSend({ t: 'team', op: 'leave' }); return true;
     case 'dn': if (online()) return true; run({ k: 'dn' }); sfx('click'); toast(S.dayNight ? '🌙 Day/night cycle on' : '☀️ Day/night cycle off (always daytime)', ''); return true;
   }
   return false;

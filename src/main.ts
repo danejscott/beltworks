@@ -164,6 +164,7 @@ function playOnline(o: { code?: string; create?: any }) {
     },
     players: () => OUI.refreshPlayers(),
     chat: c => OUI.chatMessage(c),
+    invite: m => OUI.showInvite(m),
   });
   setTimeout(() => { if (!entered && !NET.ready) setLoading(o.create ? 'Generating the world… (big maps take a little while)' : 'Loading the world…'); }, 1500);
 }
@@ -188,7 +189,9 @@ async function exitToTitle() {
 let last = 0, acc = 0, saveT = 0, dbgT = 1e7, simErr = false, ambT = 0;
 let fly: null | { x0: number; y0: number; x1: number; y1: number; t: number } = null;
 function flyTo(x: number, y: number) { fly = { x0: view.cam.x, y0: view.cam.y, x1: x, y1: y, t: 0 }; if (view.cam.s < 22) view.cam.s = 26; }
+let lastFrameAt = 0;
 function frame(ms: number) {
+  lastFrameAt = performance.now();
   const now = ms / 1000;
   let dt = now - last; last = now;
   if (dt > 0.1) dt = 0.1; if (dt < 0) dt = 0;
@@ -308,7 +311,7 @@ async function boot() {
   requestAnimationFrame(t => { last = t / 1000; requestAnimationFrame(frame); });
   // online worlds keep ticking while this tab is in the background (animation frames stop there)
   setInterval(() => {
-    if (!NET.ready || !document.hidden) return;
+    if (!NET.ready || (!document.hidden && performance.now() - lastFrameAt < 500)) return;
     const t0 = performance.now();
     while (ticksAvailable() > 0 && performance.now() - t0 < 250) { try { netStep(update); } catch (err) { console.error(err); NET.tick++; } }
   }, 1000);

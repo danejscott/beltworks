@@ -1,6 +1,6 @@
 // Online worlds: join codes, creating a server world, and spawning new players far apart with a fair start.
 // Pure game logic — used by the server (to run the world) and by the client (to read team info).
-import { BLD } from './data';
+import { BLD, ITEMS } from './data';
 import { biomeAtTiles, isLand, TT, W, H } from './terrain';
 import { addTeam, enableTeams, MP, TeamInfo } from './teams';
 import { canPlace, G, newState, place, resetWorld } from './world';
@@ -120,3 +120,74 @@ export function spawnTeam(id: number, name: string, col: string, leader: number,
   return MP.info.get(id)!;
 }
 export { HUBW };
+
+// ---------------------------------------------------------------------------
+/** player `pid` joins team `to`. If they were alone, their whole base and everything they own joins too. */
+export function joinTeam(pid: number, to: number) {
+  const p = MP.players.get(pid), T = MP.teams!, dst = T.get(to);
+  if (!p || !dst || p.team === to) return false;
+  const from = p.team, src = T.get(from);
+  const alone = ![...MP.players.values()].some(q => q.id !== pid && q.team === from);
+  p.team = to;
+  if (!alone || !src) return true;
+  // hand over buildings and vehicles
+  for (const e of G.ents.values()) if ((e.o || 0) === from) e.o = to;
+  for (const v of [...G.trains, ...G.trucks, ...G.ships] as any[]) if ((v.o || 0) === from) v.o = to;
+  // pool the two teams' stuff
+  for (const k in src.inv) dst.inv[k] = (dst.inv[k] || 0) + src.inv[k];
+  for (const k of src.unlocked) dst.unlocked.add(k);
+  for (const k of src.done) dst.done.add(k);
+  dst.maxTier = Math.max(dst.maxTier, src.maxTier);
+  dst.points += src.points; dst.coupons += src.coupons; dst.couponsEarned += src.couponsEarned;
+  for (const k in src.shop) dst.shop[k] = Math.max(dst.shop[k] || 0, src.shop[k]);
+  for (const k in src.delivered) dst.delivered[k] = (dst.delivered[k] || 0) + src.delivered[k];
+  for (const k in src.made) dst.made[k] = (dst.made[k] || 0) + src.made[k];
+  for (const k in src.elev) dst.elev[k] = (dst.elev[k] || 0) + (src.elev as any)[k];
+  for (const a of src.alts) if (!dst.alts.includes(a)) dst.alts.push(a);
+  for (const i of src.discN || []) if (!dst.discN.includes(i)) dst.discN.push(i);
+  for (const i of src.discF || []) if (!dst.discF.includes(i)) dst.discF.push(i);
+  dst.lines.push(...src.lines);
+  if (src.won) dst.won = true;
+  T.delete(from); MP.info.delete(from); MP.paused.delete(from);
+  G.dirty = { links: true, power: true, fluid: true }; G.rev++;
+  return true;
+}
+/** player `pid` leaves their team and starts over on their own somewhere new */
+export function leaveTeam(pid: number, rand: () => number = Math.random) {
+  const p = MP.players.get(pid);
+  if (!p) return false;
+  const mates = [...MP.players.values()].filter(q => q.team === p.team && q.id !== pid);
+  if (!mates.length) return false;
+  const id = Math.max(0, ...MP.teams!.keys()) + 1;
+  const info = spawnTeam(id, p.name, p.col, pid, rand);
+  if (!info) return false;
+  p.team = id;
+  // the team keeps its colour: make sure the leader is still on it
+  const old = MP.info.get(mates[0].team);
+  if (old && old.leader === pid) old.leader = mates[0].id;
+  return true;
+}
+
+/** how big an empire is: tiers, milestones, everything it has ever made and what it has built */
+export function empireScore(o: number) {
+  const t = MP.teams?.get(o);
+  if (!t) return { score: 0, tier: 0, built: 0 };
+  let made = 0;
+  for (const k in t.made) made += (ITEMS[k]?.val || 1) * t.made[k];
+  let built = 0;
+  for (const e of G.ents.values()) if ((e.o || 0) === o) built++;
+  return { score: Math.round(t.maxTier * 1000 + t.done.size * 150 + made / 40 + built * 2), tier: t.maxTier, built };
+}
+
+/** no building right next to someone else's HUB (so nobody can wall a rival in) */
+export const BASE_BUFFER = 14;
+export function nearRivalBase(x: number, y: number, w: number, h: number, me: number): string | null {
+  if (!MP.teams) return null;
+  for (const inf of MP.info.values()) {
+    if (!inf.id || inf.id === me) continue;
+    const bx = inf.hx, by = inf.hy;
+    if (x + w > bx - BASE_BUFFER && x < bx + HUBW + BASE_BUFFER && y + h > by - BASE_BUFFER && y < by + HUBW + BASE_BUFFER)
+      return `Too close to ${inf.name}'s base`;
+  }
+  return null;
+}

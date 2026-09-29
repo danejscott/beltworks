@@ -32,6 +32,7 @@ export interface NetHandlers {
   error: (msg: string) => void;      // couldn't join / lost connection
   players: () => void;
   chat: (m: { from: string; col: string; text: string }) => void;
+  invite: (m: { from: string; team: number; col: string }) => void;
 }
 
 export function serverURL() {
@@ -117,6 +118,9 @@ function onMsg(m: any) {
     case 'players': NET.players = m.list; H.players(); break;
     case 'chat': { const c = { from: m.from, col: m.col || '#ccc', text: m.text, t: Date.now() }; NET.chat.push(c); if (NET.chat.length > 50) NET.chat.shift(); H.chat(c); break; }
     case 'pong': NET.ping = Date.now() - m.at; break;
+    case 'invite': H.invite(m); break;
+    case 'err-soft': G.fx.toast(m.msg, 'bad'); break;
+    case 'you': MP.myTeam = m.team; G.dirty.links = true; break;
     case 'err': H.error(m.msg); disconnect(); break;
   }
 }

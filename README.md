@@ -8,6 +8,30 @@ A 3D, Satisfactory-style factory game (rendered with Three.js; all models are bu
 
 Or double-click **`Play Beltworks.html`**. It's a single self-contained file that runs offline in Chrome, Edge or Firefox (needs WebGL2). Progress auto-saves in your browser every 30 seconds. Use **☰ → Export save** to back up or move a save.
 
+## Multiplayer (online servers)
+
+On the title screen, **🌐 Play online** lets you create a server or join one with its 8-character code (like `K7QM-2XRP`). The code never changes.
+
+- **Competitive:** every player starts their own base far from the others, in a different biome, with starter resources nearby. Race to build the biggest empire; the **leaderboard** (press **Y**) scores tiers, milestones, everything your factory has made and what you've built.
+- **Economy only:** nobody can remove or change another player's buildings, and you can't build right next to someone else's HUB. You *can* run a belt out of a rival's open output port and take what comes out.
+- **Teams:** invite a player from the Players panel. Teammates share inventory, research, power and colour; a player who was on their own brings their whole base along.
+- **Your colour** replaces the orange trim on your buildings and vehicles, and your name floats above your HUB.
+- **Always on:** the server saves everything (with hourly backups). Your factory pauses while you're offline.
+- **Enormous** maps (4608² of land, 4× Large) are available for servers; they need a desktop computer with plenty of memory.
+- Chat with **Enter**. Fast travel works between your own team's bases.
+
+### Running a server
+
+```bash
+npm install
+npm run build:server   # bundles server/server.ts + server/world.ts into server/dist/
+npm run server         # node server/dist/server.mjs --port 8787 --data ./data
+```
+
+The game connects to `ws://localhost:8787` when it's opened from `localhost`, otherwise to the public server (change it under **Play online → Server address**). Browsers need `wss://` for the GitHub Pages site, so put the server behind HTTPS (for example Caddy with a free DuckDNS name).
+
+How it stays in sync: every player's copy runs the same simulation. The server puts all commands in one order and tags each with the tick it applies at. Every 5 seconds the copies compare a fingerprint of the world, and any copy that drifts reloads from a snapshot.
+
 ## Keys
 
 These are the main keys; press **?** in the game for the rest.
@@ -26,6 +50,8 @@ These are the main keys; press **?** in the game for the rest.
 | L | Planner |
 | G (or Space) | Locate and fly to your HUB |
 | O | Fast travel between HUB and Outposts |
+| Y | Players and leaderboard (online) |
+| Enter | Chat (online) |
 | PageUp / PageDown (or E / Z) | Change floor |
 
 ## Develop
@@ -99,4 +125,9 @@ After building, copy `dist/index.html` over `Play Beltworks.html` to update the 
 | `atlas.ts` | 2D sprites for UI icons and particles |
 | `input.ts` | Mouse/keyboard, build tools, blueprints |
 | `ui.ts`, `ui2.ts` | HUD, inspector, menus, map; vehicles/scanner/research/planner/achievement screens |
-| `save.ts` | Save/load (IndexedDB), export/import |
+| `save.ts` | Save/load (IndexedDB), export/import, world fingerprint |
+| `cmd.ts` | Every player action as a command (applied at once offline, via the server online) |
+| `teams.ts` | Team states for online worlds (per-team inventory, research, stats), deterministic randomness |
+| `online.ts` | Join codes, spawning new players, team merging, leaderboard score, base buffer zones |
+| `net.ts`, `ui3.ts` | Online client (lockstep ticks, resyncs) and its HUD: code badge, players, chat |
+| `../server/` | The Node server: `server.ts` (connections, codes), `world.ts` (one worker thread per world) |

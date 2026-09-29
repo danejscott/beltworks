@@ -1,4 +1,6 @@
 import { buildingIconURL, itemIconURL } from './atlas';
+import { NET } from './net';
+import { fmtCode } from './online';
 import { online, run } from './cmd';
 import { netHud } from './ui3';
 import { audio, setVolume, sfx, setSound, vol } from './audio';
@@ -529,7 +531,8 @@ function renderModal() {
     h = HELP;
   } else if (k === 'menu') {
     t = 'Menu';
-    h = `<div class="menu"><button data-act="save">💾 Save now <span class="dim">(auto-saves every 30s)</span></button><button data-act="export">⬇ Export save file</button><button data-act="import">⬆ Import save file</button><button data-act="sound">${audio.on ? '🔊 Sound: on' : '🔇 Sound: off'}</button><div class="vols">${([['music', '🎵 Music'], ['amb', '🌲 Ambience'], ['sfx', '🔨 Effects']] as [string, string][]).map(([k, l]) => `<label>${l}<input type="range" min="0" max="100" value="${Math.round((vol as any)[k] * 100)}" data-input="vol:${k}"></label>`).join('')}</div><button data-act="speed">⏩ Game speed: ${S.speed}×</button><button data-act="dn">${S.dayNight !== false ? '🌙 Day/night cycle: on' : '☀️ Day/night cycle: off'}</button><button data-act="open:recap">📊 Run recap & timelapse</button><button data-act="timer">⏱ Run timer: ${showTimer() ? 'shown' : 'hidden'}</button><button class="go" data-act="newgame">🏠 Save & return to title screen</button><p class="sm"><b>${esc(S.name || '')}</b> · ${S.mode || 'easy'} · ${S.size || 1024}² · played ${Math.floor(S.time / 60)} min · seed ${S.seed}</p></div>`;
+    const onl = online();
+    h = `<div class="menu">${onl ? `<p class="sm" style="margin-top:0">🌐 Online world — the server saves everything automatically. Join code: <b>${fmtCode(NET.code)}</b></p>` : `<button data-act="save">💾 Save now <span class="dim">(auto-saves every 30s)</span></button><button data-act="export">⬇ Export save file</button><button data-act="import">⬆ Import save file</button>`}<button data-act="sound">${audio.on ? '🔊 Sound: on' : '🔇 Sound: off'}</button><div class="vols">${([['music', '🎵 Music'], ['amb', '🌲 Ambience'], ['sfx', '🔨 Effects']] as [string, string][]).map(([k, l]) => `<label>${l}<input type="range" min="0" max="100" value="${Math.round((vol as any)[k] * 100)}" data-input="vol:${k}"></label>`).join('')}</div>${onl ? '' : `<button data-act="speed">⏩ Game speed: ${S.speed}×</button><button data-act="dn">${S.dayNight !== false ? '🌙 Day/night cycle: on' : '☀️ Day/night cycle: off'}</button>`}<button data-act="open:recap">📊 Run recap & timelapse</button><button data-act="timer">⏱ Run timer: ${showTimer() ? 'shown' : 'hidden'}</button><button class="go" data-act="newgame">${onl ? '🚪 Leave the server' : '🏠 Save & return to title screen'}</button><p class="sm"><b>${esc(S.name || '')}</b> · ${S.mode || 'easy'} · ${S.size || 1024}² · played ${Math.floor(S.time / 60)} min · seed ${S.seed}</p></div>`;
   } else if (k === 'intro') {
     t = `Welcome to ${esc(S.name || 'your world')}`;
     const mode = S.mode || 'easy';

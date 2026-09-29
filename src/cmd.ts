@@ -11,6 +11,7 @@ import { analyseDrive, collectCrystal, lootSite, pickAlt } from './explore';
 import { buyShop, loadElevator, submitMilestone } from './progress';
 import { flushNet, fluidsTouching, myCraft, setRecipe } from './sim';
 import { asTeam, MP } from './teams';
+import { nearRivalBase } from './online';
 import { addInv, canAfford, canPlace, canRemove, chopTree, Ent, entAt, floorBlocked, G, groundOnly, hasFloor, markDirty, missingText, nodeAt, pairBit, PAIRS, pay, place, refund, remove, rotateEnt, setFloor } from './world';
 import { clamp } from './util';
 
@@ -55,6 +56,7 @@ const ent = (id: any): Ent | null => G.ents.get(+id) || null;
 /** can a belt/pipe/rail go on this tile (or upgrade the one there)? */
 export function tileFree(x: number, y: number, kind: string, z: number) {
   if (x < 0 || y < 0 || x >= W || y >= H) return false;
+  if (MP.teams && nearRivalBase(x, y, 1, 1, MP.cur)) return false;
   const e = entAt(x, y, z);
   if (e) return BLD[e.type].kind === kind && !BLD[e.type].dz && owns(e);
   if (z > 0) return kind !== 'rail' && hasFloor(x, y, z);

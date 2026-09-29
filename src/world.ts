@@ -5,7 +5,7 @@ import { Feat, genFeatures } from './features';
 import { shoreTiles } from './ships';
 import { DX, DY, opp } from './util';
 import { clearTeams, MP, wrand } from './teams';
-import { applyExtraNode } from './online';
+import { applyExtraNode, nearRivalBase } from './online';
 
 export interface Ent { id: number; type: string; x: number; y: number; rot: number; w: number; h: number; born: number; pop: number; [k: string]: any }
 
@@ -226,6 +226,7 @@ export function canPlace(type: string, x: number, y: number, rot: number, o: { f
     if (d.on === 'oil' && node.res !== 'crude_oil') return 'Needs an oil node';
     if (d.on === 'geyser' && node.res !== 'geyser') return 'Needs a geyser';
   }
+  if (MP.teams && d.kind !== 'hub') { const why = nearRivalBase(x, y, w, h, MP.cur); if (why) return why; }
   if (d.kind === 'elevator') { const me = MP.teams ? MP.cur : 0; for (const x of G.ents.values()) if (BLD[x.type].kind === 'elevator' && (x.o || 0) === me) return 'Only one Space Elevator'; }
   if (d.kind === 'port' && shoreTiles(x, y, w, h) < 2) return 'Build it on the shore — it must touch a lake or the sea';
   if (TALL[type] && G.floorN) for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) for (let zz = z + 1; zz < NL; zz++)
@@ -441,7 +442,7 @@ export function tickRegrow() {
   }
   S.regrow = keep;
 }
-let terrainKey = '', featGrid0: Int32Array | null = null, baseNodes = 0;
+let terrainKey = '', baseNodes = 0;
 export function resetWorld(seed: number, S?: State, keepTerrain = false) {
   S = S || newState(seed);
   if (!S.regrow) S.regrow = [];
@@ -463,9 +464,14 @@ export function resetWorld(seed: number, S?: State, keepTerrain = false) {
   applyGameLength(tier => tierMult(mode, tier), !S.lenV);
   const same = keepTerrain && G.tiles && terrainKey === `${seed}|${S.mode}|${S.genV}|${S.size}`;
   const t = same ? { tiles: G.tiles, trees: G.trees0.slice(), nodes: G.nodes, nodeGrid: G.nodeGrid } : genTerrain(seed, S.mode, S.genV || 1, S.size);
-  const f = same ? { feats: G.feats, grid: featGrid0!.slice() } : genFeatures(seed, t.tiles, t.trees, t.nodeGrid);
+  let f: { feats: Feat[]; grid: Int32Array };
+  if (same) {
+    // rebuild the feature grid from the features (cheaper than keeping a second full-map copy)
+    const grid = new Int32Array(W * H);
+    for (const fe of G.feats) for (let j = 0; j < fe.w; j++) for (let i = 0; i < fe.w; i++) grid[(fe.y + j) * W + fe.x + i] = fe.id;
+    f = { feats: G.feats, grid };
+  } else f = genFeatures(seed, t.tiles, t.trees, t.nodeGrid);
   terrainKey = `${seed}|${S.mode}|${S.genV}|${S.size}`;
-  if (!same) featGrid0 = f.grid.slice();
   G.feats = f.feats; G.featGrid = f.grid;
   for (const id of S.looted) { const fe = G.feats[id - 1]; if (fe) for (let j = 0; j < fe.w; j++) for (let i = 0; i < fe.w; i++) G.featGrid[(fe.y + j) * W + fe.x + i] = 0; }
   G.disc = new Uint8Array(t.nodes.length); G.fdisc = new Uint8Array(G.feats.length); G.pings = [];

@@ -14,7 +14,7 @@ import { rotateCamera, tiltCamera } from './r3/core';
 import { title } from './title';
 import { addInv, canAfford, canPlace, canRemove, chopTree, def, dims, Ent, entAt, floorBlocked, G, groundOnly, hasFloor, inPort, LH, NL, PORTED, setFloor, markDirty, missingText, nodeAt, pairBit, PAIRS, pay, place, refund, remove, rotateEnt, rotatePairs } from './world';
 import * as UI from './ui';
-import { railPairsForPath, run, tileFree as tileFreeZ } from './cmd';
+import { online, railPairsForPath, run, tileFree as tileFreeZ } from './cmd';
 import { DX, DY } from './util';
 
 // ---------------------------------------------------------------------------
@@ -435,7 +435,7 @@ export function initInput(canvas: HTMLCanvasElement) {
     if (ev.ctrlKey && k === 's') { ev.preventDefault(); UI.saveNow(); return; }
     if (ev.ctrlKey) return;
     if (UI.modalOpen() && UI.currentModal() === 'travel' && k >= '1' && k <= '9') { UI.travelTo(+k - 1); return; }
-    if (UI.modalOpen() && !['h', 'c', 'p', 'k', 'b', 'm', 'i', 'o'].includes(k)) return;
+    if (UI.modalOpen() && !['h', 'c', 'p', 'k', 'b', 'm', 'i', 'o', 'y'].includes(k)) return;
     if (k >= '0' && k <= '9') { selectSlot(k === '0' ? 9 : +k - 1); return; }
     if (k === 'tab') { ev.preventDefault(); setCat(curCat + (ev.shiftKey ? -1 : 1)); return; }
     if (k === 'f') { selectType(bestOf(CATS.find(c => c.id === 'log')!.types[0])); return; }
@@ -465,6 +465,7 @@ export function initInput(canvas: HTMLCanvasElement) {
     if (k === 'o') return UI.toggleModal('travel');
     if (k === 'u') return UI.toggleModal('research');
     if (k === 'j') return UI.toggleModal('ach');
+    if (k === 'y') { if (online()) return UI.toggleModal('players'); return; }
     if (k === 'l') { if (!plannerAllowed()) { UI.toast('The Production Planner is available in Easy and Creative worlds', 'bad'); return; } return UI.toggleModal('planner'); }
     if (k === 'f1' || k === '?') { ev.preventDefault(); return UI.toggleModal('help'); }
     if (k === 'v') { view.showPower = !view.showPower; return; }
