@@ -15,7 +15,7 @@ import { icon3D, init3D, Label3, reset3D, update3D } from './r3/world3d';
 import { hexCol, rgba } from './gl';
 import { chopFx, initInput, mineFx, pasteFx, setTool, tickInput, updateGhosts } from './input';
 import { clearTeams, isMine, MP } from './teams';
-import { connect, disconnect, netStep, NET, setStepper, ticksAvailable } from './net';
+import { connect, disconnect, netStep, NET, NetHandlers, setStepper, ticksAvailable } from './net';
 import { fmtCode } from './online';
 import * as OUI from './ui3';
 import { setDeliverFx, setOnMilestone, unlockName } from './progress';
@@ -149,7 +149,10 @@ function playOnline(o: { code?: string; create?: any }) {
   slot.id = null;
   let entered = false;
   setStepper(update);
-  connect(o, {
+  netTries = 0;
+  const code = o.code;
+  const rejoin = () => { playOnlineAgain(code || NET.code, h); };
+  const h = {
     progress: msg => { if (!entered) setLoading(msg); },
     ready: () => {
       entered = true;
@@ -163,13 +166,26 @@ function playOnline(o: { code?: string; create?: any }) {
     },
     reloaded: () => { initDiscovery(); reset3D(); ensureFresh(); UI.buildMapBase(); },
     error: msg => {
-      if (!entered) { setLoading(null); openTitle(); setTimeout(() => UI.toast(msg, 'bad'), 50); }
-      else OUI.showDisconnected(msg, () => { exitToTitle(); });
+      if (!entered) { setLoading(null); openTitle(); setTimeout(() => UI.toast(msg, 'bad'), 50); return; }
+      if (NET.outdated) { OUI.showDisconnected(msg, () => location.reload(), 'Reload now'); return; }
+      // the connection dropped (the relay restarts when it's updated): quietly rejoin a few times before giving up
+      if (netTries < 4) {
+        netTries++;
+        OUI.showReconnecting(true);
+        setTimeout(() => { if (NET.on) return; rejoin(); }, 1500 * netTries);
+      } else { OUI.showReconnecting(false); OUI.showDisconnected(msg, () => { exitToTitle(); }); }
     },
     players: () => OUI.refreshPlayers(),
     chat: c => OUI.chatMessage(c),
     invite: m => OUI.showInvite(m),
-  });
+  } as NetHandlers;
+  connect(o, h);
+}
+let netTries = 0;
+/** reconnect to the same world after a dropped connection (keeps the loaded terrain) */
+function playOnlineAgain(code: string, h: NetHandlers) {
+  const ready = h.ready;
+  connect({ code }, { ...h, progress: () => { }, ready: () => { netTries = 0; OUI.showReconnecting(false); h.reloaded(); G.fx.toast('🔌 Reconnected', 'good'); void ready; } }, true);
 }
 function openTitle() {
   document.body.classList.add('intitle');

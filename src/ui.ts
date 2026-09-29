@@ -319,7 +319,15 @@ function inspDyn(e: Ent): string {
         if (e.st === 'starve' && e.wrongItem && !r.in[e.wrongItem]) h += `<div class="sm neg">⚠ ${ITEMS[e.wrongItem].n} is arriving, but this machine is set to <b>${r.n}</b>. Pick a matching recipe below.</div>`;
         if (e.st === 'starve') h += `<div class="sm warn">Tip: feed ${Object.keys(r.in).filter(k => !isFluid(k)).length ? 'items by belt into the blue input arrow' + (Object.keys(r.in).filter(k => !isFluid(k)).length > 1 ? ' (merge the ingredient belts with a Merger)' : '') : ''}${Object.keys(r.in).some(isFluid) ? ' and fluids by pipe' : ''}.</div>`;
         if (e.st === 'block') h += `<div class="sm neg">Tip: the output${Object.keys(r.out).length > 1 ? 's (including the byproduct!)' : ''} need somewhere to go.</div>`;
-      } else h += '<div class="sm">Pick a recipe below — or belt an ingredient in and it chooses automatically.</div>';
+      } else {
+        h += '<div class="sm">Pick a recipe below — or belt an ingredient in and it chooses automatically.</div>';
+        if (e.wrongItem) {
+          // something is arriving that no unlocked recipe here can use: say why, and what unlocks it
+          const any = Object.values(RECIPES).find(r => r.m === d.machine && r.in[e.wrongItem] && !r.alt);
+          const ms = any && MILESTONES.find(m => m.un && m.un.includes(any.id));
+          h += `<div class="sm neg">⚠ ${ITEMS[e.wrongItem].n} is arriving, but ${any ? `the <b>${any.n}</b> recipe isn't unlocked yet${ms ? ` — it unlocks with the milestone <b>${ms.n}</b> (Tier ${ms.tier}, press H)` : ''}` : `this machine can't use it`}.</div>`;
+        }
+      }
       h += `<div class="sm">Power: ${fmtR(d.power * clockPow(e.clock) * (e.amp ? 4 : 1))} MW when running</div>`;
       break;
     }

@@ -36,6 +36,7 @@ export class WorldRelay {
   timer: any = null;
   lastSnapReq = 0; snapWaiters: number[] = []; snapPending = false;
   dirty = false; lastSave = 0;
+  build = 0;   // newest game build seen in this world
 
   constructor(public store: RelayStore, public log_ = (..._a: any[]) => { }) { }
 
@@ -47,6 +48,7 @@ export class WorldRelay {
     if (!this.meta) return;
     const st = (await this.store.get('state')) || {};
     this.tick = st.tick || 0;
+    this.build = st.build || 0;
     this.log = st.log || [];
     for (const p of st.players || []) this.players.set(p.id, p);
     const bm = await this.store.get('base');
@@ -57,6 +59,9 @@ export class WorldRelay {
       for (const p of parts) { data.set(p, o); o += p.length; }
       this.base = { tick: bm.tick, data };
     }
+    // the clock must never run behind the newest save (it's only persisted every few seconds)
+    if (this.base && this.base.tick > this.tick) this.tick = this.base.tick;
+    for (const e of this.log) if (e[0] >= this.tick) this.tick = e[0] + PER;
   }
   async create(m: Omit<Meta, 'seed' | 'created'>) {
     this.meta = { ...m, seed: (Math.random() * 1e9) | 0, created: Date.now() };
@@ -67,7 +72,7 @@ export class WorldRelay {
   async persist(force = false) {
     if (!this.meta || (!this.dirty && !force)) return;
     this.dirty = false; this.lastSave = Date.now();
-    await this.store.put('state', { tick: this.tick, log: this.log, players: [...this.players.values()] });
+    await this.store.put('state', { tick: this.tick, log: this.log, players: [...this.players.values()], build: this.build });
   }
   async saveBase() {
     if (!this.base) return;
@@ -81,6 +86,14 @@ export class WorldRelay {
   async join(c: RelayConn, hello: any) {
     await this.load();
     if (!this.meta) { c.send(JSON.stringify({ t: 'err', msg: 'No world has that code. Check it with whoever shared it.' })); c.close(); return; }
+    // everyone in a world must run the same version of the game (every copy runs the simulation)
+    const build = +hello.build || 0;
+    const OLD = 'Beltworks was updated. Reload the page (press Ctrl+F5) to get the new version, then rejoin — your base is safe.';
+    if (build < this.build) { c.send(JSON.stringify({ t: 'update', msg: OLD })); c.close(); return; }
+    if (build > this.build) {
+      this.build = build; this.dirty = true;
+      for (const [id, k] of [...this.conns]) { k.c.send(JSON.stringify({ t: 'update', msg: OLD })); k.c.close(); this.leave(id); }
+    }
     const key = String(hello.key || '').slice(0, 64);
     const name = String(hello.name || '').trim().slice(0, 24) || 'Player';
     let p = [...this.players.values()].find(q => q.key === key);
@@ -191,7 +204,7 @@ export class WorldRelay {
       if (acc > 1000) acc = 1000;
       while (acc >= STEP_MS) { acc -= STEP_MS; this.step(); }
       if (now - this.lastSnapReq > SNAP_EVERY) this.requestSnap(0);
-      if (now - this.lastSave > 10_000) this.persist();
+      if (now - this.lastSave > 4_000) this.persist();
     }, 25);
   }
   stop() {

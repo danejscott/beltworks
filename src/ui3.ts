@@ -132,11 +132,18 @@ export function showInvite(m: { from: string; team: number; col: string }) {
   setTimeout(() => d.remove(), 60000);
 }
 
+/** a small "reconnecting…" notice while we rejoin after a dropped connection */
+export function showReconnecting(on: boolean) {
+  build();
+  let el = document.getElementById('netre');
+  if (!el) { el = document.createElement('div'); el.id = 'netre'; el.style.cssText = 'position:fixed;left:50%;top:84px;transform:translateX(-50%);z-index:96;background:#2b2616;border:1px solid #f5a524;border-radius:999px;padding:5px 14px;font-size:13px;color:#ffd48a;display:none'; el.textContent = '🔌 Connection lost — reconnecting…'; document.body.appendChild(el); }
+  el.style.display = on ? 'block' : 'none';
+}
 /** lost the server: stop and offer a way out */
-export function showDisconnected(msg: string, toTitle: () => void) {
+export function showDisconnected(msg: string, toTitle: () => void, label = 'Back to the title screen') {
   build();
   const d = document.getElementById('netdown')!;
-  d.innerHTML = `<div class="box"><h2 style="margin-top:0">📡 Disconnected</h2><p>${esc(msg)}</p><p>Your base is safe on the server — it's paused while you're away.</p><button class="go big" id="nd-title">Back to the title screen</button></div>`;
+  d.innerHTML = `<div class="box"><h2 style="margin-top:0">📡 Disconnected</h2><p>${esc(msg)}</p><p>Your base is safe — it's paused while you're away.</p><button class="go big" id="nd-title">${esc(label)}</button></div>`;
   d.style.display = 'flex';
   (d.querySelector('#nd-title') as HTMLElement).onclick = () => { d.style.display = 'none'; toTitle(); };
 }

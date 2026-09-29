@@ -414,7 +414,7 @@ export function acceptInto(e: Ent, item: string, dir: number, fx?: number, fy?: 
     case 'hub': addInv(item, 1); delivered(e, item); return true;
     case 'elevator': elevatorAccept(item); delivered(e, item); return true;
     case 'machine': {
-      if (!e.recipe) { const k = autoRecipe(e, item); if (!k) return false; setRecipe(e, k); }
+      if (!e.recipe) { const k = autoRecipe(e, item); if (!k) { e.wrongItem = item; return false; } setRecipe(e, k); }
       let r = RECIPES[e.recipe];
       if (!r.in[item] && !isFluid(item)) {
         // an empty single-ingredient machine switches to a recipe that uses what's arriving

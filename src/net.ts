@@ -10,6 +10,8 @@ import { MP } from './teams';
 import { G } from './world';
 
 export const PROTO = 2;
+/** when this copy of the game was built (online worlds require everyone on the newest build) */
+export const BUILD: number = typeof __BUILD__ !== 'undefined' ? +__BUILD__ : 0;
 /** the public relay (Cloudflare Workers) */
 export const DEFAULT_SERVER = 'wss://beltworks-relay.beltworks.workers.dev';
 
@@ -27,10 +29,12 @@ export const NET = {
   ping: 0,
   drift: 0,
   snapWanted: false,
+  outdated: false,       // a newer version of the game is out: reload the page
 };
 let ws: WebSocket | null = null;
 let H: NetHandlers;
 let expectBase: null | { kind: 'welcome' | 'reload'; baseTick: number } = null;
+let reconnecting = false;
 export interface NetHandlers {
   progress: (msg: string) => void;   // loading screen text
   ready: () => void;                 // world loaded and caught up: enter the game
@@ -75,11 +79,12 @@ async function gunzip(b: Uint8Array): Promise<string> {
   return await new Response(s).text();
 }
 
-export function connect(hello: { code?: string; create?: any }, h: NetHandlers) {
+export function connect(hello: { code?: string; create?: any }, h: NetHandlers, again = false) {
+  const wasReady = again && NET.ready;
   disconnect();
   H = h;
   const p = me();
-  Object.assign(NET, { on: false, ready: false, loading: false, code: '', meta: null, tick: 0, n: 0, pending: [], players: [], chat: [], drift: 0, snapWanted: false });
+  Object.assign(NET, { on: false, ready: wasReady, loading: false, code: '', meta: null, tick: 0, n: 0, pending: [], players: [], chat: [], drift: 0, snapWanted: false, outdated: false });
   expectBase = null;
   let sock: WebSocket;
   const q = hello.create ? 'create=1' : 'code=' + encodeURIComponent(hello.code || '');
@@ -87,7 +92,7 @@ export function connect(hello: { code?: string; create?: any }, h: NetHandlers) 
   sock.binaryType = 'arraybuffer';
   ws = sock;
   let opened = false;
-  sock.onopen = () => { opened = true; sock.send(JSON.stringify({ t: 'hello', v: PROTO, key: p.key, name: p.name, col: p.col, ...hello })); };
+  sock.onopen = () => { opened = true; sock.send(JSON.stringify({ t: 'hello', v: PROTO, build: BUILD, key: p.key, name: p.name, col: p.col, ...hello })); };
   sock.onmessage = ev => {
     if (typeof ev.data !== 'string') { onBinary(new Uint8Array(ev.data)); return; }
     try { onMsg(JSON.parse(ev.data)); } catch (e) { console.error('bad message', e); }
@@ -109,6 +114,7 @@ export function sendChat(text: string) { if (text.trim()) send({ t: 'chat', text
 function onMsg(m: any) {
   switch (m.t) {
     case 'welcome':
+      if (NET.ready) reconnecting = true;
       MP.me = m.pid; NET.code = m.code; NET.meta = m.meta; NET.on = true; NET.loading = true;
       NET.pending = m.log.slice(); NET.n = m.tick;
       if (m.hasBase) { expectBase = { kind: 'welcome', baseTick: m.baseTick }; H.progress('Downloading the world…'); }
@@ -131,6 +137,7 @@ function onMsg(m: any) {
     case 'invite': H.invite(m); break;
     case 'err-soft': G.fx.toast(m.msg, 'bad'); break;
     case 'err': H.error(m.msg); disconnect(); break;
+    case 'update': NET.outdated = true; H.error(m.msg); disconnect(); break;
   }
 }
 async function onBinary(b: Uint8Array) {
@@ -171,7 +178,7 @@ function catchUp(first: boolean) {
     syncMyTeam();
     setSender(c => send({ t: 'cmd', c }));
     NET.loading = false;
-    if (first) { NET.ready = true; rememberServer(NET.code, G.S.name); H.ready(); } else H.reloaded();
+    if (first) { NET.ready = true; rememberServer(NET.code, G.S.name); H.ready(); } else if (reconnecting) { reconnecting = false; H.ready(); } else H.reloaded();
     if (NET.snapWanted) uploadSave();
   };
   slice();
