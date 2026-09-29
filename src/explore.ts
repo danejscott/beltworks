@@ -1,4 +1,5 @@
 // Exploration: node discovery, the resource scanner, crash sites / power crystals, and hard-drive research.
+import { wrand } from './teams';
 import { ALT_IDS, BLD, ITEMS, MACHINE_NAMES, RECIPES } from './data';
 import { H, HX, HY, W } from './terrain';
 import { view } from './view';
@@ -133,7 +134,7 @@ export function analyseDrive(): string | null {
   if (S.mode !== 'creative') S.inv.hard_drive--;
   // prefer recipes you can actually build a machine for
   const usable = pool.filter(altMachineOK), rest = pool.filter(id => !altMachineOK(id));
-  const shuffle = (a: string[]) => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(Math.random() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
+  const shuffle = (a: string[]) => { for (let i = a.length - 1; i > 0; i--) { const j = Math.floor(wrand() * (i + 1)); [a[i], a[j]] = [a[j], a[i]]; } return a; };
   S.altOffer = [...shuffle(usable), ...shuffle(rest)].slice(0, 3);
   return null;
 }

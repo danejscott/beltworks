@@ -14,6 +14,7 @@ import { rotateCamera, tiltCamera } from './r3/core';
 import { title } from './title';
 import { addInv, canAfford, canPlace, canRemove, chopTree, def, dims, Ent, entAt, floorBlocked, G, groundOnly, hasFloor, inPort, LH, NL, PORTED, setFloor, markDirty, missingText, nodeAt, pairBit, PAIRS, pay, place, refund, remove, rotateEnt, rotatePairs } from './world';
 import * as UI from './ui';
+import { railPairsForPath, run, tileFree as tileFreeZ } from './cmd';
 import { DX, DY } from './util';
 
 // ---------------------------------------------------------------------------
@@ -103,87 +104,13 @@ function aimBeltEnd(p: { x: number; y: number; d: number }) {
   if (feeds(at(p.x + DX[p.d], p.y + DY[p.d]), p.x, p.y)) return;
   for (let d = 0; d < 4; d++) if (feeds(at(p.x + DX[d], p.y + DY[d]), p.x, p.y)) { p.d = d; return; }
 }
-export function railPairsForPath(path: { x: number; y: number; d: number }[]) {
-  const out: number[] = [];
-  for (let i = 0; i < path.length; i++) {
-    let entry: number, exit: number;
-    if (path.length === 1) { exit = path[0].d; entry = (exit + 2) & 3; }
-    else if (i === 0) { exit = path[0].d; entry = (exit + 2) & 3; }
-    else { entry = (path[i - 1].d + 2) & 3; exit = i === path.length - 1 ? path[i - 1].d : path[i].d; }
-    out.push(pairBit(entry, exit));
-  }
-  return out;
-}
-/** When a drag meets existing track, make friendly two-way junctions instead of one-way turnouts / crossings. */
-export function smartJunction(existing: number, add: number, path: { x: number; y: number; d: number }[], i: number): number {
-  const straight = (a: number) => pairBit(a, (a + 2) & 3);
-  let sides: number[] = [];
-  for (let k = 0; k < 6; k++) if (add & (1 << k)) sides = [PAIRS[k][0], PAIRS[k][1]];
-  if (sides.length !== 2) return add;
-  const [a, b] = sides;
-  const isStraight = ((a + 2) & 3) === b;
-  if (isStraight) {
-    const perp = straight((a + 1) & 3);
-    if ((existing & perp) && (i === 0 || i === path.length - 1) && path.length > 1) {
-      // endpoint landing on a perpendicular line: T-junction toward the rest of the path
-      const toward = i === 0 ? path[0].d : (path[i - 1].d + 2) & 3;
-      return pairBit(toward, (toward + 1) & 3) | pairBit(toward, (toward + 3) & 3);
-    }
-    return add;
-  }
-  // curve: if the existing tile runs straight along one of the curve's sides, add the mirrored curve too
-  let out = add;
-  for (const [sIn, sOut] of [[a, b], [b, a]]) if (existing & straight(sIn)) out |= pairBit((sIn + 2) & 3, sOut);
-  return out;
-}
-function tileFree(x: number, y: number, kind: string) {
-  if (x < 0 || y < 0 || x >= W || y >= H) return false;
-  const e = at(x, y);
-  if (e) return BLD[e.type].kind === kind && !BLD[e.type].dz;
-  if (view.level > 0) return kind !== 'rail' && hasFloor(x, y, view.level);
-  if (G.nodeGrid[y * W + x]) return false;
-  return G.tiles[y * W + x] !== 6 || kind === 'rail';
-}
+const tileFree = (x: number, y: number, kind: string) => tileFreeZ(x, y, kind, view.level);
 function pathCost(type: string, n: number): Cost { const c: Cost = {}; for (const k in BLD[type].cost) c[k] = BLD[type].cost[k] * n; return c; }
 
 function commitDrag() {
   const t = tool.t, d = BLD[t.type], path = dragPath();
-  let placed = 0, out = false;
-  if (d.kind === 'belt') {
-    for (const p of path) {
-      if (!tileFree(p.x, p.y, 'belt')) continue;
-      const e = at(p.x, p.y);
-      if (e) {
-        if (e.type === t.type) { if (e.rot !== p.d) { e.rot = p.d; markDirty('belt'); placed++; } }
-        else { refund(BLD[e.type].cost); if (!canAfford(d.cost)) { pay(BLD[e.type].cost); out = true; break; } pay(d.cost); e.type = t.type; markDirty('belt'); placed++; }
-      } else {
-        if (!canAfford(d.cost)) { out = true; break; }
-        place(t.type, p.x, p.y, p.d, { z: view.level }); placed++;
-      }
-    }
-    if (path.length > 1) rot = path[path.length - 1].d;
-  } else if (d.kind === 'pipe') {
-    const fl = fluidsTouching(path.map(p => [p.x, p.y]), null, view.level);
-    if (fl.length > 1) { UI.toast(`That would mix ${fl.map(f => ITEMS[f].n).join(' and ')}!`, 'bad'); sfx('err'); drag = null; return; }
-    for (const p of path) {
-      if (!tileFree(p.x, p.y, 'pipe')) continue;
-      const e = at(p.x, p.y);
-      if (e) { if (e.type !== t.type) { refund(BLD[e.type].cost); if (!canAfford(d.cost)) { pay(BLD[e.type].cost); out = true; break; } pay(d.cost); e.type = t.type; markDirty('pipe'); placed++; } }
-      else { if (!canAfford(d.cost)) { out = true; break; } place(t.type, p.x, p.y, 0, { z: view.level }); placed++; }
-    }
-  } else if (d.kind === 'rail') {
-    const pairs = railPairsForPath(path);
-    for (let i = 0; i < path.length; i++) {
-      const p = path[i];
-      if (!tileFree(p.x, p.y, 'rail')) continue;
-      const e = at(p.x, p.y);
-      if (e) { const np = e.pairs | smartJunction(e.pairs, pairs[i], path, i); if (np !== e.pairs) { e.pairs = np; placed++; markDirty('rail'); } }
-      else { if (!canAfford(d.cost)) { out = true; break; } const r = place(t.type, p.x, p.y, 0); r.pairs = pairs[i]; placed++; markDirty('rail'); }
-    }
-    if (path.length > 1) rot = path[path.length - 1].d;
-  }
-  if (placed) sfx('belt');
-  if (out) { UI.toast(`Out of materials: ${missingText(d.cost)}`, 'bad'); sfx('err'); }
+  run({ k: 'drag', type: t.type, z: view.level, path: path.map(p => [p.x, p.y, p.d]) });
+  if (path.length > 1 && d.kind !== 'pipe') rot = path[path.length - 1].d;
   drag = null;
 }
 
@@ -199,72 +126,27 @@ function ghostPos(type: string): [number, number] {
   return [Math.round(m.wx - w / 2), Math.round(m.wy - h / 2)];
 }
 function tryPlace(loud: boolean) {
-  const t = tool.t, d = BLD[t.type];
+  const t = tool.t;
   const [x, y] = ghostPos(t.type);
   const key = x + ',' + y;
   if (key === lastPlaced) return;
-  let reason = canPlace(t.type, x, y, rot, { z: view.level });
-  if (!reason && (d.kind === 'tunnel' || d.kind === 'ptunnel' || d.kind === 'tank')) {
-    if (d.kind !== 'tunnel') { const fl = fluidsTouching([[x, y], [x + d.w - 1, y + d.h - 1], [x + d.w - 1, y], [x, y + d.h - 1]], null, view.level); if (fl.length > 1) reason = 'That would mix fluids'; }
-  }
+  const reason = canPlace(t.type, x, y, rot, { z: view.level });
   if (reason) { if (loud) { UI.toast(reason, 'bad'); sfx('err'); } return; }
-  const e = place(t.type, x, y, rot, { z: view.level });
   lastPlaced = key;
-  if (t.recipe && d.machine && G.S.unlocked.has(t.recipe)) setRecipe(e, t.recipe);
-  if (t.clock && e.clock !== undefined) e.clock = Math.min(t.clock, 1);
-  if (t.filt && e.filt) e.filt = [...t.filt];
-  if (t.mode && e.mode) e.mode = t.mode;
-  sfx('place');
-  if (d.kind === 'extractor' && !G.S.flags.tipExtr) { G.S.flags.tipExtr = 1; UI.toast('Connect a pipe to any side of the extractor.', ''); }
+  run({ k: 'place', type: t.type, x, y, rot, z: view.level, loud, recipe: t.recipe || undefined, clock: t.clock, filt: t.filt, mode: t.mode });
 }
 
 // ---------------------------------------------------------------------------
 // Rail signals live on rail tiles
 function placeSignal(x: number, y: number, sig: number, type: string) {
-  const r = view.level === 0 ? entAt(x, y) : null;
-  if (!r || r.type !== 'rail') { UI.toast('Put signals on a railway tile', 'bad'); sfx('err'); return; }
-  if (r.sig === sig) { UI.toast('That tile already has this signal', 'bad'); return; }
-  const d = BLD[type];
-  if (!canAfford(d.cost)) { UI.toast('Need: ' + missingText(d.cost), 'bad'); sfx('err'); return; }
-  if (r.sig) refund(BLD[r.sig === 1 ? 'rail_signal' : 'path_signal'].cost);
-  pay(d.cost); r.sig = sig; markDirty('rail'); sfx('place');
+  if (view.level !== 0) { UI.toast('Put signals on a railway tile', 'bad'); sfx('err'); return; }
+  run({ k: 'signal', x, y, sig, type });
 }
 
 // ---------------------------------------------------------------------------
-// Deconstruct
-function layFoundations(x0: number, y0: number, x1: number, y1: number) {
-  const z = view.level, d = BLD.foundation;
-  if (z === 0) { UI.toast('Foundations go on upper floors — press PageUp (or ▲ on the floor buttons) first', 'bad'); sfx('err'); return; }
-  const xa = Math.min(x0, x1), xb = Math.max(x0, x1), ya = Math.min(y0, y1), yb = Math.max(y0, y1);
-  let n = 0, out = false, why = '';
-  for (let y = ya; y <= yb && !out; y++) for (let x = xa; x <= xb; x++) {
-    const r = floorBlocked(x, y, z);
-    if (r) { if (r !== 'Already has a foundation') why = r; continue; }
-    if (!canAfford(d.cost)) { out = true; break; }
-    pay(d.cost); setFloor(x, y, z, true); n++;
-  }
-  if (n) sfx('place');
-  if (out) UI.toast(`Out of materials: ${missingText(d.cost)}`, 'bad');
-  else if (!n && why) { UI.toast(why, 'bad'); sfx('err'); }
-}
-function deconRect(x0: number, y0: number, x1: number, y1: number) {
-  const xa = Math.min(x0, x1), xb = Math.max(x0, x1), ya = Math.min(y0, y1), yb = Math.max(y0, y1);
-  const seen = new Set<Ent>();
-  let n = 0, wood = 0, blocked = '', decks = 0;
-  const z = view.level;
-  for (let y = ya; y <= yb; y++) for (let x = xa; x <= xb; x++) {
-    const e = at(x, y);
-    if (e && !seen.has(e)) { seen.add(e); const why = canRemove(e); if (why) blocked = why; else if (remove(e, { quiet: seen.size > 40 })) n++; }
-    if (z === 0 && G.trees[y * W + x]) wood += chopTree(x, y);
-  }
-  // then take up the empty foundation tiles on this floor
-  if (z > 0) for (let y = ya; y <= yb; y++) for (let x = xa; x <= xb; x++) if (hasFloor(x, y, z) && !at(x, y)) { setFloor(x, y, z, false); refund(BLD.foundation.cost); decks++; }
-  if (decks && !n) { sfx('remove'); UI.toast(`Removed ${decks} foundation tile${decks > 1 ? 's' : ''}`, 'good'); }
-  if (z === 0) for (const t of [...G.trains]) if (t.cells.some(c => { const cx = c % W, cy = Math.floor(c / W); return cx >= xa && cx <= xb && cy >= ya && cy <= yb; })) { removeTrain(t); n++; }
-  if (n) { sfx('remove'); if (n > 1) UI.toast(`Removed ${n} things (fully refunded)`, 'good'); }
-  if (wood) UI.toast(`+${wood} Wood`, 'good');
-  if (blocked && !n) { UI.toast(blocked, 'bad'); sfx('err'); }
-}
+// Foundations / deconstruct
+function layFoundations(x0: number, y0: number, x1: number, y1: number) { run({ k: 'found', x0, y0, x1, y1, z: view.level }); }
+function deconRect(x0: number, y0: number, x1: number, y1: number) { run({ k: 'decon', x0, y0, x1, y1, z: view.level }); }
 
 // ---------------------------------------------------------------------------
 // Blueprints
@@ -323,29 +205,11 @@ function bpEntOK(o: any, ox: number, oy: number) {
 function doPaste() {
   const t = tool.t, bp: BP = rotBP(t.bp, t.prot || 0);
   const [ox, oy] = pasteOrigin(bp);
-  let placed = 0, skipped = 0, broke = false;
-  const order = [...bp.ents].sort((a, b) => (a.ex ? 1 : 0) - (b.ex ? 1 : 0));
-  for (const o of order) {
-    if (!bpEntOK(o, ox, oy)) { skipped++; continue; }
-    const d = BLD[o.t], x = ox + o.x, y = oy + o.y;
-    const ex = at(x, y);
-    if (ex && d.kind === 'rail') { ex.pairs |= o.pr || 0; markDirty('rail'); placed++; continue; }
-    if (ex && d.kind === 'belt') { if (ex.rot !== o.r || ex.type !== o.t) { if (ex.type !== o.t) { refund(BLD[ex.type].cost); if (!canAfford(d.cost)) { pay(BLD[ex.type].cost); broke = true; break; } pay(d.cost); ex.type = o.t; } ex.rot = o.r; markDirty('belt'); } placed++; continue; }
-    if (ex && d.kind === 'pipe') { placed++; continue; }
-    if (!canAfford(d.cost)) { broke = true; break; }
-    const e = place(o.t, x, y, o.r, { quiet: bp.ents.length > 30, z: view.level });
-    if (o.pr) { e.pairs = o.pr; markDirty('rail'); }
-    if (o.rc && G.S.unlocked.has(o.rc)) setRecipe(e, o.rc);
-    if (o.fl) e.filt = [...o.fl];
-    if (o.md) e.mode = o.md;
-    if (o.ck && e.clock !== undefined) e.clock = o.ck;
-    placed++;
-  }
-  if (placed) { sfx('paste'); const [cx, cy] = [ox + bp.w / 2, oy + bp.h / 2]; for (let i = 0; i < 30; i++) spawn(cx + (Math.random() - 0.5) * bp.w, cy + (Math.random() - 0.5) * bp.h, { vz: 1.5, z: 0.3, life: 0.6, size: 0.12, col: hexCol('#9fe0ff') }); }
-  let msg = `Pasted ${placed} piece${placed === 1 ? '' : 's'}`;
-  if (skipped) msg += ` · ${skipped} blocked`;
-  if (broke) msg += ` · ran out of materials (${missingText(bpCost(bp))})`;
-  UI.toast(msg, broke || skipped ? 'bad' : 'good');
+  run({ k: 'paste', bp: { w: bp.w, h: bp.h, ents: bp.ents }, ox, oy, z: view.level });
+}
+/** sparkles where a blueprint landed */
+export function pasteFx(o: { x: number; y: number; w: number; h: number }) {
+  for (let i = 0; i < 30; i++) spawn(o.x + (Math.random() - 0.5) * o.w, o.y + (Math.random() - 0.5) * o.h, { vz: 1.5, z: 0.3, life: 0.6, size: 0.12, col: hexCol('#9fe0ff') });
 }
 
 // ---------------------------------------------------------------------------
@@ -436,9 +300,10 @@ export function dragInfo() {
 }
 
 // ---------------------------------------------------------------------------
-function handMine(n: any) {
-  const amt = G.S.shop.pick ? 5 : 1;
-  addInv(n.res, amt); G.S.flags.mined = true; sfx('mine');
+function handMine(n: any) { run({ k: 'mine', x: n.x, y: n.y }); }
+/** ore bits flying off a node you mined by hand */
+export function mineFx(n: any) {
+  sfx('mine');
   const c = hexCol(ITEMS[n.res].c);
   for (let i = 0; i < 6; i++) spawn(n.x + 1, n.y + 1, { vx: (Math.random() - 0.5) * 4, vy: (Math.random() - 0.5) * 4, z: 0.3, vz: 2 + Math.random() * 3, life: 0.6, col: c, size: 0.14, grav: 14 });
   spawn(n.x + 1, n.y + 1, { z: 0.6, vz: 1.8, life: 0.8, spr: 'i:' + n.res, size: 0.55, vr: 0, rot: 0 });
@@ -470,7 +335,7 @@ export function initInput(canvas: HTMLCanvasElement) {
       if ((d.kind === 'belt' || d.kind === 'pipe' || d.kind === 'rail') && !d.dz) { drag = { sx: m.tx, sy: m.ty, axis: null, kind: d.kind }; return; }
       if (d.kind === 'train' && view.level > 0) { UI.toast('Trains run on the ground floor', 'bad'); return; }
       if (d.kind === 'signal') { placeSignal(m.tx, m.ty, d.sig!, t.type); return; }
-      if (d.kind === 'train') { const tr = placeTrain(m.tx, m.ty, rot); if (tr) { setTool(null); UI.openTrain(tr); } return; }
+      if (d.kind === 'train') { run({ k: 'train', x: m.tx, y: m.ty, rot }); return; }
       tryPlace(true);
       return;
     }
@@ -483,7 +348,7 @@ export function initInput(canvas: HTMLCanvasElement) {
     const sp = shipAt(m.wx, m.wy);
     if (sp) { UI.openShip(sp); sfx('click'); return; }
     const ft = featNear(m.wx, m.wy);
-    if (ft) { if (ft.kind === 'crystal') collectCrystal(ft); else { openSite(ft); sfx('click'); } return; }
+    if (ft) { if (ft.kind === 'crystal') run({ k: 'crystal', f: ft.id }); else { openSite(ft); sfx('click'); } return; }
     const e = pickAt(m.wx, m.wy);
     if (e) {
       const k = def(e).kind;
@@ -491,7 +356,7 @@ export function initInput(canvas: HTMLCanvasElement) {
     }
     const n = nodeAt(m.tx, m.ty);
     if (n && !e && n.res !== 'crude_oil' && n.res !== 'geyser') { mining = { n, chop: false }; mineT = 0; handMine(n); return; }
-    if (!e && G.trees[m.ty * W + m.tx]) { mining = { chop: true }; chopTree(m.tx, m.ty); return; }
+    if (!e && G.trees[m.ty * W + m.tx]) { mining = { chop: true }; run({ k: 'chop', x: m.tx, y: m.ty }); return; }
     startPan(ev);
   });
   canvas.addEventListener('pointermove', ev => {
@@ -508,7 +373,7 @@ export function initInput(canvas: HTMLCanvasElement) {
     if (!lmb) return;
     const t = tool.t;
     if (mining) {
-      if (mining.chop) { if (G.trees[m.ty * W + m.tx] && !entAt(m.tx, m.ty)) chopTree(m.tx, m.ty); }
+      if (mining.chop) { if (G.trees[m.ty * W + m.tx] && !entAt(m.tx, m.ty)) run({ k: 'chop', x: m.tx, y: m.ty }); }
       else { const n = nodeAt(m.tx, m.ty); if (n !== mining.n) mining = null; }
     }
     if (t && t.k === 'build') {
@@ -527,7 +392,16 @@ export function initInput(canvas: HTMLCanvasElement) {
     if (!drag || !t) { drag = null; return; }
     if (t.k === 'build' && BLD[t.type].kind === 'foundation') { layFoundations(drag.sx, drag.sy, m.tx, m.ty); drag = null; }
     else if (t.k === 'build') commitDrag();
-    else if (t.k === 'decon') { const e = drag.sx === m.tx && drag.sy === m.ty ? pickAt(m.wx, m.wy) : null; if (e && e.type === 'rail' && e.sig) { refund(BLD[e.sig === 1 ? 'rail_signal' : 'path_signal'].cost); e.sig = 0; markDirty('rail'); sfx('remove'); } else if (e) { const why = canRemove(e); if (why) { UI.toast(why, 'bad'); sfx('err'); } else if (remove(e)) sfx('remove'); } else { const one = drag.sx === m.tx && drag.sy === m.ty; const tr = one ? trainAt(m.wx, m.wy) : null; const tk = one && !tr ? truckAt(m.wx, m.wy) : null; const sp = one && !tr && !tk ? shipAt(m.wx, m.wy) : null; if (tr) removeTrain(tr); else if (tk) removeTruck(tk); else if (sp) removeShip(sp); else deconRect(drag.sx, drag.sy, m.tx, m.ty); } drag = null; }
+    else if (t.k === 'decon') {
+      const one = drag.sx === m.tx && drag.sy === m.ty, e = one ? pickAt(m.wx, m.wy) : null;
+      if (e) run({ k: 'rm', id: e.id, sig: e.type === 'rail' && e.sig ? 1 : 0 });
+      else {
+        const tr = one ? trainAt(m.wx, m.wy) : null, tk = one && !tr ? truckAt(m.wx, m.wy) : null, sp = one && !tr && !tk ? shipAt(m.wx, m.wy) : null;
+        if (tr) run({ k: 'rmv', v: 't', id: tr.id }); else if (tk) run({ k: 'rmv', v: 'k', id: tk.id }); else if (sp) run({ k: 'rmv', v: 's', id: sp.id });
+        else deconRect(drag.sx, drag.sy, m.tx, m.ty);
+      }
+      drag = null;
+    }
     else if (t.k === 'bpsel') {
       const bp = captureBP(drag.sx, drag.sy, m.tx, m.ty);
       drag = null;
@@ -569,7 +443,7 @@ export function initInput(canvas: HTMLCanvasElement) {
       if (drag) { drag.axis = drag.axis === 'v' ? 'h' : 'v'; sfx('click'); return; }
       if (tool.t && tool.t.k === 'paste') { tool.t.prot = ((tool.t.prot || 0) + (ev.shiftKey ? 3 : 1)) & 3; sfx('click'); return; }
       if (tool.t && tool.t.k === 'build') { rot = (rot + (ev.shiftKey ? 3 : 1)) & 3; sfx('click'); return; }
-      const e = pickAt(view.mouse.wx, view.mouse.wy); if (e && rotateEnt(e, ev.shiftKey ? -1 : 1)) sfx('click');
+      const e = pickAt(view.mouse.wx, view.mouse.wy); if (e) run({ k: 'rot', id: e.id, dir: ev.shiftKey ? -1 : 1 });
       return;
     }
     if (k === 'q') {

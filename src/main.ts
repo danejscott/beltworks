@@ -13,7 +13,8 @@ import * as DATA from './data';
 import { buildTerrain, T3, terrainTick, terrainTileChanged } from './r3/terrain3d';
 import { icon3D, init3D, Label3, reset3D, update3D } from './r3/world3d';
 import { hexCol, rgba } from './gl';
-import { chopFx, initInput, tickInput, updateGhosts } from './input';
+import { chopFx, initInput, mineFx, pasteFx, setTool, tickInput, updateGhosts } from './input';
+import { isMine } from './teams';
 import { setDeliverFx, setOnMilestone, unlockName } from './progress';
 import { addFrame, loadWorld, newSlotId, saveGame, slot } from './save';
 import { hideTitle, initTitle, NewWorldOpts, showTitle, title } from './title';
@@ -27,6 +28,9 @@ import * as W_ from './world';
 import * as SIM from './sim';
 import * as TR from './trains';
 import * as INP from './input';
+import * as CMD from './cmd';
+import * as TEAMS from './teams';
+import * as SAVE from './save';
 import * as PR from './progress';
 import * as DR from './r3/world3d';
 import * as CORE from './r3/core';
@@ -45,9 +49,17 @@ function resize() {
 }
 
 function setupFx() {
-  G.fx.toast = UI.toast;
-  G.fx.sfx = sfx;
-  G.fx.chop = chopFx;
+  // messages from the simulation only reach the team they're about (online worlds have several)
+  G.fx.toast = (h, k) => { if (isMine()) UI.toast(h, k); };
+  G.fx.sfx = n => { if (isMine()) sfx(n); };
+  G.fx.chop = (x, y, n) => { if (isMine()) chopFx(x, y, n); };
+  G.fx.ui = (k, o) => {
+    if (k === 'train') { setTool(null); UI.openTrain(o); }
+    else if (k === 'removed') { if (view.inspect === o) UI.closeInspect(); }
+    else if (k === 'vremoved') { if (view.inspectTrain === o || view.inspectTruck === o || view.inspectShip === o) UI.closeInspect(); }
+    else if (k === 'pasted') pasteFx(o);
+    else if (k === 'mined') mineFx(o);
+  };
   G.fx.tile = (x, y) => terrainTileChanged(x, y);
   G.fx.placed = (e: Ent) => {
     const s = Math.max(e.w, e.h);
@@ -60,6 +72,7 @@ function setupFx() {
   };
   let lastDel = 0;
   setDeliverFx((e: Ent, item: string) => {
+    if (!isMine()) return;
     sfx('deliver');
     const now = performance.now();
     if (now - lastDel < 90) return;
@@ -68,6 +81,7 @@ function setupFx() {
   });
   let shownTier = -1;
   setOnMilestone((m: Milestone) => {
+    if (!isMine()) return;
     sfx('milestone');
     if (shownTier < 0) shownTier = G.S.flags.shownTier ?? 0;
     const tierUp = G.S.maxTier > (G.S.flags.shownTier ?? 0);
@@ -248,7 +262,7 @@ async function boot() {
   document.addEventListener('visibilitychange', () => { if (document.hidden && slot.id) saveGame(); });
   requestAnimationFrame(t => { last = t / 1000; requestAnimationFrame(frame); });
   (window as any).G = G; // debugging aid
-  (window as any).BW = { frame: (n = 1, dt = 1 / 60) => { for (let i = 0; i < n; i++) { dbgT += dt * 1000; frame(dbgT); } }, T3, PL, DATA, TER, G, W: W_, SIM, TR, TK, EX, INP, PR, UI, view, DR, CORE };
+  (window as any).BW = { frame: (n = 1, dt = 1 / 60) => { for (let i = 0; i < n; i++) { dbgT += dt * 1000; frame(dbgT); } }, T3, PL, DATA, TER, G, W: W_, SIM, TR, TK, EX, INP, PR, UI, view, DR, CORE, CMD, TEAMS, SAVE };
 }
 boot();
 export { audioInit, ITEMS, parts, rgba };

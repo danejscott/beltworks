@@ -1,11 +1,12 @@
 import { buildingIconURL, itemIconURL } from './atlas';
+import { online, run } from './cmd';
 import { audio, setVolume, sfx, setSound, vol } from './audio';
 import { BLD, CATS, Cost, HANDCRAFT, isFluid, ITEM_KEYS, ITEMS, MACHINE_NAMES, MAX_TIER, MILESTONES, RECIPES, SHOP, TIER_NAMES } from './data';
 import { DRONE_LOAD } from './drones';
 import { BP, bestOf, bpCost, captureBP, clipboard, curCat, dragInfo, selectSlot, setCat, setLevel, setTool, tool } from './input';
 import { buyShop, couponCost, curPhase, loadElevator, milestoneReady, submitMilestone, unlockName } from './progress';
 import { exportSave, importSave, loadBlueprints, saveGame, storeBlueprints } from './save';
-import { clockPow, craft, ensureFresh, flushNet, handTime, hist, inCap, outCap, PURITY, rate, setRecipe, stats } from './sim';
+import { clockPow, myCraft, ensureFresh, flushNet, handTime, hist, inCap, outCap, PURITY, rate, setRecipe, stats } from './sim';
 import { BIOME_NAMES, biomeAtTiles, H, HX, HY, isWater, RES_BIOMES, TILE_NAMES, TT, W } from './terrain';
 import { addWagon, buildRoute, removeTrain, removeWagon, trainCap, wagonsOf } from './trains';
 import { $, clamp, DX, DY, esc, fmt, fmtR } from './util';
@@ -199,6 +200,7 @@ function renderTracker() {
     }
     h += '</div>';
   } else if (S.won) h += '<div class="tbox"><div class="th">🏆 Project Assembly launched!</div><div class="sm">Everything is unlocked. Keep building — the factory must grow.</div></div>';
+  const craft = myCraft();
   if (craft.q.length) {
     const r = RECIPES[craft.q[0]], p = craft.active ? craft.t / handTime(r) * 100 : 0;
     h += `<div class="tbox"><div class="th"><span>Crafting</span><span class="sm">${craft.q.length} queued</span></div><div class="req">${ic(Object.keys(r.out)[0], 20)}<div class="bar"><i style="width:${p}%;transition:none"></i></div><button class="mini" data-act="clearq">✕</button></div></div>`;
@@ -873,9 +875,7 @@ function act(cmd: string, a: string, b: string) {
       const others = stationList().filter((o: Ent) => o !== e);
       const tgt = G.ents.get(e.routeTo) || others[0];
       if (!tgt) break;
-      const err = buildRoute(e, tgt, a === '1');
-      if (err) { toast(err, 'bad'); sfx('err'); }
-      else { toast(a === '1' ? `🚆 Track laid and a train is running between <b>${esc(e.name)}</b> and <b>${esc(tgt.name)}</b>!` : `Track laid to <b>${esc(tgt.name)}</b>`, 'good'); sfx('paste'); inspKey = ''; }
+      run({ k: 'route', id: e.id, to: tgt.id, train: a === '1' ? 1 : 0 }); inspKey = '';
     } break;
     case 'unlockok': unlockQueue.shift(); if (unlockQueue.length) { ($('#mbody') as any).dataset.h = ''; renderModal(); } else closeModal(); break;
     case 'skiptut': G.S.flags.tutDone = 1; view.marker = null; break;
@@ -886,22 +886,22 @@ function act(cmd: string, a: string, b: string) {
     case 'slot': selectSlot(+a); break;
     case 'decon': setTool(tool.t && tool.t.k === 'decon' ? null : { k: 'decon' }); sfx('click'); break;
     case 'copy': setTool({ k: 'bpsel', quick: true }); sfx('click'); break;
-    case 'recipe': if (e) { setRecipe(e, a); sfx('click'); inspKey = ''; } break;
-    case 'rot': if (e && rotateEnt(e)) sfx('click'); break;
+    case 'recipe': if (e) { run({ k: 'recipe', id: e.id, r: a || null }); inspKey = ''; } break;
+    case 'rot': if (e) run({ k: 'rot', id: e.id, dir: 1 }); break;
     case 'copyEnt': if (e) { setTool({ k: 'build', type: e.type, recipe: e.recipe || null, clock: e.clock, filt: e.filt, mode: e.mode }); closeInspect(); } break;
-    case 'del': if (e) { if (remove(e)) { sfx('remove'); closeInspect(); } else toast('Can\'t remove that', 'bad'); } break;
-    case 'shard': if (e) { const n = +a; if (n > 0 && (S.inv.power_shard || 0) > 0 && (e.shards || 0) < 3) { S.inv.power_shard--; e.shards = (e.shards || 0) + 1; sfx('craft'); } else if (n < 0 && e.shards > 0) { e.shards--; addInv('power_shard', 1); e.clock = Math.min(e.clock, 1 + 0.5 * e.shards); sfx('click'); } inspKey = ''; } break;
-    case 'amp': if (e) { if (e.amp) { e.amp = 0; addInv('amplifier', 1); } else if ((S.inv.amplifier || 0) > 0) { S.inv.amplifier--; e.amp = 1; sfx('craft'); } inspKey = ''; } break;
-    case 'mode': if (e) { e.mode = a; sfx('click'); inspKey = ''; } break;
-    case 'collect': if (e && e.store) { let n = 0; for (const k in e.store) { addInv(k, e.store[k]); n += e.store[k]; } e.store = {}; e.tot = 0; sfx('craft'); toast(`Moved ${fmt(n)} items to inventory`, 'good'); } break;
-    case 'loadElev': loadElevator(); break;
-    case 'fuel': if (e) { const d = def(e); let moved = 0; for (const k in d.fuels) { let tot = 0; for (const q in e.fbuf) tot += e.fbuf[q]; const n = Math.min(Math.floor(S.inv[k] || 0), 50 - tot); if (n > 0) { S.inv[k] -= n; e.fbuf[k] = (e.fbuf[k] || 0) + n; moved += n; } } toast(moved ? `Loaded ${moved} fuel` : 'No fuel in inventory — chop trees for Wood', moved ? 'good' : 'bad'); sfx(moved ? 'craft' : 'err'); } break;
-    case 'flush': if (e && e.fnet) { flushNet(e.fnet); sfx('remove'); toast('Network flushed', 'good'); } break;
-    case 'submit': submitMilestone(a); break;
-    case 'craft': { const n = +b; for (let i = 0; i < n; i++) craft.q.push(a); sfx('click'); break; }
-    case 'clearq': if (craft.active && craft.q.length) { const r = RECIPES[craft.q[0]]; for (const k in r.in) addInv(k, r.in[k]); } craft.q = []; craft.active = false; break;
-    case 'buy': buyShop(a); break;
-    case 'speed': S.speed = S.speed === 1 ? 2 : S.speed === 2 ? 4 : 1; sfx('click'); break;
+    case 'del': if (e) run({ k: 'rm', id: e.id }); break;
+    case 'shard': if (e) { run({ k: 'shard', id: e.id, n: +a }); inspKey = ''; } break;
+    case 'amp': if (e) { run({ k: 'amp', id: e.id }); inspKey = ''; } break;
+    case 'mode': if (e) { run({ k: 'mode', id: e.id, m: a }); inspKey = ''; } break;
+    case 'collect': if (e) run({ k: 'collect', id: e.id }); break;
+    case 'loadElev': run({ k: 'loadElev' }); break;
+    case 'fuel': if (e) run({ k: 'fuel', id: e.id }); break;
+    case 'flush': if (e) run({ k: 'flush', id: e.id }); break;
+    case 'submit': run({ k: 'submit', m: a }); break;
+    case 'craft': run({ k: 'craft', r: a, n: +b }); break;
+    case 'clearq': run({ k: 'clearq' }); break;
+    case 'buy': run({ k: 'buy', s: a }); break;
+    case 'speed': run({ k: 'speed' }); sfx('click'); break;
     case 'save': saveNow(); break;
     case 'export': exportSave(); break;
     case 'import': importSave(ok => { if (ok) { closeModal(); closeInspect(); toast('Save imported', 'good'); buildMapBase(); onLoadedHook(); } else toast('Not a valid Beltworks save', 'bad'); }); break;
@@ -917,11 +917,11 @@ function act(cmd: string, a: string, b: string) {
       if (cmd === 'bpsave') { const nm = ((document.getElementById('bpn') as HTMLInputElement)?.value || '').trim() || `Blueprint ${loadBlueprints().length + 1}`; bp.name = nm; const l = loadBlueprints(); l.push(bp); storeBlueprints(l); toast(`Saved blueprint "${esc(nm)}"`, 'good'); }
       closeModal(); setTool({ k: 'paste', bp, prot: 0 }); bpPending = null; break;
     }
-    case 'wagon': if (t) { if (+a > 0) addWagon(t); else removeWagon(t); inspKey = ''; } break;
-    case 'trun': if (t) { t.running = !t.running; if (t.running) { t.state = 'idle'; t.waitT = 99; } sfx('click'); inspKey = ''; } break;
-    case 'tremove': if (t) { removeTrain(t); closeInspect(); } break;
-    case 'tup': if (t) { const i = +a; if (i > 0) { const s = t.sched.splice(i, 1)[0]; t.sched.splice(i - 1, 0, s); } else { const s = t.sched.shift(); t.sched.push(s); } inspKey = ''; } break;
-    case 'tdel': if (t) { t.sched.splice(+a, 1); if (t.si >= t.sched.length) t.si = 0; t.state = 'idle'; t.waitT = 99; inspKey = ''; } break;
+    case 'wagon': if (t) { run({ k: 'wagon', t: t.id, n: +a }); inspKey = ''; } break;
+    case 'trun': if (t) { run({ k: 'trun', t: t.id }); inspKey = ''; } break;
+    case 'tremove': if (t) run({ k: 'rmv', v: 't', id: t.id }); break;
+    case 'tup': if (t) { run({ k: 'tup', t: t.id, i: +a }); inspKey = ''; } break;
+    case 'tdel': if (t) { run({ k: 'tdel', t: t.id, i: +a }); inspKey = ''; } break;
     default: if (extraAct(cmd, a, b)) inspKey = '';
   }
   if (modalKind && cmd !== 'closeModal' && cmd !== 'open') setTimeout(() => { if (modalKind) { ($('#mbody') as any).dataset.h = ''; renderModal(); } }, 0);
@@ -941,13 +941,13 @@ export function initUI() {
     const key = el.dataset?.input; if (!key) return;
     const [k, a] = key.split(':');
     const e = view.inspect, t = view.inspectTrain;
-    if (k === 'clock' && e) { e.clock = clamp(+el.value / 100, 0.01, 1 + 0.5 * (e.shards || 0)); const cv = document.getElementById('clkv'); if (cv) cv.textContent = el.value + '%'; }
-    else if (k === 'filt' && e) e.filt[+a] = el.value;
-    else if (k === 'name' && e) e.name = el.value || e.name;
-    else if (k === 'target' && e) { e.target = +el.value; inspKey = ''; }
-    else if (k === 'routeTo' && e) { e.routeTo = +el.value; }
-    else if (k === 'tname' && t) t.name = el.value || t.name;
-    else if (k === 'addstop' && t && el.value && ev.type === 'change') { t.sched.push(+el.value); if (t.state === 'noschedule' || t.state === 'nopath') { t.state = 'idle'; t.waitT = 99; } inspKey = ''; sfx('click'); }
+    if (k === 'clock' && e) { const cv = document.getElementById('clkv'); if (cv) cv.textContent = el.value + '%'; if (ev.type === 'change' || !online()) run({ k: 'set', id: e.id, f: 'clock', v: +el.value / 100 }); }
+    else if (k === 'filt' && e) run({ k: 'set', id: e.id, f: 'filt', i: +a, v: el.value });
+    else if (k === 'name' && e) { if (ev.type === 'change' || !online()) run({ k: 'set', id: e.id, f: 'name', v: el.value }); }
+    else if (k === 'target' && e) { run({ k: 'set', id: e.id, f: 'target', v: +el.value }); inspKey = ''; }
+    else if (k === 'routeTo' && e) run({ k: 'set', id: e.id, f: 'routeTo', v: +el.value });
+    else if (k === 'tname' && t) { if (ev.type === 'change' || !online()) run({ k: 'tname', t: t.id, v: el.value }); }
+    else if (k === 'addstop' && t && el.value && ev.type === 'change') { run({ k: 'tstop', t: t.id, v: +el.value }); inspKey = ''; }
     else if (k === 'mapf') { mapFilter[a] = el.checked; drawBigMap(); }
     else if (k === 'invq') { invQuery = el.value; filterInventory(); }
     else if (k === 'vol') setVolume(a as any, +el.value / 100);

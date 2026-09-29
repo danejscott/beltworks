@@ -1,5 +1,6 @@
 // UI for the newer systems: vehicles list, scanner, research, planner, achievements, crash sites, trucks.
 import { sfx } from './audio';
+import { online, run } from './cmd';
 import { ALT_IDS, BLD, isFluid, ITEMS, MACHINE_NAMES, RECIPES } from './data';
 import { ACHS } from './achievements';
 import { altMachineOK, altPool, analyseDrive, CRYSTAL_NAMES, discoveredCount, lootSite, pickAlt, scan, scanCol, scanName, scanRange, SCAN_TARGETS } from './explore';
@@ -169,21 +170,21 @@ export function extraAct(cmd: string, a: string, b: string): boolean {
       else { const t = G.trucks.find(x => String(x.id) === b); if (t) { flyTo(t.x, t.y); closeModal(); openTruck(t); } }
       return true;
     }
-    case 'lineadd': { const l = lineOf(+a); if (l) { const err = addTrainToLine(l); if (err) { toast('Can\'t add a train: ' + err, 'bad'); sfx('err'); } else toast('🚂 Another train joined the line', 'good'); } return true; }
+    case 'lineadd': run({ k: 'lineadd', l: +a }); return true;
     case 'scan': { const msg = scan(a); toast(msg, 'good'); sfx('click'); closeModal(); return true; }
-    case 'analyse': { const err = analyseDrive(); if (err) { toast(err, 'bad'); sfx('err'); } else sfx('craft'); return true; }
-    case 'pickalt': pickAlt(a); return true;
-    case 'loot': { if (pendingSite) { const err = lootSite(pendingSite); if (err) { toast(err, 'bad'); sfx('err'); } else { toast(`🛸 Looted! <b>+1 Hard Drive</b>${pendingSite.shards ? ` and <b>+${pendingSite.shards} Power Shard${pendingSite.shards > 1 ? 's' : ''}</b>` : ''}. Press <kbd>U</kbd> to research it.`, 'big'); closeModal(); } } return true; }
-    case 'buytruck': if (e) { const others = truckStations().filter(o => o !== e); const tgt = G.ents.get(e.truckTo) || others[0] || null; const err = buyTruck(e, tgt); if (err) { toast(err, 'bad'); sfx('err'); } else toast(`🚚 A truck is on its way${tgt ? ` between <b>${esc(e.name)}</b> and <b>${esc(tgt.name)}</b>` : ''}!`, 'good'); } return true;
-    case 'buyship': if (e) { const others = shipPorts().filter(o => o !== e); const tgt = G.ents.get(e.shipTo) || others[0] || null; const err = buyShip(e, tgt); if (err) { toast(err, 'bad'); sfx('err'); } else toast(`🚢 A ship is sailing${tgt ? ` between <b>${esc(e.name)}</b> and <b>${esc(tgt.name)}</b>` : ''}!`, 'good'); } return true;
-    case 'sremove': { const s = view.inspectShip as Ship | null; if (s) { removeShip(s); view.inspectShip = null; } return true; }
-    case 'sdel': { const s = view.inspectShip as Ship | null; if (s) { s.sched.splice(+a, 1); if (s.si >= s.sched.length) s.si = 0; s.state = 'idle'; s.retryT = 0; } return true; }
-    case 'kremove': if (k) { removeTruck(k); view.inspectTruck = null; } return true;
-    case 'ksched': if (k) { const tgt = G.ents.get(+a); if (tgt && !k.sched.includes(tgt.id)) k.sched.push(tgt.id); } return true;
-    case 'kdel': if (k) { k.sched.splice(+a, 1); if (k.si >= k.sched.length) k.si = 0; k.state = 'idle'; k.retryT = 0; } return true;
+    case 'analyse': run({ k: 'analyse' }); return true;
+    case 'pickalt': run({ k: 'pickalt', a }); return true;
+    case 'loot': if (pendingSite) { run({ k: 'loot', f: pendingSite.id }); closeModal(); } return true;
+    case 'buytruck': if (e) { const others = truckStations().filter(o => o !== e); const tgt = G.ents.get(e.truckTo) || others[0] || null; run({ k: 'buytruck', id: e.id, to: tgt ? tgt.id : 0 }); } return true;
+    case 'buyship': if (e) { const others = shipPorts().filter(o => o !== e); const tgt = G.ents.get(e.shipTo) || others[0] || null; run({ k: 'buyship', id: e.id, to: tgt ? tgt.id : 0 }); } return true;
+    case 'sremove': { const s = view.inspectShip as Ship | null; if (s) { run({ k: 'rmv', v: 's', id: s.id }); view.inspectShip = null; } return true; }
+    case 'sdel': { const s = view.inspectShip as Ship | null; if (s) run({ k: 'vdel', v: 's', id: s.id, i: +a }); return true; }
+    case 'kremove': if (k) { run({ k: 'rmv', v: 'k', id: k.id }); view.inspectTruck = null; } return true;
+    case 'ksched': if (k) run({ k: 'vstop', v: 'k', id: k.id, to: +a }); return true;
+    case 'kdel': if (k) run({ k: 'vdel', v: 'k', id: k.id, i: +a }); return true;
     case 'travel': { const p = travelPoints()[+a]; if (p && fastTravelAllowed()) { flyTo(p.x, p.y); closeModal(); toast(`🧭 ${esc(p.name)}`, ''); sfx('click'); } return true; }
     case 'tlreplay': startTimelapse(null); return true;
-    case 'dn': S.dayNight = !S.dayNight; sfx('click'); toast(S.dayNight ? '🌙 Day/night cycle on' : '☀️ Day/night cycle off (always daytime)', ''); return true;
+    case 'dn': if (online()) return true; run({ k: 'dn' }); sfx('click'); toast(S.dayNight ? '🌙 Day/night cycle on' : '☀️ Day/night cycle off (always daytime)', ''); return true;
   }
   return false;
 }
@@ -192,13 +193,13 @@ export function extraInput(k: string, _a: string, el: HTMLInputElement, ev: Even
   const e = view.inspect as Ent | null, t = view.inspectTruck as Truck | null;
   if (k === 'plitem') { pl.item = el.value; rerender(); return true; }
   if (k === 'plrate') { const v = parseFloat(el.value); if (v > 0 && ev.type === 'change') { pl.rate = v; rerender(); } else if (v > 0) pl.rate = v; return true; }
-  if (k === 'truckTo' && e) { e.truckTo = +el.value; return true; }
-  if (k === 'shipTo' && e) { e.shipTo = +el.value; return true; }
+  if (k === 'truckTo' && e) { run({ k: 'set', id: e.id, f: 'truckTo', v: +el.value }); return true; }
+  if (k === 'shipTo' && e) { run({ k: 'set', id: e.id, f: 'shipTo', v: +el.value }); return true; }
   const sh = view.inspectShip as Ship | null;
-  if (k === 'sname' && sh) { sh.name = el.value || sh.name; return true; }
-  if (k === 'sstop' && sh && el.value && ev.type === 'change') { sh.sched.push(+el.value); if (sh.state === 'noschedule' || sh.state === 'nopath') { sh.state = 'idle'; sh.retryT = 0; } sfx('click'); return true; }
-  if (k === 'kname' && t) { t.name = el.value || t.name; return true; }
-  if (k === 'kstop' && t && el.value && ev.type === 'change') { t.sched.push(+el.value); if (t.state === 'noschedule' || t.state === 'nopath') { t.state = 'idle'; t.retryT = 0; } sfx('click'); return true; }
+  if (k === 'sname' && sh) { if (ev.type === 'change' || !online()) run({ k: 'vname', v: 's', id: sh.id, name: el.value }); return true; }
+  if (k === 'sstop' && sh && el.value && ev.type === 'change') { run({ k: 'vstop', v: 's', id: sh.id, to: +el.value }); return true; }
+  if (k === 'kname' && t) { if (ev.type === 'change' || !online()) run({ k: 'vname', v: 'k', id: t.id, name: el.value }); return true; }
+  if (k === 'kstop' && t && el.value && ev.type === 'change') { run({ k: 'vstop', v: 'k', id: t.id, to: +el.value }); return true; }
   return false;
 }
 let rerender = () => { };

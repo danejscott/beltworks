@@ -8,6 +8,7 @@ import { updateDrones } from './drones';
 import { updateTrucks } from './trucks';
 import { updateShips } from './ships';
 import { solarFactor } from './daynight';
+import { asTeam, MP, TS, useTeam } from './teams';
 
 export const SP = 0.5; // min spacing between items on a belt (tiles)
 export const PIPE_CAP = 20;
@@ -33,10 +34,14 @@ export function resetStats() { stats.P = {}; stats.C = {}; stats.D = {}; stats.e
 export interface HistSample { t: number; cap: number; dem: number; p: Record<string, number>; c: Record<string, number> }
 export const hist = { s: [] as HistSample[], every: 30, keep: 120 };
 function sampleHistory() {
+  if (MP.teams) { const prev = MP.cur; for (const o of MP.teams.keys()) { useTeam(o); sampleHistory1(o); } useTeam(prev); }
+  else sampleHistory1(-1);
+}
+function sampleHistory1(team: number) {
   const p: Record<string, number> = {}, c: Record<string, number> = {};
   for (const k in stats.P) { const v = rate(stats.P, k); if (v > 0.01) p[k] = Math.round(v * 10) / 10; }
   for (const k in stats.C) { const v = rate(stats.C, k); if (v > 0.01) c[k] = Math.round(v * 10) / 10; }
-  let cap = 0, dem = 0; for (const n of G.pnets) { cap += n.cap; dem += n.lastDemand; }
+  let cap = 0, dem = 0; for (const n of G.pnets) if (team < 0 || n.o === team) { cap += n.cap; dem += n.lastDemand; }
   hist.s.push({ t: Math.round(G.S.time), cap: Math.round(cap), dem: Math.round(dem), p, c });
   if (hist.s.length > hist.keep) hist.s.shift();
   if (cap > (G.S.flags.peakMW || 0)) G.S.flags.peakMW = Math.round(cap);
@@ -140,7 +145,7 @@ export function rebuildLinks() {
 
 // ---------------------------------------------------------------------------
 // Power
-export function poleReach(e: Ent) { return (BLD[e.type].reach || 0) * (G.S.shop.wires ? 1.5 : 1); }
+export function poleReach(e: Ent) { return (BLD[e.type].reach || 0) * (TS(e.o).shop.wires ? 1.5 : 1); }
 export function rebuildPower() {
   if (G.dirty.links) rebuildLinks();
   const L = G.L;
@@ -166,7 +171,7 @@ export function rebuildPower() {
     for (let j = -rr; j <= rr; j++) for (let i = -rr; i <= rr; i++) {
       const a = buckets.get((bx + i) * 1000 + by + j); if (!a) continue;
       for (const q of a) {
-        if (q === p) continue;
+        if (q === p || (q.o || 0) !== (p.o || 0)) continue;   // wires only join a team's own poles
         const d = Math.hypot(q.x + q.w / 2 - cx, q.y + q.h / 2 - cy);
         if (d <= Math.min(rp, poleReach(q))) cands.push([d, q]);
       }
@@ -178,14 +183,24 @@ export function rebuildPower() {
   const netOf = (poleId: number) => {
     const r = find(poleId);
     let n = nets.get(r);
-    if (!n) { n = { id: r, outposts: 0, gens: [], cons: [], bats: [], poles: 0, cap: 0, demand: 0, lastDemand: 0, sat: 1, load: 0, batFlow: 0, hist: [], hub: null }; nets.set(r, n); }
+    if (!n) { n = { id: r, o: G.ents.get(r)?.o || 0, outposts: 0, gens: [], cons: [], bats: [], poles: 0, cap: 0, demand: 0, lastDemand: 0, sat: 1, load: 0, batFlow: 0, hist: [], hub: null }; nets.set(r, n); }
     return n;
   };
   for (const p of poles) { const n = netOf(p.id); n.poles++; p.pnet = n; if (BLD[p.type].kind === 'hub') n.hub = p; else if (BLD[p.type].kind === 'outpost') n.outposts++; }
   const attach = (e: Ent) => {
+    const o = e.o || 0;
+    let foreign = false;
     for (let j = 0; j < e.h; j++) for (let i = 0; i < e.w; i++) {
       const id = cov[(e.y + j) * W + e.x + i];
-      if (id) return netOf(id);
+      if (!id) continue;
+      if (!MP.teams || (G.ents.get(id)!.o || 0) === o) return netOf(id);
+      foreign = true;
+    }
+    // another team's pole covers this spot: look for one of our own poles that reaches it (they never share power)
+    if (foreign) for (const p of poles) {
+      if ((p.o || 0) !== o) continue;
+      const r = BLD[p.type].area;
+      if (e.x + e.w > p.x - r && e.x < p.x + p.w + r && e.y + e.h > p.y - r && e.y < p.y + p.h + r) return netOf(p.id);
     }
     return null;
   };
@@ -388,6 +403,8 @@ export const inCap = (r: Recipe, k: string) => isFluid(k) ? Math.max(r.in[k] * 2
 export const outCap = (r: Recipe, k: string) => isFluid(k) ? Math.max(r.out[k] * 3, 20) : Math.max(r.out[k] * 2, 5);
 
 export function acceptInto(e: Ent, item: string, dir: number, fx?: number, fy?: number): boolean {
+  // items arriving at a building count for the building's owner (a rival's belt can feed your HUB)
+  if (MP.teams && (e.o || 0) !== MP.cur) return asTeam(e.o || 0, () => acceptInto(e, item, dir, fx, fy));
   const d = BLD[e.type], side = opp(dir);
   if (PORTED.has(d.kind) && fx !== undefined) {
     if (e.anyIn) { if (side === e.rot && d.kind !== 'sink' && d.kind !== 'gen') return false; }   // older buildings: any side but the front
@@ -457,7 +474,9 @@ function takeFromStore(e: Ent) {
 
 // ---------------------------------------------------------------------------
 // Hand crafting
-export const craft = { q: [] as string[], active: false, t: 0 };
+export interface CraftQ { q: string[]; active: boolean; t: number }
+/** the local team's hand-crafting queue (each team has its own) */
+export function myCraft(): CraftQ { const S: any = G.S; return S.cq || (S.cq = { q: [], active: false, t: 0 }); }
 export const handTime = (r: Recipe) => Math.max(0.3, r.t * 0.5 / (G.S.shop.hands ? 3 : 1));
 
 // ---------------------------------------------------------------------------
@@ -477,9 +496,12 @@ export function update(dt: number) {
   for (const n of G.fnets) n.budget = n.rate * dt;
   updatePower(dt);
   const L = G.L;
+  // team worlds: run each building in its owner's context; teams with nobody online stand still
+  const T = MP.teams ? (e: { o?: number }) => { const o = e.o || 0; if (MP.paused.has(o)) return false; if (o !== MP.cur) useTeam(o); return true; } : null;
 
   // miners
   for (const e of L.miners) {
+    if (T && !T(e)) continue;
     if (!e.node) { e.st = 'idle'; e.req = 0; continue; }   // (a miner whose node vanished must never stall the factory)
     const d = BLD[e.type], res = e.node.res, sat = e.pnet ? e.pnet.sat : 0;
     const cap = 20;
@@ -497,6 +519,7 @@ export function update(dt: number) {
   }
   // extractors
   for (const e of L.extractors) {
+    if (T && !T(e)) continue;
     const d = BLD[e.type], res = d.on === 'water' ? 'water' : 'crude_oil', sat = e.pnet ? e.pnet.sat : 0;
     const cap = 100;
     if (!e.pnet) { e.st = 'nopower'; e.req = 0; }
@@ -512,6 +535,7 @@ export function update(dt: number) {
   }
   // harvesters
   for (const e of L.harvesters) {
+    if (T && !T(e)) continue;
     const d = BLD[e.type], sat = e.pnet ? e.pnet.sat : 0;
     if (!e.pnet) { e.st = 'nopower'; e.req = 0; }
     else if (e.ob >= 20) { e.st = 'block'; e.req = 0; }
@@ -533,9 +557,10 @@ export function update(dt: number) {
     if (e.ob > 0 && pushOut(e, 'wood')) e.ob--;
   }
   // machines
-  for (const e of L.machines) updateMachine(e, dt);
+  for (const e of L.machines) { if (T && !T(e)) continue; updateMachine(e, dt); }
   // generators: fluid intake (and waste out)
   for (const g of L.gens) {
+    if (T && !T(g)) continue;
     const d = BLD[g.type];
     if (d.waste && g.ob) for (const k in g.ob) if (g.ob[k] >= 1 && g.ft && pushOut(g, k)) g.ob[k]--;
     if (d.water && g.water < 60) g.water += pullFluid(g, 'water', 60 - g.water);
@@ -543,6 +568,7 @@ export function update(dt: number) {
   }
   // logistics
   for (const e of L.logi) {
+    if (T && !T(e)) continue;
     const d = BLD[e.type];
     if (d.kind === 'splitter') {
       if (e.buf.length) {
@@ -561,11 +587,13 @@ export function update(dt: number) {
     }
   }
   for (const e of L.sinks) {
+    if (T && !T(e)) continue;
     if (e.sinkT > 0) e.sinkT -= dt;
     e.req = e.sinkT > 0 ? BLD.sink.power : 0;
     if (e.pnet) e.pnet.demand += e.req;
   }
   for (const e of [...L.stations, ...L.tstations, ...L.ports]) {
+    if (T && !T(e)) continue;
     e.req = BLD[e.type].power; if (e.pnet) e.pnet.demand += e.req;
     if (e.mode === 'unload' && e.tot > 0) {
       const k = takeFromStore(e);
@@ -576,6 +604,7 @@ export function update(dt: number) {
   for (const b of L.order) {
     const items = b.items;
     if (!items.length) continue;
+    if (T && !T(b)) continue;
     const nb = b.nb, len = b.len;
     let limit: number;
     if (nb) { const l = nb.items[nb.items.length - 1]; limit = l ? l.pos + len - SP : len + 0.99; } else limit = len;
@@ -598,7 +627,12 @@ export function update(dt: number) {
   updateTrucks(dt);
   updateShips(dt);
   updateDrones(dt);
-  // hand crafting
+  // hand crafting (each team has its own queue)
+  if (MP.teams) { for (const o of MP.teams.keys()) if (!MP.paused.has(o)) { useTeam(o); craftStep(dt); } useTeam(MP.myTeam); }
+  else craftStep(dt);
+}
+function craftStep(dt: number) {
+  const craft = myCraft();
   if (craft.q.length) {
     const r = RECIPES[craft.q[0]];
     if (!craft.active) {

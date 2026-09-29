@@ -1,9 +1,10 @@
+import { MP, vctx } from './teams';
 import { BLD } from './data';
 import { H, W } from './terrain';
 import { DX, DY, opp } from './util';
 import { addInv, borderTiles, canAfford, Ent, entAt, G, Line, markDirty, missingText, pairBit, pay, place, railAt, railExits, railSides, refund, Train } from './world';
 import { TT } from './terrain';
-import { railPairsForPath, smartJunction } from './input';
+import { railPairsForPath, smartJunction } from './cmd';
 
 export const WAGON_CAP = 2000;
 const ACC = 5, DEC = 7;
@@ -64,7 +65,7 @@ export function placeTrain(x: number, y: number, rot: number): Train | null {
   if (!canAfford(cost)) { G.fx.toast('Need: ' + missingText(cost), 'bad'); G.fx.sfx('err'); return null; }
   pay(cost);
   const t: Train = {
-    id: Date.now() + Math.floor(Math.random() * 1e6), name: 'Train ' + (++G.S.trainSeq), cars: ['loco', 'wagon'], cells, frac: 0, route: [], v: 0,
+    id: G.nextId++, o: MP.teams ? MP.cur : 0, name: 'Train ' + (++G.S.trainSeq), cars: ['loco', 'wagon'], cells, frac: 0, route: [], v: 0,
     sched: [], si: 0, state: 'idle', cargo: {}, tot: 0, waitT: 0, idleT: 0, blockT: 0, running: true,
   };
   G.trains.push(t);
@@ -176,6 +177,7 @@ export function updateTrains(dt: number) {
   for (const [c, id] of occ) { const b = blocks.get(c); if (b !== undefined) { let st = blockOcc.get(b); if (!st) blockOcc.set(b, st = new Set()); st.add(id); } }
   releaseReservations();
   for (const t of G.trains) {
+    if (!vctx(t)) continue;
     if (!t.running) { t.v = 0; if (t.frac === 0) t.state = 'stopped'; }
     if (!t.sched.length) { t.state = t.running ? 'noschedule' : 'stopped'; continue; }
     if (t.si >= t.sched.length) t.si = 0;
@@ -420,7 +422,7 @@ export function addTrainToLine(line: Line, skipCountCheck = false): string | nul
   if (best < 0 || (occIdx.length && bestD < 8)) return 'there is no free stretch of track left on this line';
   pay(cost);
   const t: Train = {
-    id: Date.now() + Math.floor(Math.random() * 1e6), name: 'Train ' + (++G.S.trainSeq), cars: ['loco', 'wagon'], cells: [L[best], L[best - 1], L[best - 2], L[best - 3]],
+    id: G.nextId++, o: MP.teams ? MP.cur : 0, name: 'Train ' + (++G.S.trainSeq), cars: ['loco', 'wagon'], cells: [L[best], L[best - 1], L[best - 2], L[best - 3]],
     frac: 0, route: [], v: 0, sched: [line.a, line.b], si: best < line.split ? 1 : 0, state: 'idle', cargo: {}, tot: 0, waitT: 99, idleT: 0, blockT: 0,
     running: true, oneWay: true, line: line.id,
   };

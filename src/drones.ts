@@ -1,3 +1,4 @@
+import { vctx } from './teams';
 import { BLD } from './data';
 import { pushOut } from './sim';
 import { Ent, G } from './world';
@@ -7,6 +8,7 @@ const center = (e: Ent) => [e.x + e.w / 2, e.y + e.h / 2];
 
 export function updateDrones(dt: number) {
   for (const p of G.L.drones) {
+    if (!vctx(p)) continue;
     const cap = BLD.drone_port.cap;
     p.req = p.target ? BLD.drone_port.power : 0;
     if (p.pnet) p.pnet.demand += p.req;

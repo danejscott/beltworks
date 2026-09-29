@@ -3,8 +3,9 @@ import { W, H } from './terrain';
 import { view } from './view';
 import { BLD } from './data';
 import { G, place, PORTED, remove, resetWorld, State } from './world';
+import { clearTeams, MP, makeTeamState, teamFields, WORLD_KEYS } from './teams';
 
-const KEYS = ['items', 'pair', 'isExit', 'recipe', 'ib', 'ob', 'prog', 'work', 'clock', 'shards', 'amp', 'tm', 'store', 'tot', 'mode', 'name', 'buf', 'filt', 'slot', 'famt', 'ffluid', 'fuelT', 'fbuf', 'water', 'stored', 'pairs', 'target', 'outbox', 'obTot', 'inbox', 'ibTot', 'dr', 'sunk', 'anyIn', 'sig'];
+const KEYS = ['o', 'items', 'pair', 'isExit', 'recipe', 'ib', 'ob', 'prog', 'work', 'clock', 'shards', 'amp', 'tm', 'store', 'tot', 'mode', 'name', 'buf', 'filt', 'slot', 'famt', 'ffluid', 'fuelT', 'fbuf', 'water', 'stored', 'pairs', 'target', 'outbox', 'obTot', 'inbox', 'ibTot', 'dr', 'sunk', 'anyIn', 'sig'];
 
 export function serialize() {
   ensureFresh();
@@ -22,9 +23,19 @@ export function serialize() {
   if (G.floorN) for (let i = 0; i < W * H; i++) if (G.floor[i]) floor.push(i, G.floor[i]);
   const removed: number[] = [];
   for (let i = 0; i < W * H; i++) if (G.trees0[i] && !G.trees[i]) removed.push(i);
+  let mp: any;
+  if (MP.teams) {
+    // team world: the shared world fields, then each team's own state
+    mp = {
+      teams: [...MP.teams.entries()].map(([id, t]) => [id, teamFields(t)]),
+      info: [...MP.info.values()], players: [...MP.players.values()].map(p => ({ ...p, online: false })),
+    };
+  }
+  const plain = MP.teams ? { ...MP.world, unlocked: [], done: [] } : { ...S, unlocked: [...S.unlocked], done: [...S.done] };
+  delete (plain as any).cq;
   return {
-    v: 2,
-    S: { ...S, unlocked: [...S.unlocked], done: [...S.done] },
+    v: 2, mp,
+    S: plain,
     ents, removed, floor, hist: hist.s, nextId: G.nextId,
     trains: G.trains.map(t => ({ ...t })),
     ships: G.ships.map((t: any) => ({ ...t, path: [], pi: 0, state: t.state === 'moving' ? 'idle' : t.state })),
@@ -32,9 +43,20 @@ export function serialize() {
     cam: { ...view.cam },
   };
 }
-export function deserialize(o: any) {
-  const S: State = { ...o.S, unlocked: new Set(o.S.unlocked), done: new Set(o.S.done) };
-  resetWorld(S.seed, S);
+export function deserialize(o: any, keepTerrain = false) {
+  let S: State = { ...o.S, unlocked: new Set(o.S.unlocked), done: new Set(o.S.done) };
+  if (o.mp) {
+    // team world: rebuild every team's state around one shared world object
+    const world: any = {};
+    for (const k of WORLD_KEYS) world[k] = (o.S as any)[k];
+    MP.world = world; MP.teams = new Map(); MP.info.clear(); MP.players.clear();
+    for (const [id, f] of o.mp.teams) MP.teams.set(id, makeTeamState(world, { ...f, unlocked: new Set(f.unlocked), done: new Set(f.done) }));
+    for (const i of o.mp.info || []) MP.info.set(i.id, i);
+    for (const p of o.mp.players || []) MP.players.set(p.id, p);
+    const first = MP.teams.has(MP.myTeam) ? MP.myTeam : MP.teams.keys().next().value ?? 0;
+    S = MP.teams.get(first)!; MP.cur = first;
+  } else clearTeams();
+  resetWorld(S.seed, S, keepTerrain);
   for (const i of o.removed || []) G.trees[i] = 0;
   const fl = o.floor || [];
   for (let k = 0; k < fl.length; k += 2) { G.floor[fl[k]] = fl[k + 1]; for (let z = 1; z < 4; z++) if (fl[k + 1] & (1 << z)) G.floorN++; }
@@ -70,6 +92,36 @@ export function deserialize(o: any) {
   ensureFresh();
   // restore fluid amounts from members
   rebuildFluids();
+}
+
+/**
+ * A fingerprint of everything the simulation depends on. Every copy of an online world computes it at the
+ * same tick; if a copy's fingerprint differs from the server's, that copy has drifted and reloads.
+ */
+export function stateHash(): number {
+  let h = 0x811c9dc5;
+  const mix = (v: number) => { h ^= Math.round(v * 1000) | 0; h = Math.imul(h, 0x01000193); };
+  const mixS = (s: string) => { for (let i = 0; i < s.length; i++) { h ^= s.charCodeAt(i); h = Math.imul(h, 0x01000193); } };
+  const mixO = (o: any) => { if (!o) return; for (const k of Object.keys(o).sort()) { mixS(k); mix(+o[k] || 0); } };
+  mix(G.ents.size); mix(G.nextId); mix(G.S.time);
+  for (const e of G.ents.values()) {
+    mix(e.id); mix(e.rot);
+    if (e.items) { mix(e.items.length); for (const it of e.items) mix(it.pos); }
+    if (e.prog !== undefined) mix(e.prog);
+    if (e.tm !== undefined) mix(e.tm);
+    if (typeof e.ob === 'number') mix(e.ob); else mixO(e.ob);
+    if (e.ib) mixO(e.ib);
+    if (e.tot !== undefined) mix(e.tot);
+    if (e.famt) mix(e.famt);
+    if (e.fuelT) mix(e.fuelT);
+    if (e.stored) mix(e.stored);
+  }
+  for (const t of G.trains) { mix(t.id); mix(t.frac); mix(t.tot); mix(t.cells[0]); }
+  for (const t of G.trucks) { mix(t.id); mix(t.x); mix(t.y); mix(t.tot); }
+  for (const t of G.ships) { mix(t.id); mix(t.x); mix(t.y); mix(t.tot); }
+  const teams = MP.teams ? [...MP.teams.values()] : [G.S];
+  for (const t of teams) { mixO(t.inv); mix(t.points); mix(t.done.size); }
+  return h >>> 0;
 }
 
 // --- IndexedDB storage: one record per world ('saves') plus a small summary ('meta')

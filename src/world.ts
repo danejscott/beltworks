@@ -4,6 +4,7 @@ import { genTerrain, gridFor, H, HX, HY, isLand, isWater, ResNode, setWorldSize,
 import { Feat, genFeatures } from './features';
 import { shoreTiles } from './ships';
 import { DX, DY, opp } from './util';
+import { clearTeams, MP, wrand } from './teams';
 
 export interface Ent { id: number; type: string; x: number; y: number; rot: number; w: number; h: number; born: number; pop: number; [k: string]: any }
 
@@ -27,15 +28,17 @@ export interface State {
   playT?: number;               // real seconds played in this world
   msT?: Record<string, number>; tierT?: Record<string, number>; wonT?: number;
   lenV?: number;                // 1 = milestone amounts scale with difficulty (game length)
+  rngS?: number;                // state of the world's random generator (so every copy rolls the same)
+  cq?: { q: string[]; active: boolean; t: number }; // hand-crafting queue
 }
 export interface Line { id: number; a: number; b: number; cells: number[]; split: number }
 export interface Truck {
-  id: number; name: string; x: number; y: number; a: number; sched: number[]; si: number; state: string;
+  id: number; o?: number; name: string; x: number; y: number; a: number; sched: number[]; si: number; state: string;
   cargo: Record<string, number>; tot: number; path: number[]; pi: number; v: number; waitT: number; idleT: number; retryT: number;
 }
 
 export interface Train {
-  id: number; name: string; cars: string[]; cells: number[]; // tile indices, head first (2 per car)
+  id: number; o?: number; name: string; cars: string[]; cells: number[]; // tile indices, head first (2 per car)
   frac: number; route: number[]; v: number; sched: number[]; si: number;
   state: string; cargo: Record<string, number>; tot: number; waitT: number; idleT: number; blockT: number; running: boolean; dir?: number;
   oneWay?: boolean; line?: number;
@@ -78,6 +81,7 @@ export const G = {
   fx: {
     placed: (_e: Ent) => { }, removed: (_e: Ent) => { }, tile: (_x: number, _y: number) => { },
     toast: (_h: string, _k?: string) => { }, sfx: (_n: string) => { }, chop: (_x: number, _y: number, _n: number) => { },
+    ui: (_k: string, _o: any) => { },   // UI reactions to the local player's own commands (open a panel, particles)
   },
 };
 
@@ -126,7 +130,7 @@ export function chopTree(x: number, y: number, give = true) {
   if (!G.trees[i]) return 0;
   G.trees[i] = 0; G.treeRev++;
   const S = G.S, mean = diffOf(S.mode).regrow;
-  S.regrow.push(i, S.time + mean * (0.5 + Math.random()));
+  S.regrow.push(i, S.time + mean * (0.5 + wrand()));
   const n = give ? (G.S.shop.pick ? 10 : 5) : 0;
   if (n) addInv('wood', n);
   S.flags.chops = (S.flags.chops || 0) + 1;
@@ -228,7 +232,7 @@ export function canPlace(type: string, x: number, y: number, rot: number, o: { f
   return null;
 }
 
-export function place(type: string, x: number, y: number, rot: number, o: { free?: boolean; quiet?: boolean; id?: number; z?: number } = {}): Ent {
+export function place(type: string, x: number, y: number, rot: number, o: { free?: boolean; quiet?: boolean; id?: number; z?: number; owner?: number } = {}): Ent {
   const d = BLD[type];
   if (!o.free) pay(d.cost);
   if (d.noRotate) rot = 0;
@@ -238,6 +242,8 @@ export function place(type: string, x: number, y: number, rot: number, o: { free
   const e: Ent = { id, type, x, y, rot, w, h, born: o.quiet ? -99 : G.realNow, pop: 0 };
   const z = o.z || 0;
   if (z) e.z = z;
+  const own = o.owner ?? (MP.teams ? MP.cur : 0);
+  if (own) e.o = own;
   if (d.dz) e.z2 = z + (d.kind === 'pipe' ? 1 : d.dz);
   switch (d.kind) {
     case 'belt': case 'lift': e.items = []; e.len = 1; e.curve = -1; break;
@@ -433,7 +439,8 @@ export function tickRegrow() {
   }
   S.regrow = keep;
 }
-export function resetWorld(seed: number, S?: State) {
+let terrainKey = '', featGrid0: Int32Array | null = null;
+export function resetWorld(seed: number, S?: State, keepTerrain = false) {
   S = S || newState(seed);
   if (!S.regrow) S.regrow = [];
   if (!S.size) S.size = 1024;
@@ -452,8 +459,11 @@ export function resetWorld(seed: number, S?: State) {
   setWorldSize(gridFor(S.size, S.genV || 1));
   const mode = S.mode;
   applyGameLength(tier => tierMult(mode, tier), !S.lenV);
-  const t = genTerrain(seed, S.mode, S.genV || 1, S.size);
-  const f = genFeatures(seed, t.tiles, t.trees, t.nodeGrid);
+  const same = keepTerrain && G.tiles && terrainKey === `${seed}|${S.mode}|${S.genV}|${S.size}`;
+  const t = same ? { tiles: G.tiles, trees: G.trees0.slice(), nodes: G.nodes, nodeGrid: G.nodeGrid } : genTerrain(seed, S.mode, S.genV || 1, S.size);
+  const f = same ? { feats: G.feats, grid: featGrid0!.slice() } : genFeatures(seed, t.tiles, t.trees, t.nodeGrid);
+  terrainKey = `${seed}|${S.mode}|${S.genV}|${S.size}`;
+  if (!same) featGrid0 = f.grid.slice();
   G.feats = f.feats; G.featGrid = f.grid;
   for (const id of S.looted) { const fe = G.feats[id - 1]; if (fe) for (let j = 0; j < fe.w; j++) for (let i = 0; i < fe.w; i++) G.featGrid[(fe.y + j) * W + fe.x + i] = 0; }
   G.disc = new Uint8Array(t.nodes.length); G.fdisc = new Uint8Array(G.feats.length); G.pings = [];
@@ -466,6 +476,7 @@ export function resetWorld(seed: number, S?: State) {
   if (S.mode === 'creative') for (const k in BLD) S.unlocked.add(k);
 }
 export function newWorld(seed: number, o: { name?: string; mode?: string; size?: number; dayNight?: boolean } = {}) {
+  clearTeams();
   resetWorld(seed, newState(seed, o));
   place('hub', HX, HY, 0, { free: true, quiet: true });
 }

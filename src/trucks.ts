@@ -1,4 +1,5 @@
 // Trucks: drive over open ground between Truck Stations (A* on the tile grid, re-planned when blocked).
+import { MP, vctx } from './teams';
 import { BLD } from './data';
 import { H, isLand, TT, W } from './terrain';
 import { borderTiles, canAfford, Ent, G, missingText, pay, refund, addInv, Truck } from './world';
@@ -78,7 +79,7 @@ export function buyTruck(home: Ent, target: Ent | null): string | null {
   pay(BLD.truck.cost);
   const d = docks[0];
   const t: Truck = {
-    id: Date.now() + Math.floor(Math.random() * 1e6), name: 'Truck ' + (++G.S.truckSeq), x: d % W + 0.5, y: Math.floor(d / W) + 0.5, a: 0,
+    id: G.nextId++, o: MP.teams ? MP.cur : 0, name: 'Truck ' + (++G.S.truckSeq), x: d % W + 0.5, y: Math.floor(d / W) + 0.5, a: 0,
     sched: target ? [home.id, target.id] : [home.id], si: 0, state: 'idle', cargo: {}, tot: 0, path: [], pi: 0, v: 0, waitT: 0, idleT: 0, retryT: 0,
   };
   if (target && home.mode === target.mode) { home.mode = 'load'; target.mode = 'unload'; }
@@ -99,6 +100,7 @@ export function truckAt(wx: number, wy: number): Truck | null {
 
 export function updateTrucks(dt: number) {
   for (const t of G.trucks) {
+    if (!vctx(t)) continue;
     if (!t.sched.length) { t.state = 'noschedule'; t.v = 0; continue; }
     if (t.si >= t.sched.length) t.si = 0;
     const st = G.ents.get(t.sched[t.si]);

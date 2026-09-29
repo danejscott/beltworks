@@ -1,4 +1,5 @@
 // Ships: sail over lakes and the sea between Ship Ports you choose (like trains, but on water).
+import { MP, vctx } from './teams';
 import { BLD } from './data';
 import { isWater, W } from './terrain';
 import { gridPath } from './trucks';
@@ -9,7 +10,7 @@ const VMAX = 6, ACC = 2.5;
 const SAIL_UNDER = new Set(['belt', 'tunnel', 'pipe', 'ptunnel', 'rail', 'pole']);   // ships pass under bridges
 
 export interface Ship {
-  id: number; name: string; x: number; y: number; a: number; sched: number[]; si: number; state: string;
+  id: number; o?: number; name: string; x: number; y: number; a: number; sched: number[]; si: number; state: string;
   cargo: Record<string, number>; tot: number; path: number[]; pi: number; v: number; waitT: number; idleT: number; retryT: number;
 }
 
@@ -39,7 +40,7 @@ export function buyShip(home: Ent, target: Ent | null): string | null {
   if (target && !findShipPath(b[0], target)) return `No water route from here to ${target.name} — ports must share a lake or the sea`;
   pay(BLD.ship.cost);
   const s: Ship = {
-    id: Date.now() + Math.floor(Math.random() * 1e6), name: 'Ship ' + (++G.S.shipSeq), x: b[0] % W + 0.5, y: Math.floor(b[0] / W) + 0.5, a: 0,
+    id: G.nextId++, o: MP.teams ? MP.cur : 0, name: 'Ship ' + (++G.S.shipSeq), x: b[0] % W + 0.5, y: Math.floor(b[0] / W) + 0.5, a: 0,
     sched: target ? [home.id, target.id] : [home.id], si: 0, state: 'idle', cargo: {}, tot: 0, path: [], pi: 0, v: 0, waitT: 0, idleT: 0, retryT: 0,
   };
   if (target && home.mode === target.mode) { home.mode = 'load'; target.mode = 'unload'; }
@@ -60,6 +61,7 @@ export function shipAt(wx: number, wy: number): Ship | null {
 
 export function updateShips(dt: number) {
   for (const s of G.ships) {
+    if (!vctx(s)) continue;
     if (!s.sched.length) { s.state = 'noschedule'; s.v = 0; continue; }
     if (s.si >= s.sched.length) s.si = 0;
     const p = G.ents.get(s.sched[s.si]);
