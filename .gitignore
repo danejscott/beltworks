@@ -3,3 +3,4 @@ dist/
 .claude/
 server/dist/
 server/data/
+.wrangler/
