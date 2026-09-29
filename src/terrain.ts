@@ -5,11 +5,13 @@ import { diffOf } from './difficulty';
 export let W = 1024, H = 1024;
 export let HX = 510, HY = 510; // HUB top-left
 export const SIZES: Record<string, { n: number; label: string; desc: string }> = {
-  small: { n: 512, label: 'Small', desc: '512 × 512 — cozy, everything is close' },
-  medium: { n: 1024, label: 'Medium', desc: '1024 × 1024 — the classic size' },
-  large: { n: 2304, label: 'Large', desc: '2304 × 2304 — 5× the area, built for trains' },
+  small: { n: 512, label: 'Small', desc: 'A 512² island — cozy, everything is close' },
+  medium: { n: 1024, label: 'Medium', desc: 'A 1024² island — the classic size' },
+  large: { n: 2304, label: 'Large', desc: 'A 2304² island — 5× the land, built for trains' },
 };
 export function setWorldSize(n: number) { W = H = n; HX = HY = n / 2 - 2; }
+/** v6 worlds are islands: the grid grows so the ocean fits around the same amount of land (a multiple of the 64-tile render chunk) */
+export function gridFor(land: number, v: number) { return v >= 6 ? Math.ceil(land * 1.42 / 64) * 64 : land; }
 
 export const TT = { GRASS: 0, GRASS2: 1, SAND: 2, DIRT: 3, WATER: 4, DEEP: 5, ROCK: 6 };
 export const TILE_NAMES = ['Grassland', 'Forest floor', 'Sand', 'Dirt', 'Shallow Water', 'Deep Water', 'Rock'];
@@ -71,8 +73,8 @@ function genParams(seed: number, v: number) {
   P.hx = Math.max(130, Math.min(W - 134, off(W))); P.hy = Math.max(130, Math.min(H - 134, off(H)));
   return P;
 }
-export function genTerrain(seed: number, mode = 'easy', v = 1): Terrain {
-  if (v >= 3) return genTerrainV3(seed, mode, v);
+export function genTerrain(seed: number, mode = 'easy', v = 1, land = W): Terrain {
+  if (v >= 3) return genTerrainV3(seed, mode, v, land);
   const tiles = new Uint8Array(W * H), trees = new Uint8Array(W * H);
   const P = genParams(seed, v);
   HX = P.hx; HY = P.hy;
@@ -211,7 +213,19 @@ export const RINGS: Record<string, [number, number]> = {
   bauxite: [0.6, 0.9], uranium: [0.7, 0.92],
 };
 /** v3 = big regions + rings; v4 adds uranium and keeps the desert away from big water */
-function genTerrainV3(seed: number, mode: string, v = 3): Terrain {
+/** a smooth noise field sampled every `st` tiles and bilinearly interpolated (much faster than per-tile noise) */
+function coarseField(st: number, fn: (x: number, y: number) => number) {
+  const gw = Math.ceil(W / st) + 2, gh = Math.ceil(H / st) + 2, g = new Float32Array(gw * gh);
+  for (let j = 0; j < gh; j++) for (let i = 0; i < gw; i++) g[j * gw + i] = fn(i * st, j * st);
+  return (x: number, y: number) => {
+    const fx = x / st, fy = y / st, i = fx | 0, j = fy | 0, tx = fx - i, ty = fy - j, k = j * gw + i;
+    const a = g[k] + (g[k + 1] - g[k]) * tx, b = g[k + gw] + (g[k + gw + 1] - g[k + gw]) * tx;
+    return a + (b - a) * ty;
+  };
+}
+/** v6: organic region borders (warped), soft desert drying, noisy blobs, and an island coastline */
+function genTerrainV3(seed: number, mode: string, v = 3, land = W): Terrain {
+  const isl = v >= 6;
   const tiles = new Uint8Array(W * H), trees = new Uint8Array(W * H);
   const r = mulberry32(seed * 31 + 11);
   const D = diffOf(mode);
@@ -219,7 +233,7 @@ function genTerrainV3(seed: number, mode: string, v = 3): Terrain {
   const off = (n: number) => Math.round(n / 2 - 2 + (r() - 0.5) * n * 0.1);
   HX = off(W); HY = off(H);
   const cx = HX + 2, cy = HY + 2;
-  const R = Math.min(W, H) / 2;                       // "map radius" used for all rings
+  const R = isl ? land / 2 : Math.min(W, H) / 2;      // "map radius" used for all rings (the land's size, not the ocean's)
   const scale = 110 + r() * 110, mscale = (70 + r() * 90) * 2.75;   // biomes ~2.75x the old size
   const warp = r() < 0.75 ? 20 + r() * 110 : 0;
   // v5: more water overall (and more still on Hard)
@@ -230,36 +244,82 @@ function genTerrainV3(seed: number, mode: string, v = 3): Terrain {
   const aDesert = r() * Math.PI * 2, aForest = aDesert + Math.PI * 2 / 3 + (r() - 0.5) * 0.6, aHigh = aDesert + Math.PI * 4 / 3 + (r() - 0.5) * 0.6;
   const lobe = (a: number, t: number) => { const c = Math.cos(a - t); return c > 0 ? c * c : 0; };
   const hs = new Float32Array(W * H), hb = new Float32Array(W * H);
+  // v6: bend the region borders so they wander instead of running straight out from the HUB
+  const rw = R * 0.34;
+  const wA = isl ? coarseField(8, (x, y) => (fbm(x / rw + 17, y / rw, seed + 61, 3) - 0.5) * 2.4) : null;
+  const wF = isl ? coarseField(8, (x, y) => 1 + (fbm(x / rw, y / rw + 33, seed + 63, 3) - 0.5) * 0.6) : null;
+  const warpA = (x: number, y: number) => wA ? wA(x, y) : 0;
+  const warpF = (x: number, y: number) => wF ? wF(x, y) : 1;
+  // v6 island: a coast value (distance from the middle, roughened at several scales); the threshold is picked
+  // so the island (lakes included, ocean not) has exactly the old map's area
+  let coast: Float32Array | null = null, cThr = 0;
+  const cstep = 1 / R;
+  if (isl) {
+    coast = new Float32Array(W * H);
+    const gx0 = W / 2, gy0 = H / 2, mb = Math.max(24, W * 0.05);
+    const cf = coarseField(4, (x, y) => {
+      const qx = x + (fbm(x / 190, y / 190, seed + 73, 2) - 0.5) * R * 0.26, qy = y + (fbm(x / 190 + 70, y / 190, seed + 75, 2) - 0.5) * R * 0.26;
+      const c = Math.hypot(qx - gx0, qy - gy0) / R;
+      return c + (fbm(x / (R * 0.45), y / (R * 0.45), seed + 71, 4) - 0.5) * 0.6 + (fbm(x / 60, y / 60, seed + 77, 2) - 0.5) * 0.12;
+    });
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+      let c = cf(x, y);
+      const e = Math.min(x, y, W - 1 - x, H - 1 - y);
+      if (e < mb) c += (1 - e / mb) * 3;                         // never touch the grid's edge
+      coast[y * W + x] = c;
+    }
+    const cs: number[] = [];
+    const st = Math.max(7, Math.floor(W * H / 60000));
+    for (let i = 0; i < W * H; i += st) cs.push(coast[i]);
+    cs.sort((a, b) => a - b);
+    cThr = cs[Math.min(cs.length - 1, Math.floor(cs.length * (land * land) / (W * H)))];
+  }
+  // v6: the height warp is smooth, so sample it coarsely; open ocean needs no heights at all
+  const hwx = isl && warp ? coarseField(8, (x, y) => (fbm(x / 260, y / 260, seed + 41, 2) - 0.5) * warp * 2) : null;
+  const hwy = isl && warp ? coarseField(8, (x, y) => (fbm(x / 260 + 50, y / 260, seed + 43, 2) - 0.5) * warp * 2) : null;
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    if (coast && coast[y * W + x] > cThr + 0.02) { hs[y * W + x] = -9; continue; }
     let wx = x, wy = y;
-    if (warp) { wx += (fbm(x / 260, y / 260, seed + 41, 2) - 0.5) * warp * 2; wy += (fbm(x / 260 + 50, y / 260, seed + 43, 2) - 0.5) * warp * 2; }
+    if (hwx) { wx += hwx(x, y); wy += hwy!(x, y); }
+    else if (warp) { wx += (fbm(x / 260, y / 260, seed + 41, 2) - 0.5) * warp * 2; wy += (fbm(x / 260 + 50, y / 260, seed + 43, 2) - 0.5) * warp * 2; }
     // v5: a very broad layer joins low ground into bigger lakes and bays
     hs[y * W + x] = v >= 5 ? fbm(wx / scale, wy / scale, seed, 4) * 0.62 + fbm(wx / (scale * 2.6), wy / (scale * 2.6), seed + 51, 3) * 0.38 : fbm(wx / scale, wy / scale, seed, 4);
   }
   const sample: number[] = [];
   const stepS = Math.max(37, Math.floor(W * H / 40000));
-  for (let i = 0; i < W * H; i += stepS) sample.push(hs[i]);
+  for (let i = 0; i < W * H; i += stepS) if (hs[i] > -9) sample.push(hs[i]);
   sample.sort((a, b) => a - b);
   const pct = (p: number) => sample[Math.floor(p * (sample.length - 1))];
   const tDeep = pct(pDeep), tWater = pct(pWater), tSand = pct(pSand), tDirt = pct(pDirt), tRock = pct(pRock), mid = pct(0.5), spread = pct(0.9) - pct(0.1);
   for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
-    const i = y * W + x, dx = x - cx, dy = y - cy, d = Math.hypot(dx, dy), f = d / R, a = Math.atan2(dy, dx);
+    const i = y * W + x;
+    if (coast && coast[i] > cThr) {                                // the ocean (a shallow shelf of varying width, then deep water)
+      const cv = coast[i];
+      tiles[i] = cv > cThr + 21 * cstep || cv > cThr + (5 + fbm(x / 40, y / 40, seed + 97, 2) * 16) * cstep ? TT.DEEP : TT.WATER;
+      hb[i] = -9;
+      continue;
+    }
+    const dx = x - cx, dy = y - cy, d = Math.hypot(dx, dy), f = d / R * warpF(x, y), a = Math.atan2(dy, dx) + warpA(x, y);
     const ring = Math.min(1, Math.max(0, (f - 0.12) / 0.25));   // sectors fade in outside the core
     let h = hs[i];
     const hl = ring * lobe(a, aHigh);
     h += hl * spread * 0.45;                                     // the highlands carry the big mountain ranges
     hb[i] = h;
     h = lerp(h, mid, clamp(1 - (d - 24) / 40, 0, 1));            // flat, dry start area
-    const e = Math.min(x, y, W - 1 - x, H - 1 - y);
+    const e = isl ? 1e9 : Math.min(x, y, W - 1 - x, H - 1 - y);
     if (e < edge) h = lerp(tDeep - 0.1, h, e / edge);
     let m = fbm(x / mscale + 300, y / mscale, seed + 7, 3);
     m += ring * (0.27 * lobe(a, aForest) - 0.25 * lobe(a, aDesert));
     m = lerp(m, 0.47, clamp(1 - (d - 30) / 60, 0, 1));
     let t: number;
-    const dry = v >= 4 && ring * lobe(a, aDesert) > 0.3 && e >= edge;   // no lakes in the desert
-    if (!dry && h < tDeep) t = TT.DEEP;
-    else if (!dry && h < tWater) t = TT.WATER;
-    else if (!dry && h < tSand) t = TT.SAND;
+    const dry = v >= 4 && !isl && ring * lobe(a, aDesert) > 0.3 && e >= edge;   // no lakes in the desert
+    // v6: the desert dries out gradually (lakes shrink along their shores instead of being cut off)
+    const hw = isl ? h + clamp(ring * lobe(a, aDesert) * 1.6 - 0.15, 0, 1) * spread * 0.55 : h;
+    const cv = coast ? coast[i] : 0;
+    if (coast && cv > cThr - 2.5 * cstep && h <= tRock) t = TT.SAND;                  // beaches
+    else if (!dry && hw < tDeep) t = TT.DEEP;
+    else if (!dry && hw < tWater) t = TT.WATER;
+    else if (!dry && hw < tSand) t = TT.SAND;
     else if (h > tRock) t = TT.ROCK;
     else if (h > tDirt) t = TT.DIRT;
     else if (hl > 0.35 && fbm(x / 40 + 90, y / 40, seed + 13, 2) < 0.25 + hl * 0.3) t = TT.DIRT;   // rocky ground between the ranges
@@ -276,7 +336,7 @@ function genTerrainV3(seed: number, mode: string, v = 3): Terrain {
   // Mountains are an obstacle until trains can tunnel through them, but they should never swallow the map:
   // keep at most ~2x the usual amount of rock. The lowest rock becomes foothills (buildable rocky dirt).
   {
-    const cap = Math.min(0.13, 2 * (1 - pRock)) * W * H;
+    const cap = Math.min(0.13, 2 * (1 - pRock)) * (isl ? land * land : W * H);
     const rockH: number[] = [];
     for (let i = 0; i < W * H; i++) if (tiles[i] === TT.ROCK) rockH.push(hb[i]);
     if (rockH.length > cap) {
@@ -294,8 +354,9 @@ function genTerrainV3(seed: number, mode: string, v = 3): Terrain {
     for (let i = 0; i < W * H; i++) if (foot[i] && (tiles[i] === TT.GRASS || tiles[i] === TT.GRASS2 || tiles[i] === TT.SAND)) { tiles[i] = TT.DIRT; trees[i] = 0; }
   }
   const blob = (bx: number, by: number, rad: number, fn: (i: number, x: number, y: number) => void) => {
-    for (let y = Math.max(1, by - rad - 3); y <= Math.min(H - 2, by + rad + 3); y++) for (let x = Math.max(1, bx - rad - 3); x <= Math.min(W - 2, bx + rad + 3); x++) {
-      const dd = Math.hypot(x - bx, y - by) / rad + (hash2(x, y, seed + 17) - 0.5) * 0.25;
+    const rb = Math.ceil(isl ? rad * 1.7 + 4 : rad + 3);   // v6 edges wobble outward, so search further (else they clip into rectangles)
+    for (let y = Math.max(1, by - rb); y <= Math.min(H - 2, by + rb); y++) for (let x = Math.max(1, bx - rb); x <= Math.min(W - 2, bx + rb); x++) {
+      const dd = Math.hypot(x - bx, y - by) / rad + (isl ? (fbm(x / (rad * 0.45 + 4), y / (rad * 0.45 + 4), seed + 81, 3) - 0.5) * 0.8 : (hash2(x, y, seed + 17) - 0.5) * 0.25);
       if (dd < 1) fn(y * W + x, x, y);
     }
   };
@@ -310,7 +371,7 @@ function genTerrainV3(seed: number, mode: string, v = 3): Terrain {
   blob(fx, fy, Math.round(R * 0.12), (i, x, y) => { if (isLand(tiles[i]) && tiles[i] !== TT.ROCK) { tiles[i] = TT.GRASS2; trees[i] = hash2(x, y, seed + 5) < 0.3 ? 1 : 0; } });
   blob(sx, sy, Math.round(R * 0.16), (i) => { if (isLand(tiles[i])) { tiles[i] = TT.SAND; trees[i] = 0; } });
   blob(hx, hy, Math.round(R * 0.14), (i) => { if (isLand(tiles[i]) && tiles[i] !== TT.ROCK) { tiles[i] = TT.DIRT; trees[i] = 0; } });
-  if (v >= 4) keepDesertFromWater(tiles);
+  if (v >= 4) keepDesertFromWater(tiles, isl ? seed : 0);
 
   // ---- resource nodes
   const nodes: ResNode[] = [];
@@ -348,7 +409,7 @@ function genTerrainV3(seed: number, mode: string, v = 3): Terrain {
   for (const res of ['crude_oil', 'crude_oil', 'raw_quartz', 'caterium_ore', 'sulfur']) tryPlace(res, 0, R * 0.1, 1, sx, sy, 600);
   for (const res of ['geyser', 'caterium_ore', 'sulfur', 'bauxite']) tryPlace(res, 0, R * 0.1, undefined, hx, hy, 600);
   // everything else, spread through each resource's ring, scaled by map area and difficulty
-  const area = (W * H) / (1024 * 1024);
+  const area = (isl ? land * land : W * H) / (1024 * 1024);
   const counts: [string, number][] = [['iron_ore', 70], ['copper_ore', 52], ['limestone', 48], ['coal', 48], ['caterium_ore', 30], ['raw_quartz', 30], ['bauxite', 26], ['geyser', 26], ['sulfur', 30]];
   for (const [res, n] of counts) { const [a0, a1] = RINGS[res]; for (let i = 0; i < Math.round(n * area * D.rich); i++) tryPlace(res, a0 * R, a1 * R, undefined, cx, cy, 300); }
   const [o0, o1] = RINGS.crude_oil;
@@ -363,7 +424,7 @@ function genTerrainV3(seed: number, mode: string, v = 3): Terrain {
     const [u0, u1] = RINGS.uranium;
     for (let i = 0; i < Math.max(4, Math.round(16 * area * D.rich)); i++) tryPlace('uranium', u0 * R, u1 * R, undefined, cx, cy, 300);
   }
-  carvePasses(tiles, cx, cy, nodes);
+  carvePasses(tiles, cx, cy, nodes, isl ? seed : 0);
   return { tiles, trees, nodes, nodeGrid };
 }
 
@@ -372,11 +433,20 @@ function genTerrainV3(seed: number, mode: string, v = 3): Terrain {
  * Cheapest-path search where land costs 1, water 20 and rock 15: a pass is only carved where the way
  * around is enormous or doesn't exist, so mountains stay an obstacle (a long detour) until trains tunnel through.
  */
-function carvePasses(tiles: Uint8Array, cx: number, cy: number, nodes: ResNode[]) {
+function carvePasses(tiles: Uint8Array, cx: number, cy: number, nodes: ResNode[], seed = 0) {
   const N = W * H, dist = new Int32Array(N).fill(0x7fffffff), from = new Int32Array(N).fill(-1);
-  const cost = (t: number) => t === TT.ROCK ? 15 : t === TT.WATER || t === TT.DEEP ? 20 : 1;
+  // v6 (seed given): land costs wobble with noise so passes wind naturally instead of running dead straight
+  let jit: Uint8Array | null = null;
+  if (seed) {
+    jit = new Uint8Array(N);
+    const jf = coarseField(3, (x, y) => fbm(x / 11, y / 11, seed + 91, 2));
+    for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) jit[y * W + x] = Math.floor(clamp(jf(x, y), 0, 0.999) * 4);
+  }
+  // (v6 routes never cross deep water: that also keeps the search off the open ocean)
+  const cost = jit ? (t: number, i: number) => t === TT.ROCK ? 36 : t === TT.DEEP ? 0 : t === TT.WATER ? 48 : 2 + jit![i]
+    : (t: number, _i: number) => t === TT.ROCK ? 15 : t === TT.WATER || t === TT.DEEP ? 20 : 1;
   // Dial's algorithm: bucket queue keyed by distance (edge costs are small integers)
-  const B = 21, buckets: number[][] = Array.from({ length: B }, () => []);
+  const B = jit ? 49 : 21, buckets: number[][] = Array.from({ length: B }, () => []);
   const s0 = cy * W + cx; dist[s0] = 0; buckets[0].push(s0);
   let d = 0, pending = 1;
   while (pending > 0) {
@@ -388,7 +458,9 @@ function carvePasses(tiles: Uint8Array, cx: number, cy: number, nodes: ResNode[]
       for (let k = 0; k < 4; k++) {
         const nx = x + (k === 0 ? 1 : k === 1 ? -1 : 0), ny = y + (k === 2 ? 1 : k === 3 ? -1 : 0);
         if (nx < 0 || ny < 0 || nx >= W || ny >= H) continue;
-        const ni = ny * W + nx, nd = d + cost(tiles[ni]);
+        const ni = ny * W + nx, c = cost(tiles[ni], ni);
+        if (!c) continue;
+        const nd = d + c;
         if (nd < dist[ni]) { dist[ni] = nd; from[ni] = i; buckets[nd % B].push(ni); pending++; }
       }
     }
@@ -410,7 +482,7 @@ function carvePasses(tiles: Uint8Array, cx: number, cy: number, nodes: ResNode[]
 }
 
 /** Deserts shouldn't touch big lakes or the sea: sand near large water turns to grassland (keeping a thin beach). */
-function keepDesertFromWater(tiles: Uint8Array) {
+function keepDesertFromWater(tiles: Uint8Array, seed = 0) {
   const N = W * H, wet = (t: number) => t === TT.WATER || t === TT.DEEP;
   // find large water bodies
   const comp = new Int32Array(N).fill(-1), big: boolean[] = [];
@@ -435,5 +507,26 @@ function keepDesertFromWater(tiles: Uint8Array) {
     const x = c % W, y = (c / W) | 0;
     for (const n of [x > 0 ? c - 1 : -1, x < W - 1 ? c + 1 : -1, y > 0 ? c - W : -1, y < H - 1 ? c + W : -1]) if (n >= 0 && dist[n] === 255) { dist[n] = d + 1; q.push(n); }
   }
-  for (let i = 0; i < N; i++) if (tiles[i] === TT.SAND && dist[i] > 2 && dist[i] <= 12) tiles[i] = TT.GRASS;
+  if (!seed) { for (let i = 0; i < N; i++) if (tiles[i] === TT.SAND && dist[i] > 2 && dist[i] <= 12) tiles[i] = TT.GRASS; return; }
+  // v6: round (chamfer) distance and a wandering width, so the green shore band has no corners
+  const fd = new Float32Array(N);
+  for (let i = 0; i < N; i++) fd[i] = comp[i] >= 0 && big[comp[i]] ? 0 : 1e6;
+  const S2 = Math.SQRT2;
+  for (let y = 0; y < H; y++) for (let x = 0; x < W; x++) {
+    const i = y * W + x; let v = fd[i]; if (!v) continue;
+    if (x > 0) v = Math.min(v, fd[i - 1] + 1);
+    if (y > 0) { v = Math.min(v, fd[i - W] + 1); if (x > 0) v = Math.min(v, fd[i - W - 1] + S2); if (x < W - 1) v = Math.min(v, fd[i - W + 1] + S2); }
+    fd[i] = v;
+  }
+  for (let y = H - 1; y >= 0; y--) for (let x = W - 1; x >= 0; x--) {
+    const i = y * W + x; let v = fd[i]; if (!v) continue;
+    if (x < W - 1) v = Math.min(v, fd[i + 1] + 1);
+    if (y < H - 1) { v = Math.min(v, fd[i + W] + 1); if (x < W - 1) v = Math.min(v, fd[i + W + 1] + S2); if (x > 0) v = Math.min(v, fd[i + W - 1] + S2); }
+    fd[i] = v;
+  }
+  for (let i = 0; i < N; i++) {
+    if (tiles[i] !== TT.SAND || fd[i] <= 2.5 || fd[i] > 24) continue;
+    const x = i % W, y = (i / W) | 0, lim = 7 + fbm(x / 23, y / 23, seed + 95, 3) * 12;
+    if (fd[i] <= lim) tiles[i] = TT.GRASS;
+  }
 }

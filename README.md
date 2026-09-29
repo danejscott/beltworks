@@ -46,8 +46,9 @@ After building, copy `dist/index.html` over `Play Beltworks.html` to update the 
   - Deserts stay dry: no big lakes or sea next to them.
   - Water: bigger lakes and bays, about 14% of the map on Easy/Normal and about 18% on Hard (with much larger lakes).
   - Mountains cover up to 2× the old amount, with foothills around them and guaranteed passes, so they're an obstacle until trains can tunnel through.
+- **Island worlds (new worlds):** the land is an irregular island with bays, peninsulas and islets, surrounded by ocean that ships can sail. The island has the same land area as the old square maps; the ocean doesn't count. Biome, desert and lake borders are organic, with no straight lines or sharp corners. Worlds created before this keep their original terrain.
 - **Every new world is randomized:** HUB position, amount of water and mountains, biome mix, lake placement and landmass shape.
-- **Three world sizes** (512², 1024², 2304²), multiple named saves and a title screen.
+- **Three world sizes** (512², 1024², 2304² of land), multiple named saves and a title screen.
 - **Difficulties with target play times:** Easy (~10–15 h), Normal (~15–30 h), Hard (~30–50 h) and Creative. Later milestones and Space Elevator phases scale with difficulty; Tier 0 is the same for everyone.
 - **Biomes** (plains, forest, desert, highlands), each with its own resources. Nodes come in impure, normal and pure. Trees regrow.
 - **77 items, 80 recipes (17 of them alternates), 60 buildings.** Covers smelting, construction, assembly, foundries, oil refining with byproducts, and manufacturing.

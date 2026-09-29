@@ -1,6 +1,6 @@
 import { applyGameLength, BLD, BDef, Cost, ITEMS, RECIPES, START_UNLOCKS } from './data';
 import { diffOf, tierMult } from './difficulty';
-import { genTerrain, H, HX, HY, isLand, isWater, ResNode, setWorldSize, TT, W } from './terrain';
+import { genTerrain, gridFor, H, HX, HY, isLand, isWater, ResNode, setWorldSize, TT, W } from './terrain';
 import { Feat, genFeatures } from './features';
 import { shoreTiles } from './ships';
 import { DX, DY, opp } from './util';
@@ -409,7 +409,7 @@ export function newState(seed: number, o: { name?: string; mode?: string; size?:
     seed, inv, unlocked: new Set(START_UNLOCKS), done: new Set(), maxTier: 0, elev: {}, time: 0, won: false,
     flags: {}, delivered: {}, speed: 1, points: 0, coupons: 0, couponsEarned: 0, shop: {}, stationSeq: 0, trainSeq: 0,
     name: o.name || 'New World', mode, size: o.size || 1024, regrow: [],
-    dayNight: o.dayNight !== false, genV: 5, portsV: 1, lenV: 1, lines: [], looted: [], alts: [], altOffer: null, ach: {}, made: {}, discN: null, discF: null, truckSeq: 0, lineSeq: 0,
+    dayNight: o.dayNight !== false, genV: 6, portsV: 1, lenV: 1, lines: [], looted: [], alts: [], altOffer: null, ach: {}, made: {}, discN: null, discF: null, truckSeq: 0, lineSeq: 0,
   };
   if (mode === 'creative') {
     for (const k in BLD) S.unlocked.add(k);
@@ -449,10 +449,10 @@ export function resetWorld(seed: number, S?: State) {
   if (S.discN === undefined) S.discN = null;
   if (S.discF === undefined) S.discF = null;
   S.truckSeq = S.truckSeq || 0; S.lineSeq = S.lineSeq || 0; S.shipSeq = S.shipSeq || 0;
-  setWorldSize(S.size);
+  setWorldSize(gridFor(S.size, S.genV || 1));
   const mode = S.mode;
   applyGameLength(tier => tierMult(mode, tier), !S.lenV);
-  const t = genTerrain(seed, S.mode, S.genV || 1);
+  const t = genTerrain(seed, S.mode, S.genV || 1, S.size);
   const f = genFeatures(seed, t.tiles, t.trees, t.nodeGrid);
   G.feats = f.feats; G.featGrid = f.grid;
   for (const id of S.looted) { const fe = G.feats[id - 1]; if (fe) for (let j = 0; j < fe.w; j++) for (let i = 0; i < fe.w; i++) G.featGrid[(fe.y + j) * W + fe.x + i] = 0; }
