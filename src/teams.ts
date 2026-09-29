@@ -7,7 +7,7 @@ import { hist, stats } from './sim';
 import { G, State } from './world';
 
 /** fields that belong to the whole world (shared by every team's view of the state) */
-export const WORLD_KEYS = ['seed', 'time', 'speed', 'stationSeq', 'trainSeq', 'truckSeq', 'lineSeq', 'shipSeq', 'name', 'mode', 'size', 'regrow', 'dayNight', 'looted', 'genV', 'portsV', 'lenV', 'rngS'] as const;
+export const WORLD_KEYS = ['seed', 'time', 'speed', 'stationSeq', 'trainSeq', 'truckSeq', 'lineSeq', 'shipSeq', 'name', 'mode', 'size', 'regrow', 'dayNight', 'looted', 'genV', 'portsV', 'lenV', 'rngS', 'xn'] as const;
 
 export interface Player { id: number; name: string; team: number; col: string; online: boolean }
 export interface TeamInfo { id: number; name: string; col: string; leader: number; hx: number; hy: number }

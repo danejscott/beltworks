@@ -56,7 +56,7 @@ export function ensureFresh() {
 }
 
 export function rebuildLinks() {
-  const L: any = { outposts: [], ports: [], belts: [], order: [], machines: [], miners: [], extractors: [], harvesters: [], logi: [], gens: [], bats: [], poles: [], stations: [], tstations: [], drones: [], sinks: [], pipes: [], rails: [], cnt: Object.create(null), powered: [] };
+  const L: any = { hubs: [], outposts: [], ports: [], belts: [], order: [], machines: [], miners: [], extractors: [], harvesters: [], logi: [], gens: [], bats: [], poles: [], stations: [], tstations: [], drones: [], sinks: [], pipes: [], rails: [], cnt: Object.create(null), powered: [] };
   for (const e of G.ents.values()) {
     const d = BLD[e.type];
     L.cnt[e.type] = (L.cnt[e.type] || 0) + 1;
@@ -72,7 +72,7 @@ export function rebuildLinks() {
       case 'gen': L.gens.push(e); break;
       case 'battery': L.bats.push(e); break;
       case 'pole': L.poles.push(e); break;
-      case 'hub': L.poles.push(e); L.hub = e; break;
+      case 'hub': L.poles.push(e); L.hubs.push(e); if ((e.o || 0) === MP.myTeam) L.hub = e; break;   // L.hub: the local team's
       case 'outpost': L.poles.push(e); L.outposts.push(e); break;
       case 'station': L.stations.push(e); break;
       case 'tstation': L.tstations.push(e); break;
@@ -80,7 +80,7 @@ export function rebuildLinks() {
       case 'drone': L.drones.push(e); break;
       case 'pipe': case 'ptunnel': case 'tank': L.pipes.push(e); break;
       case 'rail': L.rails.push(e); break;
-      case 'elevator': L.elevator = e; break;
+      case 'elevator': if ((e.o || 0) === MP.myTeam) L.elevator = e; break;
     }
     if (d.kind !== 'belt' && d.kind !== 'tunnel' && d.kind !== 'rail' && d.kind !== 'lift') { e.ft = frontTiles(e); e.ip = inPort(e); }
   }

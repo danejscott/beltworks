@@ -397,6 +397,12 @@ function exec(c: Cmd): any {
       sfx('click'); return;
     }
     case 'vname': { const v: any = c.v === 'k' ? findTruck(c.id) : findShip(c.id); if (mine(v)) v.name = String(c.name).slice(0, 40) || v.name; return; }
+    // ---- system messages from the server (never accepted from players)
+    case '_presence': {
+      MP.paused = new Set(c.paused);
+      for (const p of MP.players.values()) p.online = c.online.includes(p.id);
+      return;
+    }
     // ---- world settings (single-player only; servers fix these when they're created)
     case 'speed': if (!MP.teams) S.speed = S.speed === 1 ? 2 : S.speed === 2 ? 4 : 1; return;
     case 'dn': if (!MP.teams) S.dayNight = !S.dayNight; return;

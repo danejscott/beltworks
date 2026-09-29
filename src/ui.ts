@@ -1,5 +1,6 @@
 import { buildingIconURL, itemIconURL } from './atlas';
 import { online, run } from './cmd';
+import { netHud } from './ui3';
 import { audio, setVolume, sfx, setSound, vol } from './audio';
 import { BLD, CATS, Cost, HANDCRAFT, isFluid, ITEM_KEYS, ITEMS, MACHINE_NAMES, MAX_TIER, MILESTONES, RECIPES, SHOP, TIER_NAMES } from './data';
 import { DRONE_LOAD } from './drones';
@@ -982,7 +983,7 @@ export function uiTick(dt: number) {
     const typing = document.activeElement && (document.activeElement as HTMLElement).closest?.('#mbody') && ['INPUT', 'SELECT', 'TEXTAREA'].includes(document.activeElement.tagName);
     if (!typing && (modalKind === 'stats' || modalKind === 'hub' || modalKind === 'craft' || modalKind === 'shop' || modalKind === 'inv' || (modalKind && LIVE_MODALS.has(modalKind)))) renderModal();
   }
-  if (t1 > 1) { t1 = 0; renderHotbar(); }
+  if (t1 > 1) { t1 = 0; renderHotbar(); netHud(); }
   if (tMap > 2) { tMap = 0; refreshMapOverlay(); }
   drawMiniMap();
   renderTip();

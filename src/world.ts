@@ -5,6 +5,7 @@ import { Feat, genFeatures } from './features';
 import { shoreTiles } from './ships';
 import { DX, DY, opp } from './util';
 import { clearTeams, MP, wrand } from './teams';
+import { applyExtraNode } from './online';
 
 export interface Ent { id: number; type: string; x: number; y: number; rot: number; w: number; h: number; born: number; pop: number; [k: string]: any }
 
@@ -29,6 +30,7 @@ export interface State {
   msT?: Record<string, number>; tierT?: Record<string, number>; wonT?: number;
   lenV?: number;                // 1 = milestone amounts scale with difficulty (game length)
   rngS?: number;                // state of the world's random generator (so every copy rolls the same)
+  xn?: [number, number, string, number][]; // extra resource nodes (online spawns)
   cq?: { q: string[]; active: boolean; t: number }; // hand-crafting queue
 }
 export interface Line { id: number; a: number; b: number; cells: number[]; split: number }
@@ -224,7 +226,7 @@ export function canPlace(type: string, x: number, y: number, rot: number, o: { f
     if (d.on === 'oil' && node.res !== 'crude_oil') return 'Needs an oil node';
     if (d.on === 'geyser' && node.res !== 'geyser') return 'Needs a geyser';
   }
-  if (d.kind === 'elevator' && count('elevator') > 0) return 'Only one Space Elevator';
+  if (d.kind === 'elevator') { const me = MP.teams ? MP.cur : 0; for (const x of G.ents.values()) if (BLD[x.type].kind === 'elevator' && (x.o || 0) === me) return 'Only one Space Elevator'; }
   if (d.kind === 'port' && shoreTiles(x, y, w, h) < 2) return 'Build it on the shore — it must touch a lake or the sea';
   if (TALL[type] && G.floorN) for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) for (let zz = z + 1; zz < NL; zz++)
     if (hasFloor(x + i, y + j, zz) && (zz - z) * LH - 0.3 < TALL[type]) return 'Too tall to fit under the foundations above';
@@ -439,7 +441,7 @@ export function tickRegrow() {
   }
   S.regrow = keep;
 }
-let terrainKey = '', featGrid0: Int32Array | null = null;
+let terrainKey = '', featGrid0: Int32Array | null = null, baseNodes = 0;
 export function resetWorld(seed: number, S?: State, keepTerrain = false) {
   S = S || newState(seed);
   if (!S.regrow) S.regrow = [];
@@ -467,7 +469,11 @@ export function resetWorld(seed: number, S?: State, keepTerrain = false) {
   G.feats = f.feats; G.featGrid = f.grid;
   for (const id of S.looted) { const fe = G.feats[id - 1]; if (fe) for (let j = 0; j < fe.w; j++) for (let i = 0; i < fe.w; i++) G.featGrid[(fe.y + j) * W + fe.x + i] = 0; }
   G.disc = new Uint8Array(t.nodes.length); G.fdisc = new Uint8Array(G.feats.length); G.pings = [];
+  if (same) { for (let k = baseNodes; k < t.nodes.length; k++) { const n = t.nodes[k]; for (let j = 0; j < 2; j++) for (let i = 0; i < 2; i++) t.nodeGrid[(n.y + j) * W + n.x + i] = 0; } t.nodes.length = baseNodes; }
+  else baseNodes = t.nodes.length;
   G.tiles = t.tiles; G.trees = t.trees; G.trees0 = t.trees.slice(); G.nodes = t.nodes; G.nodeGrid = t.nodeGrid;
+  // resource nodes added for online spawns (not part of the generated terrain)
+  for (const [x, y, res, p] of (S as any).xn || []) applyExtraNode(x, y, res, p);
   G.ents = new Map(); G.grid = new Int32Array(W * H); G.up = [null, null, null, null]; G.floor = new Uint8Array(W * H); G.floorN = 0; G.nextId = 1; G.trains = []; G.trainOcc = new Map(); G.trucks = []; G.ships = [];
   G.covGrid = null;
   G.S = S;

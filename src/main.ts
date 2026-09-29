@@ -14,7 +14,10 @@ import { buildTerrain, T3, terrainTick, terrainTileChanged } from './r3/terrain3
 import { icon3D, init3D, Label3, reset3D, update3D } from './r3/world3d';
 import { hexCol, rgba } from './gl';
 import { chopFx, initInput, mineFx, pasteFx, setTool, tickInput, updateGhosts } from './input';
-import { isMine } from './teams';
+import { clearTeams, isMine, MP } from './teams';
+import { connect, disconnect, netStep, NET, ticksAvailable } from './net';
+import { fmtCode } from './online';
+import * as OUI from './ui3';
 import { setDeliverFx, setOnMilestone, unlockName } from './progress';
 import { addFrame, loadWorld, newSlotId, saveGame, slot } from './save';
 import { hideTitle, initTitle, NewWorldOpts, showTitle, title } from './title';
@@ -138,6 +141,32 @@ function createWorld(o: NewWorldOpts) {
     return true;
   }, true, o.size > 1500 ? 'Generating a huge world… (this takes a few seconds)' : 'Generating your world…');
 }
+/** join (or create) an online world */
+function playOnline(o: { code?: string; create?: any }) {
+  hideTitle(); document.body.classList.remove('intitle');
+  setLoading(o.create ? 'Creating your server…' : 'Connecting…');
+  slot.id = null;
+  let entered = false;
+  connect(o, {
+    ready: () => {
+      entered = true;
+      afterWorldReady();
+      setLoading(null);
+      const inf = MP.info.get(MP.myTeam);
+      if (inf) { view.cam.x = inf.hx + 2; view.cam.y = inf.hy + 2; view.cam.s = 30; }
+      UI.toast(`🌐 Welcome to <b>${G.S.name}</b> — join code <b>${fmtCode(NET.code)}</b>`, 'big');
+      if (!G.S.flags.tutDone) UI.startOnboarding();
+    },
+    reloaded: () => { initDiscovery(); reset3D(); ensureFresh(); UI.buildMapBase(); },
+    error: msg => {
+      if (!entered) { setLoading(null); openTitle(); setTimeout(() => UI.toast(msg, 'bad'), 50); }
+      else OUI.showDisconnected(msg, () => { exitToTitle(); });
+    },
+    players: () => OUI.refreshPlayers(),
+    chat: c => OUI.chatMessage(c),
+  });
+  setTimeout(() => { if (!entered && !NET.ready) setLoading(o.create ? 'Generating the world… (big maps take a little while)' : 'Loading the world…'); }, 1500);
+}
 function openTitle() {
   document.body.classList.add('intitle');
   view.marker = null; view.ghosts = [];
@@ -145,10 +174,12 @@ function openTitle() {
   showTitle({
     play: (id) => enterWorld(() => loadWorld(id), false, 'Loading world…'),
     create: createWorld,
+    online: playOnline,
     imported: () => { afterWorldReady(); hideTitle(); document.body.classList.remove('intitle'); UI.toast('Save imported as a new world', 'good'); },
   });
 }
 async function exitToTitle() {
+  if (NET.on || NET.ready) { disconnect(); clearTeams(); }
   if (slot.id) await saveGame();
   slot.id = null;
   openTitle();
@@ -167,13 +198,27 @@ function frame(ms: number) {
   // fixed-step simulation
   const step = 1 / 60;
   if (title.open) { rotateCamera(dt * 0.04); acc = 0; }
-  acc += title.open ? 0 : dt * G.S.speed;
   let n = 0;
-  while (acc >= step && n < 8 * G.S.speed) {
-    try { update(step); } catch (err) { if (!simErr) { simErr = true; console.error('simulation error', err); } }
-    acc -= step; n++;
+  if (NET.on) {
+    // online: run the ticks the server has finished, keeping a small buffer; catch up quickly if behind
+    if (NET.ready && !title.open) {
+      acc += dt;
+      const avail = ticksAvailable(), max = avail > 30 ? 40 : 8;
+      while ((acc >= step || ticksAvailable() > 12) && n < max) {
+        let ok = false;
+        try { ok = netStep(update); } catch (err) { if (!simErr) { simErr = true; console.error('simulation error', err); } NET.tick++; ok = true; }
+        if (!ok) { acc = Math.min(acc, step * 2); break; }
+        acc = Math.max(0, acc - step); n++;
+      }
+    }
+  } else {
+    acc += title.open ? 0 : dt * G.S.speed;
+    while (acc >= step && n < 8 * G.S.speed) {
+      try { update(step); } catch (err) { if (!simErr) { simErr = true; console.error('simulation error', err); } }
+      acc -= step; n++;
+    }
+    if (n >= 8 * G.S.speed) acc = 0;
   }
-  if (n >= 8 * G.S.speed) acc = 0;
   updParts(dt);
   for (const e of G.L.machines) if (e.pop > 0) e.pop = Math.max(0, e.pop - dt * 5);
   if (view.inspect && view.inspect.pop > 0) view.inspect.pop = Math.max(0, view.inspect.pop - dt * 5);
@@ -261,8 +306,14 @@ async function boot() {
   addEventListener('beforeunload', () => { if (slot.id) saveGame(); });
   document.addEventListener('visibilitychange', () => { if (document.hidden && slot.id) saveGame(); });
   requestAnimationFrame(t => { last = t / 1000; requestAnimationFrame(frame); });
+  // online worlds keep ticking while this tab is in the background (animation frames stop there)
+  setInterval(() => {
+    if (!NET.ready || !document.hidden) return;
+    const t0 = performance.now();
+    while (ticksAvailable() > 0 && performance.now() - t0 < 250) { try { netStep(update); } catch (err) { console.error(err); NET.tick++; } }
+  }, 1000);
   (window as any).G = G; // debugging aid
-  (window as any).BW = { frame: (n = 1, dt = 1 / 60) => { for (let i = 0; i < n; i++) { dbgT += dt * 1000; frame(dbgT); } }, T3, PL, DATA, TER, G, W: W_, SIM, TR, TK, EX, INP, PR, UI, view, DR, CORE, CMD, TEAMS, SAVE };
+  (window as any).BW = { frame: (n = 1, dt = 1 / 60) => { for (let i = 0; i < n; i++) { dbgT += dt * 1000; frame(dbgT); } }, T3, PL, DATA, TER, G, W: W_, SIM, TR, TK, EX, INP, PR, UI, view, DR, CORE, CMD, TEAMS, SAVE, NET };
 }
 boot();
 export { audioInit, ITEMS, parts, rgba };
