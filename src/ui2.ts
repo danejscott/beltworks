@@ -1,5 +1,6 @@
 // UI for the newer systems: vehicles list, scanner, research, planner, achievements, crash sites, trucks.
 import { sfx } from './audio';
+import { copyInvite, openPlayers } from './ui3';
 import { send as netSend } from './net';
 import { MP } from './teams';
 import { online, run } from './cmd';
@@ -27,6 +28,9 @@ export const fastTravelAllowed = () => G.S.mode !== 'hard';
 export function travelPoints(): { name: string; x: number; y: number; e: Ent }[] {
   const out: { name: string; x: number; y: number; e: Ent }[] = [];
   if (G.L && G.L.hub) out.push({ name: '🏠 HUB', x: G.L.hub.x + 2, y: G.L.hub.y + 2, e: G.L.hub });
+  // teams that merged own several HUBs: list the others too
+  if (MP.teams && G.L) for (const h of G.L.hubs as Ent[]) if (h !== G.L.hub && (h.o || 0) === MP.myTeam)
+    out.push({ name: `🏠 HUB ${out.filter(o => o.name.startsWith('🏠')).length + 1}`, x: h.x + 2, y: h.y + 2, e: h });
   for (const o of (G.L && G.L.outposts) || []) if ((o.o || 0) === MP.myTeam) out.push({ name: '⛺ ' + o.name, x: o.x + 1.5, y: o.y + 1.5, e: o });
   return out;
 }
@@ -186,6 +190,8 @@ export function extraAct(cmd: string, a: string, b: string): boolean {
     case 'kdel': if (k) run({ k: 'vdel', v: 'k', id: k.id, i: +a }); return true;
     case 'travel': { const p = travelPoints()[+a]; if (p && fastTravelAllowed()) { flyTo(p.x, p.y); closeModal(); toast(`🧭 ${esc(p.name)}`, ''); sfx('click'); } return true; }
     case 'tlreplay': startTimelapse(null); return true;
+    case 'invite': copyInvite(); return true;
+    case 'players': closeModal(); setTimeout(() => openPlayers(), 0); return true;
     case 'tinvite': netSend({ t: 'team', op: 'invite', pid: +a }); toast('Invitation sent', 'good'); return true;
     case 'taccept': netSend({ t: 'team', op: 'accept', team: +a }); return true;
     case 'tleave': if (confirm('Leave your team? You will start over with a brand-new base somewhere else (your team keeps everything).')) netSend({ t: 'team', op: 'leave' }); return true;

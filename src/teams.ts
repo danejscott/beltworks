@@ -110,6 +110,7 @@ export function addTeam(id: number, info: Omit<TeamInfo, 'id'>, base: Partial<St
   if (MP.world.mode === 'creative') {
     // creative servers: everything unlocked for everyone
     for (const k of (G.S.unlocked as Set<string>)) t.unlocked.add(k);
+    t.maxTier = 7; t.flags.tutDone = 1;
   }
   MP.teams!.set(id, t);
   MP.info.set(id, { id, ...info });

@@ -95,7 +95,7 @@ export class WorldRelay {
       this.players.set(id, p);
       isNew = true;
     } else p.name = name;
-    this.conns.set(c.id, { c, pid: p.id, at: Date.now(), budget: 60, last: Date.now() });
+    this.conns.set(c.id, { c, pid: p.id, at: Date.now(), budget: 200, last: Date.now() });
     // the joiner gets the world so far: settings, the latest save (if any) and every action since it
     c.send(JSON.stringify({ t: 'welcome', code: this.meta.code, pid: p.id, meta: this.meta, baseTick: this.base ? this.base.tick : 0, hasBase: !!this.base, log: this.log, tick: this.tick }));
     if (this.base) c.send(this.base.data);
@@ -141,7 +141,7 @@ export class WorldRelay {
     switch (m.t) {
       case 'cmd': {
         const now = Date.now();
-        k.budget = Math.min(60, k.budget + (now - k.last) * 0.03); k.last = now;
+        k.budget = Math.min(200, k.budget + (now - k.last) * 0.06); k.last = now;   // bursts of 200, then 60 a second
         if (k.budget < 1 || !m.c || typeof m.c.k !== 'string' || m.c.k[0] === '_') return;
         k.budget--;
         this.queue.push([p.id, p.team, m.c]);

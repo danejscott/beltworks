@@ -13,6 +13,9 @@ export const title = { open: false };
 export interface NewWorldOpts { name: string; size: number; mode: string; dayNight: boolean }
 let handlers: { play: (id: string) => void; create: (o: NewWorldOpts) => void; imported: () => void; online: (o: { code?: string; create?: NewWorldOpts }) => void };
 let sel = { size: 'medium', mode: 'normal', dn: 'on', tab: 'new', osize: 'large', omode: 'normal', odn: 'on', col: '' };
+let invited = '';
+/** opened from an invite link: show the online tab with the code filled in */
+export function setInvite(code: string) { invited = code; sel.tab = 'online'; }
 
 export const MODES = DIFF;
 const ADJ = ['Rusty', 'Copper', 'Iron', 'Misty', 'Golden', 'Quiet', 'Windy', 'Sunny', 'Humming', 'Silver', 'Northern', 'Lazy', 'Busy', 'Crimson'];
@@ -71,7 +74,8 @@ function onlineHTML() {
     <label class="flabel">Your colour <span class="dim">(your vehicles and base trim)</span></label>
     <div class="swatches">${PLAYER_COLS.map(c => `<span class="swatch ${c === sel.col ? 'sel' : ''}" data-tact="col:${c}" style="background:${c}"></span>`).join('')}</div>
     <label class="flabel">Join a world</label>
-    <div class="row"><input id="ocode" type="text" maxlength="9" placeholder="Join code, e.g. K7QM-2XRP" style="flex:1;font-size:15px;text-transform:uppercase;letter-spacing:1px"><button class="go" data-tact="join">Join</button></div>
+    ${invited ? `<p class="sm" style="margin:0 0 4px;color:#ffd48a">🎉 You've been invited! Pick a name and colour above, then press <b>Join</b>.</p>` : ''}
+    <div class="row"><input id="ocode" type="text" maxlength="9" placeholder="Join code, e.g. K7QM-2XRP" value="${invited ? fmtCode(invited) : ''}" style="flex:1;font-size:15px;text-transform:uppercase;letter-spacing:1px"><button class="go" data-tact="join">Join</button></div>
     ${recent.length ? `<div class="recent">${recent.map(r => `<div class="rrow" data-tact="joinc:${r.code}"><b>${esc(r.name)}</b> <span class="dim">${fmtCode(r.code)}</span><button class="mini go" data-tact="joinc:${r.code}">▶ Rejoin</button></div>`).join('')}</div>` : ''}
     <details class="ocreate"><summary><b>Create a new server</b></summary>
       <label class="flabel">World name</label>

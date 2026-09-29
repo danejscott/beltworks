@@ -20,7 +20,8 @@ import { fmtCode } from './online';
 import * as OUI from './ui3';
 import { setDeliverFx, setOnMilestone, unlockName } from './progress';
 import { addFrame, loadWorld, newSlotId, saveGame, slot } from './save';
-import { hideTitle, initTitle, NewWorldOpts, showTitle, title } from './title';
+import { hideTitle, initTitle, NewWorldOpts, setInvite, showTitle, title } from './title';
+import { normCode } from './codes';
 import { ensureFresh, resetStats, update } from './sim';
 import { HX, HY } from './terrain';
 import * as UI from './ui';
@@ -156,7 +157,8 @@ function playOnline(o: { code?: string; create?: any }) {
       setLoading(null);
       const inf = MP.info.get(MP.myTeam);
       if (inf) { view.cam.x = inf.hx + 2; view.cam.y = inf.hy + 2; view.cam.s = 30; }
-      UI.toast(`🌐 Welcome to <b>${G.S.name}</b> — join code <b>${fmtCode(NET.code)}</b>`, 'big');
+      OUI.netHud();
+      UI.toast(`🌐 Welcome to <b>${G.S.name}</b> — join code <b>${fmtCode(NET.code)}</b>. Use <b>📋 Invite</b> at the top to bring friends.`, 'big');
       if (!G.S.flags.tutDone) UI.startOnboarding();
     },
     reloaded: () => { initDiscovery(); reset3D(); ensureFresh(); UI.buildMapBase(); },
@@ -307,6 +309,8 @@ async function boot() {
   initInput(canvas);
   UI.initUI();
   initTitle();
+  // opened from an invite link (…/beltworks/?join=K7QM2XRP)?
+  try { const j = normCode(new URLSearchParams(location.search).get('join') || ''); if (j) { setInvite(j); history.replaceState(null, '', location.pathname); } } catch { }
   load.classList.add('hidden');
   openTitle();
   addEventListener('beforeunload', () => { if (slot.id) saveGame(); });

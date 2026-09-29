@@ -1,6 +1,7 @@
 // Online HUD: the server badge (join code + who's here), chat, the players panel and the "disconnected" screen.
 import { NET, sendChat } from './net';
 import { empireScore, fmtCode } from './online';
+import { inviteLink, inviteText } from './codes';
 import { MP } from './teams';
 import { G } from './world';
 import { esc } from './util';
@@ -10,7 +11,7 @@ import { openModal } from './ui';
 
 const CSS = `
 #netbar{position:fixed;left:50%;transform:translateX(-50%);top:46px;z-index:30;display:none;gap:8px;align-items:center;background:rgba(18,22,30,.88);border:1px solid #2c3442;border-radius:999px;padding:4px 12px;font-size:12px;color:#cfd6e2;cursor:pointer;backdrop-filter:blur(4px)}
-#netbar b{color:#ffd48a;letter-spacing:.5px}#netbar .dot{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:2px;vertical-align:-1px}
+#netbar b{color:#ffd48a;letter-spacing:.5px}#netbar button{font-size:11px;padding:2px 8px;border-radius:999px}#netbar .dot{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:2px;vertical-align:-1px}
 #netbar .pl{display:inline-flex;gap:3px}
 #chat{position:fixed;left:12px;bottom:118px;z-index:30;width:340px;max-width:calc(100vw - 24px);display:none;flex-direction:column;gap:3px;pointer-events:none}
 #chat .msg{background:rgba(14,18,24,.78);border-radius:8px;padding:4px 8px;font-size:12.5px;color:#e4e8ef;transition:opacity 1s}
@@ -27,10 +28,12 @@ let built = false;
 function build() {
   if (built) return; built = true;
   EXTRA_MODALS.players = playersHTML;
+  EXTRA_MODALS.invite = inviteHTML;
   LIVE_MODALS.add('players');
   const st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);
   const bar = document.createElement('div'); bar.id = 'netbar'; document.body.appendChild(bar);
-  bar.addEventListener('pointerdown', () => openPlayers());
+  bar.addEventListener('pointerdown', ev => { const b = (ev.target as HTMLElement).closest('button'); if (b && b.dataset.nb === 'inv') copyInvite(); else openPlayers(); });
+  bar.style.pointerEvents = 'auto';
   const chat = document.createElement('div'); chat.id = 'chat';
   chat.innerHTML = '<div id="chatlog" style="display:flex;flex-direction:column;gap:3px"></div><input id="chatin" maxlength="200" placeholder="Say something… (Enter to send, Esc to cancel)">';
   document.body.appendChild(chat);
@@ -60,7 +63,8 @@ export function netHud() {
   chat.style.display = on ? 'flex' : 'none';
   if (!on) return;
   const here = NET.players.filter(p => p.online);
-  bar.innerHTML = `🌐 <b>${fmtCode(NET.code)}</b> <span class="pl">${here.map(p => `<span class="dot" style="background:${p.col}" title="${esc(p.name)}"></span>`).join('')}</span> ${here.length} online${NET.ping ? ` · ${NET.ping} ms` : ''}`;
+  const html = `🌐 <b>${fmtCode(NET.code)}</b> <button data-nb="inv" title="Copy the join code, a link and instructions">📋 Invite</button> <span class="pl">${here.map(p => `<span class="dot" style="background:${p.col}" title="${esc(p.name)}"></span>`).join('')}</span> ${here.length} online${NET.ping ? ` · ${NET.ping} ms` : ''} <button data-nb="pl" title="Players, teams and leaderboard (Y)">👥 Players <kbd>Y</kbd></button>`;
+  if (bar.innerHTML !== html) bar.innerHTML = html;
 }
 export function refreshPlayers() { netHud(); }
 export function chatMessage(c: { from: string; col: string; text: string }) {
@@ -73,13 +77,35 @@ export function chatMessage(c: { from: string; col: string; text: string }) {
   setTimeout(() => d.classList.add('old'), 12000);
 }
 
+/** copy the join code, a link and how-to-join instructions to the clipboard */
+export async function copyInvite() {
+  const text = inviteText(NET.code, G.S.name || 'Beltworks');
+  let ok = false;
+  try { await navigator.clipboard.writeText(text); ok = true; } catch { }
+  if (!ok) {
+    const ta = document.createElement('textarea'); ta.value = text; document.body.appendChild(ta); ta.select();
+    try { ok = document.execCommand('copy'); } catch { }
+    ta.remove();
+  }
+  if (ok) G.fx.toast(`📋 Invite copied — paste it to your friends (code <b>${fmtCode(NET.code)}</b> + link + how to join).`, 'good');
+  else { inviteFallback = text; openModal('invite'); }
+}
+let inviteFallback = '';
+function inviteHTML(): [string, string] {
+  const text = inviteFallback || inviteText(NET.code, G.S.name || 'Beltworks');
+  return ['Invite friends', `<p class="sm" style="margin-top:0">Your browser didn't let the game copy automatically. Press <kbd>Ctrl</kbd>+<kbd>C</kbd> to copy this (it's already selected), then paste it to your friends:</p>
+    <textarea id="invtext" readonly style="width:100%;height:170px;font-size:13px;background:#10141b;color:#e4e8ef;border:1px solid #2c3442;border-radius:8px;padding:8px">${esc(text)}</textarea>
+    <p class="sm">Or just share the code <b style="color:#ffd48a">${fmtCode(NET.code)}</b> or the link <b>${esc(inviteLink(NET.code))}</b>.</p>`];
+}
 /** the players panel (click the server badge, or press Y) */
 function playersHTML(): [string, string] {
   const teams = new Map<number, typeof NET.players>();
   for (const p of NET.players) { let l = teams.get(p.team); if (!l) teams.set(p.team, l = []); l.push(p); }
   const ranked = [...teams.keys()].map(t => ({ t, ...empireScore(t) })).sort((a, b) => b.score - a.score);
   const myMates = NET.players.filter(p => p.team === MP.myTeam).length;
-  let h = `<div id="plist"><p class="sm" style="margin-top:0">Share the join code <b style="color:#ffd48a;font-size:15px">${fmtCode(NET.code)}</b> — anyone with it can join this world and start their own base.</p><h3 class="ch">🏆 Leaderboard</h3>`;
+  const mates = NET.players.filter(p => p.team === MP.myTeam && p.id !== MP.me).map(p => esc(p.name));
+  let h = `<div id="plist"><div class="row" style="align-items:center;gap:10px;margin-bottom:6px"><span>Join code <b style="color:#ffd48a;font-size:16px;letter-spacing:1px">${fmtCode(NET.code)}</b></span><button class="go" data-act="invite">📋 Copy invite (code + link + how to join)</button></div>
+    <p class="sm" style="margin-top:0">Anyone with the code can join at any time — even when you're offline — and starts their own base far away. ${mates.length ? `You're on a team with <b>${mates.join(', ')}</b>: you share inventory, research, power and colour.` : `You're playing on your own. Invite someone to your team with the button next to their name (they'll get a prompt to accept) — teams share everything.`}</p><h3 class="ch">🏆 Leaderboard</h3>`;
   ranked.forEach((r, i) => {
     const t = r.t, l = teams.get(t)!, inf = MP.info.get(t), mine = t === MP.myTeam;
     h += `<div class="plrow"${mine ? ' style="background:#2b261655"' : ''}><b style="width:22px">${i + 1}.</b><span class="sw" style="background:${inf?.col || '#888'}"></span><b>${esc(l.map(p => p.name).join(' & '))}</b>${mine ? ' <span class="dim">(you)</span>' : ''}<span class="st">Tier ${r.tier} · ${r.built} built · <b style="color:#ffd48a">${r.score.toLocaleString()}</b></span></div>`;

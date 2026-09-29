@@ -12,6 +12,8 @@ Or double-click **`Play Beltworks.html`**. It's a single self-contained file tha
 
 On the title screen, **🌐 Play online** lets you create a server or join one with its 8-character code (like `K7QM-2XRP`). The code never changes.
 
+**Inviting friends:** in an online world, click **📋 Invite** on the badge at the top (or in the ☰ menu or the Players panel). That copies the code, a link and step-by-step instructions to your clipboard. The link (`…/beltworks/?join=CODE`) opens the game with the code already filled in.
+
 - **Competitive:** every player starts their own base far from the others, in a different biome, with starter resources nearby. Race to build the biggest empire; the **leaderboard** (press **Y**) scores tiers, milestones, everything your factory has made and what you've built.
 - **Economy only:** nobody can remove or change another player's buildings, and you can't build right next to someone else's HUB. You *can* run a belt out of a rival's open output port and take what comes out.
 - **Teams:** invite a player from the Players panel. Teammates share inventory, research, power and colour; a player who was on their own brings their whole base along.
