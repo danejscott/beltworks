@@ -55,7 +55,7 @@ export async function showTitle(h: typeof handlers) {
         <label class="flabel">World name</label>
         <div class="row"><input id="wname" type="text" maxlength="28" value="${esc(randName())}" style="flex:1;font-size:15px"><button class="mini" data-tact="dice" title="Random name">🎲</button></div>
         <label class="flabel">Map size</label>
-        <div class="opts">${Object.entries(SIZES).filter(([, s]) => !s.online).map(([k, s]) => `<div class="opt ${sel.size === k ? 'sel' : ''}" data-tact="size:${k}"><b>${s.label}</b><span>${s.desc}</span></div>`).join('')}</div>
+        <div class="opts">${Object.entries(SIZES).map(([k, s]) => `<div class="opt ${sel.size === k ? 'sel' : ''}" data-tact="size:${k}"><b>${s.label}</b><span>${s.desc}</span></div>`).join('')}</div>
         <label class="flabel">Difficulty</label>
         <div class="opts two">${Object.entries(MODES).map(([k, m]) => `<div class="opt ${sel.mode === k ? 'sel' : ''}" data-tact="mode:${k}"><b>${m.icon} ${m.label} <span class="hrs">${m.hours}</span></b><span>${m.desc}</span></div>`).join('')}</div>
         <label class="flabel">Day / night cycle</label>

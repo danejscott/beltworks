@@ -22,7 +22,11 @@ export function serialize() {
   const floor: number[] = [];
   if (G.floorN) for (let i = 0; i < W * H; i++) if (G.floor[i]) floor.push(i, G.floor[i]);
   const removed: number[] = [];
-  for (let i = 0; i < W * H; i++) if (G.trees0[i] && !G.trees[i]) removed.push(i);
+  // chopped trees: compare four tiles at a time (big maps have tens of millions of tiles)
+  const t0 = G.trees0, t1 = G.trees, n4 = (W * H) >> 2;
+  const a4 = new Uint32Array(t0.buffer, t0.byteOffset, n4), b4 = new Uint32Array(t1.buffer, t1.byteOffset, n4);
+  for (let q = 0; q < n4; q++) if (a4[q] & ~b4[q]) for (let i = q * 4; i < q * 4 + 4; i++) if (t0[i] && !t1[i]) removed.push(i);
+  for (let i = n4 * 4; i < W * H; i++) if (t0[i] && !t1[i]) removed.push(i);
   let mp: any;
   if (MP.teams) {
     // team world: the shared world fields, then each team's own state

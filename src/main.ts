@@ -140,7 +140,7 @@ function createWorld(o: NewWorldOpts) {
     slot.id = newSlotId();
     await saveGame();
     return true;
-  }, true, o.size > 1500 ? 'Generating a huge world… (this takes a few seconds)' : 'Generating your world…');
+  }, true, o.size > 4000 ? 'Generating an enormous world… (this takes about a minute)' : o.size > 1500 ? 'Generating a huge world… (this takes a few seconds)' : 'Generating your world…');
 }
 /** join (or create) an online world */
 function playOnline(o: { code?: string; create?: any }) {

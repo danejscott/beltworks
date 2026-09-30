@@ -19,7 +19,7 @@ On the title screen, **🌐 Play online** lets you create a server or join one w
 - **Teams:** invite a player from the Players panel. Teammates share inventory, research, power and colour; a player who was on their own brings their whole base along.
 - **Your colour** replaces the orange trim on your buildings and vehicles, and your name floats above your HUB.
 - **No host needed:** anyone with the code can start or join the world at any time; the world runs in the players' browsers while anyone is online, and your factory pauses while you're away.
-- **Enormous** maps (4608² of land, 4× Large) are available for servers; they need a desktop computer with plenty of memory.
+- **Enormous** maps (4608² of land, 4× Large) work for servers and single-player; they need a desktop computer with plenty of memory.
 - Chat with **Enter**. Fast travel works between your own team's bases.
 
 ### How online works (and running the relay)
@@ -81,7 +81,7 @@ After building, copy `dist/index.html` over `Play Beltworks.html` to update the 
   - Mountains cover up to 2× the old amount, with foothills around them and guaranteed passes, so they're an obstacle until trains can tunnel through.
 - **Island worlds (new worlds):** the land is an irregular island with bays, peninsulas and islets, surrounded by ocean that ships can sail. The island has the same land area as the old square maps; the ocean doesn't count. Biome, desert and lake borders are organic, with no straight lines or sharp corners. Worlds created before this keep their original terrain.
 - **Every new world is randomized:** HUB position, amount of water and mountains, biome mix, lake placement and landmass shape.
-- **Three world sizes** (512², 1024², 2304² of land), multiple named saves and a title screen.
+- **Four world sizes** (512², 1024², 2304², and Enormous 4608² of land; Enormous needs a desktop PC with plenty of memory and takes about a minute to generate), multiple named saves and a title screen.
 - **Difficulties with target play times:** Easy (~10–15 h), Normal (~15–30 h), Hard (~30–50 h) and Creative. Later milestones and Space Elevator phases scale with difficulty; Tier 0 is the same for everyone.
 - **Biomes** (plains, forest, desert, highlands), each with its own resources. Nodes come in impure, normal and pure. Trees regrow.
 - **77 items, 80 recipes (17 of them alternates), 60 buildings.** Covers smelting, construction, assembly, foundries, oil refining with byproducts, and manufacturing.

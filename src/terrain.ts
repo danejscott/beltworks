@@ -4,11 +4,11 @@ import { diffOf } from './difficulty';
 // World size is chosen when a world is created (small / medium / large).
 export let W = 1024, H = 1024;
 export let HX = 510, HY = 510; // HUB top-left
-export const SIZES: Record<string, { n: number; label: string; desc: string; online?: boolean }> = {
+export const SIZES: Record<string, { n: number; label: string; desc: string }> = {
   small: { n: 512, label: 'Small', desc: 'A 512² island — cozy, everything is close' },
   medium: { n: 1024, label: 'Medium', desc: 'A 1024² island — the classic size' },
   large: { n: 2304, label: 'Large', desc: 'A 2304² island — 5× the land, built for trains' },
-  enormous: { n: 4608, label: 'Enormous', desc: 'A 4608² island — 4× Large, room for a crowd (online servers only)', online: true },
+  enormous: { n: 4608, label: 'Enormous', desc: 'A 4608² island — 4× Large. Needs a desktop PC with plenty of memory (about a minute to generate)' },
 };
 export function setWorldSize(n: number) { W = H = n; HX = HY = n / 2 - 2; }
 /** v6 worlds are islands: the grid grows so the ocean fits around the same amount of land (a multiple of the 64-tile render chunk) */
