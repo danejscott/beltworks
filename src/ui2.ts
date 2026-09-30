@@ -38,7 +38,7 @@ let pendingSite: Feat | null = null;
 export function openSite(f: Feat) { pendingSite = f; openModal('site'); }
 const pl = { item: 'reinforced_plate', rate: 10 };
 
-const stTxt: Record<string, string> = { moving: 'Driving', loading: 'At station', nopath: 'No route!', noschedule: 'No schedule', stopped: 'Stopped', idle: 'Planning route' };
+const stTxt: Record<string, string> = { queued: 'Waiting for a free bay', moving: 'Driving', loading: 'At station', nopath: 'No route!', noschedule: 'No schedule', stopped: 'Stopped', idle: 'Planning route' };
 const vehLed = (s: string) => s === 'nopath' ? 'block' : s === 'moving' || s === 'loading' ? 'work' : 'idle';
 
 /** extra modal renderers: return [title, html] */

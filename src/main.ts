@@ -10,7 +10,7 @@ import * as EX from './explore';
 import * as PL from './planner';
 import * as TER from './terrain';
 import * as DATA from './data';
-import { buildTerrain, T3, terrainTick, terrainTileChanged } from './r3/terrain3d';
+import { buildTerrain, T3, terrainTick, terrainTileChanged, setWear } from './r3/terrain3d';
 import { icon3D, init3D, Label3, reset3D, update3D } from './r3/world3d';
 import { hexCol, rgba } from './gl';
 import { chopFx, initInput, mineFx, pasteFx, setTool, tickInput, updateGhosts } from './input';
@@ -65,6 +65,7 @@ function setupFx() {
     else if (k === 'mined') mineFx(o);
   };
   G.fx.tile = (x, y) => terrainTileChanged(x, y);
+  G.fx.wear = (i, v) => setWear(i, v);
   G.fx.placed = (e: Ent) => {
     const s = Math.max(e.w, e.h);
     if (s < 2) return;

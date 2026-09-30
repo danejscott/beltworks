@@ -371,6 +371,37 @@ export function buildTemplates(): Record<string, Template> {
     b.box(0.55, 0.45, 0.55, -0.8, 0.35, 0.8, M.blue); b.box(0.55, 0.45, 0.55, -0.8, 0.8, 0.8, M.red);
     T.ship_port = { stat: b.build(), height: 2.6, light: [-0.4, 1.3, -1.35], anims: [{ key: 'jib', model: one(b2 => { b2.box(2.3, 0.1, 0.12, 0.85, 0, 0, M.yellow); b2.cyl(0.02, 0.6, 1.8, -0.6, 0, M.steelDk, 4); b2.box(0.25, 0.12, 0.25, 1.8, -0.72, 0, M.steelDk); }), fn: (o, _e, _t, real) => { o.y = 2.66; o.z = 0.9; o.ry = Math.sin(real * 0.3) * 0.9; } }] };
   }
+  // ---- Harbor: a concrete pier (7 x 4) from the beach out over the water. Local +x = out to sea.
+  {
+    const b = new B();
+    const L = 6.9, Wd = 3.9;
+    // pillars under the sea end, the deck, and a raised quay wall along the water
+    for (let x = -1.8; x <= 3.3; x += 1.25) for (const z of [-1.7, 1.7]) b.box(0.32, 0.9, 0.32, x, -0.6, z, M.concrete);
+    b.box(L, 0.4, Wd, 0, 0, 0, M.concrete);
+    b.box(L - 1.8, 0.02, Wd - 0.2, 0.9, 0.4, 0, M.grey);
+    // yellow safety lines and bollards along both sides of the pier
+    for (const z of [-1.82, 1.82]) { b.box(L - 1.9, 0.03, 0.08, 0.95, 0.4, z * 0.97, M.yellow); for (let x = -1.2; x <= 3.2; x += 1.1) b.cyl(0.09, 0.22, x, 0.4, z, M.black, 8); }
+    // warehouse on the land end, with a roll-up door facing the pier
+    b.box(1.5, 1.5, 3.4, -2.6, 0.4, 0, M.orange); b.box(1.56, 0.12, 3.46, -2.6, 1.9, 0, M.steelDk);
+    b.box(0.03, 0.9, 1.3, -1.84, 0.4, 0, M.greyLt); for (let i = 0; i < 6; i++) b.box(0.04, 0.02, 1.3, -1.82, 0.5 + i * 0.14, 0, M.grey);
+    b.box(0.03, 0.3, 0.8, -1.84, 1.45, -1.1, M.glass);
+    // stacked shipping containers
+    const cols = [M.red, M.blue, M.green, M.orange, M.teal, M.white];
+    for (let i = 0; i < 3; i++) for (let j = 0; j < 2; j++) for (let k = 0; k < (i + j) % 3 + 1; k++) b.box(1.05, 0.42, 0.5, -0.4 + i * 0.05, 0.42 + k * 0.43, -1.25 + j * 0.55 + i * 0, cols[(i * 2 + j + k) % cols.length]);
+    for (let j = 0; j < 2; j++) for (let k = 0; k < 2 - j; k++) b.box(1.05, 0.42, 0.5, 0.95, 0.42 + k * 0.43, 0.75 + j * 0.55, cols[(j + k + 3) % cols.length]);
+    // gantry crane: two legs on rails spanning the pier, a girder over the water
+    b.box(L - 2.2, 0.05, 0.1, 1.2, 0.4, -1.5, M.steelDk); b.box(L - 2.2, 0.05, 0.1, 1.2, 0.4, 1.5, M.steelDk);
+    for (const z of [-1.5, 1.5]) { b.box(0.22, 3.1, 0.22, 2.3, 0.45, z, M.yellow); b.beam([2.3, 0.6, z], [2.3, 2.8, z * 0.4], 0.05, M.yellow); }
+    b.box(0.35, 0.3, 4.6, 2.3, 3.5, 0.55, M.yellow);
+    b.box(0.6, 0.5, 0.6, 2.3, 3.8, -1.3, M.steelDk); b.box(0.02, 0.2, 0.35, 2.61, 3.95, -1.3, M.glass);
+    // lamp posts
+    for (const [x, z] of [[-1.3, 1.75], [3.2, -1.75]]) { b.cyl(0.04, 2.0, x, 0.4, z, M.steelDk, 6); b.box(0.28, 0.08, 0.16, x, 2.4, z, M.glowWhite); }
+    T.harbor = {
+      stat: b.build(), height: 4.0, light: [-1.9, 1.7, -1.5],
+      anims: [{ key: 'trolley', model: one(b2 => { b2.box(0.5, 0.25, 0.5, 0, 0, 0, M.steelDk); b2.cyl(0.015, 1.9, 0, -1.9, 0, M.steelDk, 4); b2.box(1.0, 0.4, 0.5, 0, -2.3, 0, M.red); }),
+        fn: (o, _e, _t, real) => { const ph = (Math.sin(real * 0.35) + 1) / 2; o.x = 2.3; o.y = 3.35; o.z = -1.6 + ph * 4.3; } }],
+    };
+  }
   // ---- Outpost: a small field base with a comms mast and a beacon
   {
     const b = new B();

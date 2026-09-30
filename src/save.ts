@@ -42,8 +42,9 @@ export function serialize() {
     S: plain,
     ents, removed, floor, hist: hist.s, nextId: G.nextId,
     trains: G.trains.map(t => ({ ...t })),
-    ships: G.ships.map((t: any) => ({ ...t, path: [], pi: 0, state: t.state === 'moving' ? 'idle' : t.state })),
-    trucks: G.trucks.map(t => ({ ...t, path: [], pi: 0, state: t.state === 'moving' ? 'idle' : t.state })),
+    ships: G.ships.map((t: any) => ({ ...t, path: [], pi: 0, bay: -1, qspot: -1, toQueue: 0, state: t.state === 'moving' || t.state === 'queued' ? 'idle' : t.state })),
+    trucks: G.trucks.map(t => ({ ...t, path: [], pi: 0, bay: -1, qspot: -1, toQueue: 0, state: t.state === 'moving' || t.state === 'queued' ? 'idle' : t.state })),
+    wear: [...G.wear],
     cam: { ...view.cam },
   };
 }
@@ -62,6 +63,7 @@ export function deserialize(o: any, keepTerrain = false) {
     S = MP.teams.get(first)!; MP.cur = first;
   } else clearTeams();
   resetWorld(S.seed, S, keepTerrain);
+  for (const t of MP.teams ? MP.teams.values() : [S]) if (t.unlocked.has('ship_port')) t.unlocked.add('harbor');
   for (const i of o.removed || []) G.trees[i] = 0;
   const fl = o.floor || [];
   for (let k = 0; k < fl.length; k += 2) { G.floor[fl[k]] = fl[k + 1]; for (let z = 1; z < 4; z++) if (fl[k + 1] & (1 << z)) G.floorN++; }
@@ -88,6 +90,7 @@ export function deserialize(o: any, keepTerrain = false) {
   G.nextId = Math.max(G.nextId, o.nextId || 1);
   G.trains = (o.trains || []).map((t: any) => ({ ...t }));
   G.trucks = (o.trucks || []).map((t: any) => ({ ...t, retryT: 0 }));
+  G.wear = new Map(o.wear || []);
   G.ships = (o.ships || []).map((t: any) => ({ ...t, retryT: 0 }));
   if (o.cam) Object.assign(view.cam, o.cam);
   G.dirty = { links: true, power: true, fluid: true };

@@ -68,6 +68,7 @@ export const G = {
   trains: [] as Train[],
   trainOcc: new Map<number, number>(),
   trucks: [] as Truck[],
+  wear: new Map<number, number>(),   // ground wear from trucks (tile -> 0..255)
   ships: [] as any[],
   feats: [] as Feat[],
   featGrid: null as Int32Array,
@@ -84,7 +85,8 @@ export const G = {
   fx: {
     placed: (_e: Ent) => { }, removed: (_e: Ent) => { }, tile: (_x: number, _y: number) => { },
     toast: (_h: string, _k?: string) => { }, sfx: (_n: string) => { }, chop: (_x: number, _y: number, _n: number) => { },
-    ui: (_k: string, _o: any) => { },   // UI reactions to the local player's own commands (open a panel, particles)
+    ui: (_k: string, _o: any) => { },
+    wear: (_i: number, _v: number) => { },   // UI reactions to the local player's own commands (open a panel, particles)
   },
 };
 
@@ -152,8 +154,23 @@ export function portIdx(e: { w: number; h: number; rot: number }) {
   if ((G.S?.portsV || 0) >= 2) return s & 1 ? (s - 1) / 2 : (e.rot === 0 || e.rot === 3) ? s / 2 - 1 : s / 2;
   return e.rot < 2 ? Math.floor(s / 2) : Math.ceil(s / 2) - 1;
 }
+/** harbors: the tiles just behind the land end, from left to right (as seen looking out to sea) */
+export function pierBack(e: { x: number; y: number; w: number; h: number; rot: number }): number[][] {
+  const { x, y, w, h, rot } = e, out: number[][] = [];
+  if (rot === 0) for (let j = 0; j < h; j++) out.push([x - 1, y + j]);
+  else if (rot === 2) for (let j = h - 1; j >= 0; j--) out.push([x + w, y + j]);
+  else if (rot === 1) for (let i = w - 1; i >= 0; i--) out.push([x + i, y - 1]);
+  else for (let i = 0; i < w; i++) out.push([x + i, y + h]);
+  return out;
+}
+/** harbors: how far along the pier a tile is (0 = land end) */
+export function pierAlong(e: { x: number; y: number; w: number; h: number; rot: number }, tx: number, ty: number) {
+  return e.rot === 0 ? tx - e.x : e.rot === 2 ? e.x + e.w - 1 - tx : e.rot === 1 ? ty - e.y : e.y + e.h - 1 - ty;
+}
+const isPier = (e: any) => !!(e && e.type && BLD[e.type] && BLD[e.type].pier);
 /** the one tile in front of the building where its output comes out */
 export function frontTiles(e: { x: number; y: number; w: number; h: number; rot: number }): number[][] {
+  if (isPier(e)) { const b = pierBack(e); return [b[b.length - 1]]; }   // harbors: out at the land end, right side
   const { x, y, w, h, rot } = e, k = portIdx(e);
   if (rot === 0) return [[x + w, y + k]];
   if (rot === 2) return [[x - 1, y + k]];
@@ -162,6 +179,7 @@ export function frontTiles(e: { x: number; y: number; w: number; h: number; rot:
 }
 /** the one tile behind the building that feeds its input (straight in line with the output) */
 export function inPort(e: { x: number; y: number; w: number; h: number; rot: number }): number[] {
+  if (isPier(e)) return pierBack(e)[0];   // harbors: in at the land end, left side
   const { x, y, w, h, rot } = e, k = portIdx(e);
   if (rot === 0) return [x - 1, y + k];
   if (rot === 2) return [x + w, y + k];
@@ -214,6 +232,15 @@ export function canPlace(type: string, x: number, y: number, rot: number, o: { f
       if (!(o.replaceKind && e && BLD[e.type].kind === o.replaceKind)) return 'Something is in the way';
     }
     const t = G.tiles[ty * W + tx];
+    if (d.pier) {
+      const a = pierAlong({ x, y, w, h, rot }, tx, ty);
+      if (t === TT.ROCK) return 'Can\'t build on rock';
+      if (a === 0 && !isLand(t)) return 'The land end (behind the arrow) must be on the shore';
+      if (a >= 3 && !isWater(t)) return 'Build it out over the water: the arrow end must reach the lake or sea';
+      if (G.nodeGrid[ty * W + tx]) return 'Resource node in the way';
+      if (G.featGrid && G.featGrid[ty * W + tx]) return 'Something is in the way';
+      continue;
+    }
     if (t === TT.ROCK && d.kind !== 'rail') return 'Can\'t build on rock (only railways can tunnel through mountains)';
     if (G.featGrid && G.featGrid[ty * W + tx]) return G.feats[G.featGrid[ty * W + tx] - 1].kind === 'site' ? 'A crash site is in the way (click it to loot it)' : 'A power crystal is in the way (click it to collect it)';
     if (d.on === 'water') { if (!isWater(t)) return 'Must be placed entirely on water'; }
@@ -232,7 +259,7 @@ export function canPlace(type: string, x: number, y: number, rot: number, o: { f
   }
   if (MP.teams && d.kind !== 'hub') { const why = nearRivalBase(x, y, w, h, MP.cur); if (why) return why; }
   if (d.kind === 'elevator') { const me = MP.teams ? MP.cur : 0; for (const x of G.ents.values()) if (BLD[x.type].kind === 'elevator' && (x.o || 0) === me) return 'Only one Space Elevator'; }
-  if (d.kind === 'port' && shoreTiles(x, y, w, h) < 2) return 'Build it on the shore — it must touch a lake or the sea';
+  if (d.kind === 'port' && !d.pier && shoreTiles(x, y, w, h) < 2) return 'Build it on the shore — it must touch a lake or the sea';
   if (TALL[type] && G.floorN) for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) for (let zz = z + 1; zz < NL; zz++)
     if (hasFloor(x + i, y + j, zz) && (zz - z) * LH - 0.3 < TALL[type]) return 'Too tall to fit under the foundations above';
   if (!o.free && !canAfford(d.cost)) return 'Need: ' + missingText(d.cost);
@@ -484,7 +511,7 @@ export function resetWorld(seed: number, S?: State, keepTerrain = false) {
   G.tiles = t.tiles; G.trees = t.trees; G.trees0 = t.trees.slice(); G.nodes = t.nodes; G.nodeGrid = t.nodeGrid;
   // resource nodes added for online spawns (not part of the generated terrain)
   for (const [x, y, res, p] of (S as any).xn || []) applyExtraNode(x, y, res, p);
-  G.ents = new Map(); G.grid = new Int32Array(W * H); G.up = [null, null, null, null]; G.floor = new Uint8Array(W * H); G.floorN = 0; G.nextId = 1; G.trains = []; G.trainOcc = new Map(); G.trucks = []; G.ships = [];
+  G.ents = new Map(); G.grid = new Int32Array(W * H); G.up = [null, null, null, null]; G.floor = new Uint8Array(W * H); G.floorN = 0; G.nextId = 1; G.trains = []; G.trainOcc = new Map(); G.trucks = []; G.wear = new Map(); G.ships = [];
   G.covGrid = null;
   G.S = S;
   G.dirty = { links: true, power: true, fluid: true };

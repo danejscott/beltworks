@@ -5,7 +5,7 @@ import { addInv, borderTiles, canAfford, chopTree, def, Ent, entAt, frontTiles, 
 import { addPoints, delivered, elevatorAccept } from './progress';
 import { updateTrains } from './trains';
 import { updateDrones } from './drones';
-import { updateTrucks } from './trucks';
+import { tickWear, updateTrucks } from './trucks';
 import { updateShips } from './ships';
 import { solarFactor } from './daynight';
 import { depletes, isDepleted, take, tickRefill } from './deplete';
@@ -83,7 +83,7 @@ export function rebuildLinks() {
       case 'rail': L.rails.push(e); break;
       case 'elevator': if ((e.o || 0) === MP.myTeam) L.elevator = e; break;
     }
-    if (d.kind !== 'belt' && d.kind !== 'tunnel' && d.kind !== 'rail' && d.kind !== 'lift') { e.ft = frontTiles(e); e.ip = inPort(e); }
+    if (d.kind !== 'belt' && d.kind !== 'tunnel' && d.kind !== 'rail' && d.kind !== 'lift') { e.ft = frontTiles(e); e.ip = inPort(e); if (d.pier) e.outDir = (e.rot + 2) & 3; }
   }
   for (const b of L.belts) { b.nb = null; b.nbld = null; b.back = false; b.sides = 0; b.side = -1; }
   const feed = (b: Ent, dir: number) => {
@@ -457,7 +457,7 @@ export function pushOut(e: Ent, item: string) {
   const ft = e.ft, n = ft.length;
   for (let k = 0; k < n; k++) {
     const i = ((e.rr || 0) + k) % n, p = ft[i];
-    if (deliverTo(p[0], p[1], e.rot, item, e.z || 0)) { e.rr = (i + 1) % n; return true; }
+    if (deliverTo(p[0], p[1], e.outDir ?? e.rot, item, e.z || 0)) { e.rr = (i + 1) % n; return true; }
   }
   return false;
 }
@@ -636,6 +636,7 @@ export function update(dt: number) {
   }
   updateTrains(dt);
   updateTrucks(dt);
+  tickWear(dt);
   updateShips(dt);
   updateDrones(dt);
   // hand crafting (each team has its own queue)

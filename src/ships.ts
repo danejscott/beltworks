@@ -3,7 +3,7 @@ import { MP, vctx } from './teams';
 import { BLD } from './data';
 import { isWater, W } from './terrain';
 import { gridPath } from './trucks';
-import { addInv, borderTiles, canAfford, Ent, G, missingText, pay, refund } from './world';
+import { addInv, borderTiles, canAfford, Ent, G, missingText, pay, pierAlong, refund } from './world';
 
 export const SHIP_CAP = 2400;
 const VMAX = 6, ACC = 2.5;
@@ -24,13 +24,35 @@ function cost(i: number): number {
 export const shipPassable = (i: number) => cost(i) >= 0;
 /** water tiles next to a port where a ship can moor */
 export function berths(p: Ent): number[] {
-  return borderTiles(p).map(([x, y]) => y * W + x).filter(i => i >= 0 && i < G.tiles.length && cost(i) >= 0);
+  const t = BLD[p.type].pier ? borderTiles(p).filter(([x, y]) => pierAlong(p, x, y) >= 3) : borderTiles(p);
+  return t.map(([x, y]) => y * W + x).filter(i => i >= 0 && i < G.tiles.length && cost(i) >= 0);
+}
+/** berths no other ship has claimed */
+function freeBerths(p: Ent, me: Ship): number[] {
+  const taken = new Set<number>();
+  for (const o of G.ships) if (o !== me && (o as any).bay >= 0 && o.sched[o.si] === p.id) taken.add((o as any).bay);
+  // keep ships a tile apart along the pier
+  return berths(p).filter(i => !taken.has(i) && !taken.has(i - 1) && !taken.has(i + 1) && !taken.has(i - W) && !taken.has(i + W));
+}
+/** where to wait at anchor when every berth is busy */
+function anchorage(p: Ent, me: Ship): number[] {
+  const busy = new Set<number>();
+  for (const o of G.ships) if (o !== me) { busy.add(Math.floor(o.y) * W + Math.floor(o.x)); if ((o as any).qspot >= 0) busy.add((o as any).qspot); }
+  const out: number[] = [];
+  for (let r = 4; r <= 14 && out.length < 30; r += 2) for (let k = 0; k < 24; k++) {
+    const a = k / 24 * Math.PI * 2, x = Math.round(p.x + p.w / 2 + Math.cos(a) * r), y = Math.round(p.y + p.h / 2 + Math.sin(a) * r);
+    if (x < 1 || y < 1 || x >= W - 1 || y >= G.tiles.length / W - 1) continue;
+    const i = y * W + x;
+    if (cost(i) >= 0 && !busy.has(i) && !busy.has(i + 1) && !busy.has(i - 1) && !busy.has(i + W) && !busy.has(i - W)) out.push(i);
+  }
+  return out;
 }
 /** how many water tiles touch a would-be port (it has to sit on the shore) */
 export function shoreTiles(x: number, y: number, w: number, h: number) {
   return borderTiles({ x, y, w, h }).filter(([bx, by]) => bx >= 0 && by >= 0 && bx < W && by < W && isWater(G.tiles[by * W + bx])).length;
 }
-export function findShipPath(from: number, p: Ent) { return gridPath(from, new Set(berths(p)), cost, p.x + p.w / 2, p.y + p.h / 2); }
+export function findShipPath(from: number, p: Ent) { return gridPath(from, new Set(berths(p)), cost, p.x + p.w / 2, p.y + p.h / 2, 1.3, 2000000); }
+const route = (from: number, goals: number[], p: Ent) => gridPath(from, new Set(goals), cost, p.x + p.w / 2, p.y + p.h / 2, 1.3, 2000000);
 export const shipPorts = (): Ent[] => (G.L ? G.L.ports : []);
 
 export function buyShip(home: Ent, target: Ent | null): string | null {
@@ -71,13 +93,35 @@ export function updateShips(dt: number) {
         s.retryT -= dt;
         if (s.retryT > 0) break;
         const here = Math.floor(s.y) * W + Math.floor(s.x);
-        const path = findShipPath(here, p);
-        if (!path) { s.state = 'nopath'; s.retryT = 6; s.v = 0; break; }
-        s.path = path; s.pi = 0; s.state = path.length ? 'moving' : 'loading'; s.waitT = 0; s.idleT = 0;
+        const S: any = s;
+        const free = freeBerths(p, s);
+        if (free.length) {
+          const path = route(here, free, p);
+          if (!path) { s.state = 'nopath'; s.retryT = 6; s.v = 0; S.bay = -1; break; }
+          S.bay = path.length ? path[path.length - 1] : here; S.qspot = -1;
+          s.path = path; s.pi = 0; s.state = path.length ? 'moving' : 'loading'; s.waitT = 0; s.idleT = 0;
+        } else {
+          // every berth is taken: wait at anchor nearby and try again shortly
+          S.bay = -1;
+          if (S.qspot === here) { s.state = 'queued'; s.retryT = 2; s.v = 0; break; }
+          const q = anchorage(p, s);
+          const path = q.length ? route(here, q, p) : null;
+          if (!path) { s.state = 'queued'; s.retryT = 3; s.v = 0; S.qspot = here; break; }
+          S.qspot = path.length ? path[path.length - 1] : here;
+          s.path = path; s.pi = 0; s.state = 'moving'; S.toQueue = 1;
+        }
+        break;
+      }
+      case 'queued': {
+        s.retryT -= dt; s.v = 0;
+        if (s.retryT <= 0) { s.state = 'idle'; s.retryT = 0; }
         break;
       }
       case 'moving': {
-        if (s.pi >= s.path.length) { s.state = 'loading'; s.v = 0; s.waitT = 0; s.idleT = 0; break; }
+        if (s.pi >= s.path.length) {
+          if ((s as any).toQueue) { (s as any).toQueue = 0; s.state = 'queued'; s.retryT = 2; s.v = 0; break; }
+          s.state = 'loading'; s.v = 0; s.waitT = 0; s.idleT = 0; break;
+        }
         const nxt = s.path[s.pi];
         if (!shipPassable(nxt)) { s.state = 'idle'; s.retryT = 0; s.v = 0; break; }
         const left = s.path.length - s.pi;
@@ -97,10 +141,12 @@ export function updateShips(dt: number) {
       }
       case 'loading': {
         s.waitT += dt;
+        // moored: swing round to lie alongside the pier
+        if (BLD[p.type].pier) { let da = p.rot * Math.PI / 2 - s.a; while (da > Math.PI / 2) da -= Math.PI; while (da < -Math.PI / 2) da += Math.PI; s.a += da * Math.min(1, dt * 1.5); }
         const moved = transfer(s, p, dt);
         s.idleT = moved ? 0 : s.idleT + dt;
         const full = p.mode === 'load' ? s.tot >= SHIP_CAP : s.tot <= 0;
-        if (s.sched.length > 1 && ((s.waitT > 3 && (full || s.idleT > 2)) || s.waitT > 90)) { s.si = (s.si + 1) % s.sched.length; s.state = 'idle'; s.retryT = 0; }
+        if (s.sched.length > 1 && ((s.waitT > 3 && (full || s.idleT > 2)) || s.waitT > 90)) { s.si = (s.si + 1) % s.sched.length; s.state = 'idle'; s.retryT = 0; (s as any).bay = -1; }
         break;
       }
     }

@@ -122,6 +122,7 @@ export function buildTerrain() {
   // tile texture
   T3.data = new Uint8Array(W * H * 4);
   for (let i = 0; i < W * H; i++) { T3.data[i * 4] = G.tiles[i]; T3.data[i * 4 + 1] = G.trees[i] ? 255 : 0; T3.data[i * 4 + 3] = 255; }
+  for (const [i, v] of G.wear) T3.data[i * 4 + 2] = v;
   if (T3.tex) T3.tex.dispose();
   T3.tex = new THREE.DataTexture(T3.data, W, H, THREE.RGBAFormat, THREE.UnsignedByteType);
   T3.tex.magFilter = THREE.NearestFilter; T3.tex.minFilter = THREE.NearestFilter; T3.tex.needsUpdate = true;
@@ -189,6 +190,8 @@ vec3 terrainColor(){
     c *= 1.0 + sin(uTime*1.3 + dot(w, vec2(0.35, 0.22)) + vn(w*0.15)*5.0) * 0.02;
     c = mix(c, c * vec3(1.12, 1.08, 0.8), smoothstep(0.78, 0.9, vn(w*2.3 + 40.0)) * 0.4);
   } else if (t == 2 || t == 3) c *= 1.0 + (vn(w*14.0) - 0.5) * 0.12 * fine;
+  // worn ground where trucks drive: packed dirt with faint tyre ruts
+  if (s.b > 0.01 && t < 4) { float ww = smoothstep(0.0, 0.7, s.b) * (0.55 + 0.45 * vn(w * 3.0)); c = mix(c, vec3(0.36, 0.3, 0.22) * (0.85 + 0.2 * vn(w * 11.0)), ww * 0.85); }
   if (s.g > 0.5) { float farT = smoothstep(uTreeR * 0.85, uTreeR, length(w - uCamT)); c = mix(c, vec3(0.13,0.2,0.1) + vn(w*2.0)*0.04, 0.6 * farT); c *= 1.0 - 0.12 * (1.0 - farT); }
   // cliffs: steep slopes show layered rock
   vec3 fn = normalize(cross(dFdx(vW), dFdy(vW)));
@@ -243,6 +246,8 @@ export function terrainTileChanged(x: number, y: number) {
   T3.data[i * 4 + 1] = G.trees[i] ? 255 : 0;
   T3.dirtyT = 1;
 }
+/** ground wear changed on a tile */
+export function setWear(i: number, v: number) { if (!T3.data) return; T3.data[i * 4 + 2] = v; T3.dirtyT = T3.dirtyT || 1; }
 export function terrainTick(dt: number, time: number) {
   T3.uniforms.uTime.value = time;
   if (T3.group) {

@@ -218,7 +218,7 @@ export function portArrows(e: { type: string; x: number; y: number; w: number; h
   }
   const hasIn = PORTED.has(d.kind) && !(d.kind === 'gen' && !(d.fuels && Object.keys(d.fuels).some(f => !ITEMS[f].fluid)));
   const hasOut = OUT_KINDS.has(d.kind) || !!d.waste;
-  if (hasOut) { const [fx, fy] = frontTiles(e)[0]; out.push([fx, fy, r, true]); }
+  if (hasOut) { const [fx, fy] = frontTiles(e)[0]; out.push([fx, fy, d.pier ? (r + 2) & 3 : r, true]); }
   if (hasIn) { const [ix, iy] = inPort(e); out.push([ix, iy, r, false]); }
   return out;
 }

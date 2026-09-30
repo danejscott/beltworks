@@ -213,6 +213,7 @@ export interface BDef {
   reach?: number;        // power pole wire reach
   mw?: number;           // generator output
   fuels?: Record<string, number>; // seconds of full-power burn per unit
+  pier?: boolean;        // harbors: a pier built from the shore out over water
   water?: number;        // generator water per minute at full power
   cap?: number;          // storage / tank / battery capacity
   pipeRate?: number;     // pipes: units per minute
@@ -283,6 +284,7 @@ export const BLD: Record<string, BDef> = {
   locomotive: { n: 'Locomotive', w: 1, h: 1, cat: 'trans', kind: 'train', cost: { rotor: 10, reinforced_plate: 20, cable: 50 }, col: '#d0503a', desc: 'Click a railway to place a train. Click the train to add wagons and a schedule.', noRotate: false },
   wagon: { n: 'Freight Wagon', w: 1, h: 1, cat: 'trans', kind: 'wagon', hidden: true, cost: { iron_plate: 40, reinforced_plate: 10 }, col: '#8a7a6a', desc: 'Holds 2000 items.' },
   ship_port: { n: 'Ship Port', w: 3, h: 3, cat: 'trans', kind: 'port', power: 15, cap: 4000, cost: { concrete: 60, reinforced_plate: 20, cable: 30 }, col: '#3a7ab0', desc: 'Build it on the shore, touching a lake or the sea. Buy ships in its panel and choose which ports each ship sails between. Belt items into the blue input; set Load or Unload.' },
+  harbor: { n: 'Harbor', w: 7, h: 4, cat: 'trans', kind: 'port', pier: true, power: 20, cap: 8000, cost: { concrete: 100, reinforced_plate: 30, cable: 40, iron_rod: 60 }, col: '#3a7ab0', desc: 'A concrete pier: build it from the beach out over the water (the arrow end goes to sea). Ships moor alongside it — several at once — and trucks park at its land end. Belts go in at the blue arrow and come out at the orange one, both on the land end. Buy ships in its panel; set Load or Unload.' },
   ship: { n: 'Cargo Ship', w: 1, h: 1, cat: 'trans', kind: 'vehicle', hidden: true, cost: { reinforced_plate: 30, rotor: 10, iron_plate: 60 }, col: '#3a7ab0', desc: 'Carries 2400 items across water between Ship Ports.' },
   outpost: { n: 'Outpost', w: 3, h: 3, cat: 'trans', kind: 'outpost', area: 8, reach: 16, mw: 10, noRotate: true, cost: { concrete: 60, iron_plate: 80, cable: 40 }, col: '#e89a3a', desc: 'A second base for far-away regions: 10 MW of free power in its area, wires to your grid like a pole, and a fast-travel point (O) in Easy, Normal and Creative. Items still have to be shipped home to the HUB.' },
   truck_station: { n: 'Truck Station', w: 3, h: 3, cat: 'trans', kind: 'tstation', power: 10, cap: 2000, cost: { iron_plate: 30, rotor: 4, concrete: 20 }, col: '#c98a3a', desc: 'Trucks drive between Truck Stations over open ground — no track needed. Belt items into the blue input; set Load or Unload; buy trucks in its panel.' },
@@ -308,7 +310,7 @@ export const CATS = [
   { id: 'log', n: 'Logistics', types: [['belt4', 'belt3', 'belt2', 'belt1'], 'tunnel', 'splitter', 'merger', 'sorter', ['storage2', 'storage'], 'sink'] },
   { id: 'power', n: 'Power', types: ['pole1', 'pole2', 'tower', 'biomass_burner', 'coal_gen', 'fuel_gen', 'geothermal', 'solar', 'nuclear_plant', 'battery'] },
   { id: 'fluid', n: 'Fluids', types: [['pipe2', 'pipe1'], 'ptunnel', 'tank'] },
-  { id: 'trans', n: 'Transport', types: ['rail', 'station', 'locomotive', 'rail_signal', 'path_signal', 'truck_station', 'ship_port', 'outpost', 'drone_port'] },
+  { id: 'trans', n: 'Transport', types: ['rail', 'station', 'locomotive', 'rail_signal', 'path_signal', 'truck_station', 'harbor', 'outpost', 'drone_port'] },
   { id: 'struct', n: 'Floors', types: ['foundation', 'lift_up', 'lift_down', 'pipe_lift'] },
   { id: 'special', n: 'Special', types: ['elevator', 'statue', 'lamp'] },
 ] as { id: string; n: string; types: (string | string[])[] }[];
@@ -327,7 +329,7 @@ export const MILESTONES: Milestone[] = [
   { id: 't1b', tier: 1, n: 'Logistics Mk2', req: { reinforced_plate: 50, screw: 500 }, un: ['belt2', 'tunnel', 'sorter', 'truck_station', 'truck', 'outpost', 'foundation', 'lift_up', 'lift_down'], tip: 'Outposts give far-away regions free starter power and a fast-travel point (O). Build upward! Foundations (Floors tab, or press PageUp) let you build on up to three floors, and Conveyor Lifts move items between them. Trucks: place two Truck Stations and buy a truck in one of their panels. Belt Tunnels let belts cross each other. Blueprints (Ctrl+C / B) are always available — copy a line, paste it five times!' },
   { id: 't1c', tier: 1, n: 'Resource Sink', req: { reinforced_plate: 50, rotor: 25, cable: 100 }, un: ['sink'], tip: 'Anything fed into a Resource Sink earns Points → Coupons → Shop (K).' },
   { id: 't2a', tier: 2, n: 'Frameworks', req: { rotor: 50, reinforced_plate: 100 }, un: ['modular_frame', 'smart_plating', 'elevator'], tip: 'The Space Elevator (Special tab) is your big goal. Belt Smart Plating into it!' },
-  { id: 't2c', tier: 2, n: 'Railways', req: { reinforced_plate: 100, rotor: 40, cable: 200 }, un: ['rail', 'station', 'locomotive', 'wagon', 'tower', 'ship_port', 'ship', 'rail_signal', 'path_signal'], tip: 'Ship Ports on lake shores let cargo ships carry goods across water. Place two Train Stations, click one and use Quick Route: it lays the track and builds a train for you. Great for far-away resources!' },
+  { id: 't2c', tier: 2, n: 'Railways', req: { reinforced_plate: 100, rotor: 40, cable: 200 }, un: ['rail', 'station', 'locomotive', 'wagon', 'tower', 'harbor', 'ship_port', 'ship', 'rail_signal', 'path_signal'], tip: 'Ship Ports on lake shores let cargo ships carry goods across water. Place two Train Stations, click one and use Quick Route: it lays the track and builds a train for you. Great for far-away resources!' },
   { id: 't2b', tier: 2, n: 'Coal Power', req: { modular_frame: 20, cable: 300, rotor: 50 }, un: ['coal_gen', 'water_extractor', 'pipe1', 'ptunnel', 'tank', 'solar', 'pipe_lift'], tip: 'Coal Generators need Coal by belt AND Water by pipe. Place a Water Extractor on a lake. Solar Panels are free power — but only while the sun is up.' },
   { id: 'p1', tier: 2, phase: 1, n: 'Elevator Phase 1', req: { smart_plating: 50 }, unlockTiers: [3, 4] },
 
@@ -421,7 +423,7 @@ export const primaryOut = (r: Recipe) => Object.keys(r.out)[0];
 export const HEIGHT: Record<string, number> = {
   miner1: 0.85, miner2: 0.95, miner3: 1.05, harvester: 0.7, smelter: 1.1, constructor: 0.9, assembler: 1.25, foundry: 1.45,
   refinery: 1.7, manufacturer: 1.6, water_extractor: 0.55, oil_extractor: 1.0, storage: 0.9, storage2: 1.2, sink: 0.8,
-  tank: 1.3, biomass_burner: 0.9, coal_gen: 1.4, solar: 0.9, nuclear_plant: 3.0, ship_port: 0.4, outpost: 1.0, packager: 1.6, blender: 2.2, particle_accelerator: 2.6, truck_station: 0.35, fuel_gen: 1.5, geothermal: 0.7, battery: 1.0, station: 0.35, drone_port: 0.4,
+  tank: 1.3, biomass_burner: 0.9, coal_gen: 1.4, solar: 0.9, nuclear_plant: 3.0, ship_port: 0.4, harbor: 0.5, outpost: 1.0, packager: 1.6, blender: 2.2, particle_accelerator: 2.6, truck_station: 0.35, fuel_gen: 1.5, geothermal: 0.7, battery: 1.0, station: 0.35, drone_port: 0.4,
   hub: 1.15, elevator: 0.6, statue: 0.5, lamp: 0.25, splitter: 0.32, merger: 0.32, sorter: 0.32, tower: 0.3, pole1: 0, pole2: 0,
 };
 export const heightOf = (type: string) => HEIGHT[type] ?? 0.8;
