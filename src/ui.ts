@@ -1,4 +1,5 @@
 import { buildingIconURL, itemIconURL } from './atlas';
+import { isDepleted, nodeCap, remaining } from './deplete';
 import { NET } from './net';
 import { fmtCode } from './online';
 import { online, run } from './cmd';
@@ -24,8 +25,8 @@ import { locateHome, scanCol } from './explore';
 
 export const ic = (k: string, s = 18) => `<img class="ic" src="${itemIconURL(k)}" width="${s}" height="${s}" alt="">`;
 export const costHTML = (c: Cost, mult = 1) => Object.keys(c).map(k => { const have = G.S.inv[k] || 0, need = c[k] * mult; return `<span class="cost ${have >= need ? '' : 'short'}">${ic(k, 16)}${fmt(need)}</span>`; }).join(' ');
-const ST_TXT: Record<string, string> = { work: 'Working', starve: 'Waiting for input', block: 'Output backed up', idle: 'Idle', nopower: 'No power — build a Power Pole nearby', lowpower: 'Not enough power (running slow)', noout: 'Connect a pipe!' };
-const ST_HEX: Record<string, string> = { work: '#4cc38a', starve: '#f2c94c', block: '#ef5b5b', idle: '#6b7482', nopower: '#9a7aff', lowpower: '#ff9a3a', noout: '#ef5b5b' };
+const ST_TXT: Record<string, string> = { work: 'Working', starve: 'Waiting for input', block: 'Output backed up', idle: 'Idle', nopower: 'No power — build a Power Pole nearby', lowpower: 'Not enough power (running slow)', noout: 'Connect a pipe!', depleted: 'Node ran dry — move this to a new node' };
+const ST_HEX: Record<string, string> = { work: '#4cc38a', starve: '#f2c94c', block: '#ef5b5b', idle: '#6b7482', nopower: '#9a7aff', lowpower: '#ff9a3a', noout: '#ef5b5b', depleted: '#8a8f99' };
 export const status = (st: string, txt?: string) => `<span class="stat"><span class="led" style="background:${ST_HEX[st]};color:${ST_HEX[st]}"></span>${txt || ST_TXT[st] || st}</span>`;
 
 // ---------------------------------------------------------------------------
@@ -101,7 +102,7 @@ function bldTip(type: string) {
 export function updateHint() {
   const t = tool.t;
   let h: string;
-  if (!t) h = '<b>Drag</b> pan · <b>Wheel</b> zoom · <b>Click</b> ore to mine, trees to chop, buildings to inspect · <b>1–0</b> build · <b>F</b> belt · <b>Q</b> copy building · <b>M</b> map';
+  if (!t) h = '<b>Drag</b> pan · <b>Wheel</b> zoom · <b>Click</b> ore to mine, trees to chop, buildings to inspect · <b>1–0</b> build · <b>F</b> belt · <b>Q</b> copy building · <b>M</b> map · <b>[ ]</b> rotate view';
   else if (t.k === 'decon') h = '<b>Deconstruct:</b> click one thing, or drag a box (also clears trees). 100% refund · <b>X</b>/<b>Right-click</b> exit';
   else if (t.k === 'bpsel') h = '<b>Blueprint:</b> drag a box around what you want to copy · <b>Esc</b> cancel';
   else if (t.k === 'paste') h = `<b>Pasting ${esc(t.bp.name || 'copy')}</b> (${t.bp.ents.length} pieces) · click to place · <b>R</b> rotate · cost ${costHTML(bpCost(t.bp))} · <b>Right-click</b> done`;
@@ -332,6 +333,10 @@ function inspDyn(e: Ent): string {
       break;
     }
     case 'miner': case 'extractor': {
+      if (e.node && remaining(e.node) !== null) {
+        const left = remaining(e.node)!, frac = left / nodeCap(e.node);
+        h += `<div class="sm" style="margin-bottom:4px">Node reserve: <b style="color:${frac < 0.15 ? '#ef5b5b' : frac < 0.4 ? '#f2c94c' : '#4cc38a'}">${Math.round(frac * 100)}%</b> left (${Math.floor(left).toLocaleString()} of ${nodeCap(e.node).toLocaleString()})${G.S.mode === 'easy' ? ' · refills an hour after running dry' : ''}</div>`;
+      }
       const res = d.on === 'water' ? 'water' : d.on === 'oil' ? 'crude_oil' : e.node.res;
       const pm = d.on === 'water' ? 1 : PURITY[e.node.p].m;
       h += `${status(e.st)}<div class="bufrow" style="margin-top:8px">${ic(res, 22)}<b>${ITEMS[res].n}</b>${d.on !== 'water' ? `<span class="dim">· ${PURITY[e.node.p].n} node</span>` : ''}</div>`;
@@ -713,7 +718,7 @@ const HELP = `<div class="help cols"><div>
 <li><kbd>X</kbd> deconstruct — click or drag a box (also clears trees)</li>
 <li><kbd>Ctrl+C</kbd> copy an area · <kbd>Ctrl+V</kbd> paste · <kbd>B</kbd> blueprint library</li>
 <li>Drag empty ground / right-drag / <kbd>WASD</kbd> pan · wheel zoom · <kbd>G</kbd> or <kbd>Space</kbd> locate & fly to your HUB (the minimap arrow always points home)</li>
-<li>Middle-drag or <kbd>[</kbd> <kbd>]</kbd> rotate the camera · middle-drag up/down or <kbd>,</kbd> <kbd>.</kbd> tilt it</li>
+<li>Middle-drag or <kbd>[</kbd> <kbd>]</kbd> rotate the camera · middle-drag up/down or <kbd>,</kbd> <kbd>.</kbd> tilt it · <kbd>\</kbd> resets the view (your angle is remembered per world)</li>
 <li><kbd>PageUp</kbd>/<kbd>PageDown</kbd> (or <kbd>E</kbd>/<kbd>Z</kbd>) change floor</li>
 <li><kbd>H</kbd> milestones · <kbd>C</kbd> craft · <kbd>P</kbd> stats · <kbd>K</kbd> shop · <kbd>M</kbd> map · <kbd>I</kbd> inventory (search, rates, goal needs) · <kbd>V</kbd> power areas</li>
 <li><kbd>O</kbd> fast travel between your HUB and Outposts (not in Hard) · <kbd>G</kbd> go home</li>
@@ -801,10 +806,13 @@ function drawBigMap() {
   g.drawImage(mapBase, 0, 0, c.width, c.height);
   g.drawImage(mapOver!, 0, 0, c.width, c.height);
   G.nodes.forEach((n, i) => {
-    if (mapFilter[n.res] === false || !G.disc[i]) return;
+    // oil is always on the map (surveyed from the start) — everything else once you've found it
+    if (mapFilter[n.res] === false || (!G.disc[i] && n.res !== 'crude_oil')) return;
+    g.globalAlpha = isDepleted(n) ? 0.3 : !G.disc[i] ? 0.6 : 1;
     g.fillStyle = RES_COL[n.res] || ITEMS[n.res].c;
     g.beginPath(); g.arc((n.x + 1) * k, (n.y + 1) * k, 2.6, 0, 7); g.fill();
     if (n.p === 2) { g.strokeStyle = '#ffd24a'; g.lineWidth = 1.2; g.stroke(); }
+    g.globalAlpha = 1;
   });
   G.feats.forEach((f, i) => {
     if (!G.fdisc[i] || G.S.looted.includes(f.id)) return;
@@ -873,6 +881,9 @@ function renderTip() {
 
 // ---------------------------------------------------------------------------
 // Actions
+let resetCam = () => { };
+export function setResetCamera(f: () => void) { resetCam = f; }
+export function resetCamera() { resetCam(); }
 export async function saveNow() { const ok = await saveGame(); toast(ok ? '💾 Saved' : 'Save failed', ok ? 'good' : 'bad'); }
 let onNewGame: () => void = () => { };
 export function setNewGameHandler(f: () => void) { onNewGame = f; }

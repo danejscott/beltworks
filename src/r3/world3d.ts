@@ -19,6 +19,7 @@ import { B, M, Model, std } from './mat';
 import * as MD from './models';
 import { T3, tunnelInside, updateCuts } from './terrain3d';
 import { MP } from '../teams';
+import { isDepleted } from '../deplete';
 
 // ---------------------------------------------------------------------------
 // Team colours (online): the orange trim of a player's buildings and vehicles becomes their colour
@@ -197,15 +198,39 @@ function pushModel(L: Layer, key: string, model: Model, m: THREE.Matrix4, mat?: 
 const OUT_KINDS = new Set(['machine', 'miner', 'harvester', 'storage', 'station', 'tstation', 'port', 'drone']);
 const inArrowModel = () => mdl('arrowIn', () => { const b = new B(); b.add(new THREE.ConeGeometry(0.2, 0.36, 3), M.glowBlue, 0, 0.03, 0, 0, 0, -HP); return b.build(); });
 const outArrowModel = () => mdl('arrowOut', () => { const b = new B(); b.add(new THREE.ConeGeometry(0.2, 0.36, 3), M.glowOrange, 0, 0.03, 0, 0, 0, -HP); return b.build(); });
-function pushPortArrows(L: Layer, e: Ent, pre: string) {
+/** where items go in and come out: [tile x, tile y, direction the item moves, out?] */
+export function portArrows(e: { type: string; x: number; y: number; w: number; h: number; rot: number }): [number, number, number, boolean][] {
   const d = BLD[e.type];
-  if (!d) return;
+  if (!d) return [];
+  const out: [number, number, number, boolean][] = [];
+  const r = e.rot;
+  if (d.kind === 'splitter' || d.kind === 'sorter' || d.kind === 'merger') {
+    // 1x1 logistics: splitters take from behind and send forward/left/right; mergers the reverse
+    const back = (r + 2) & 3, sides = [r, (r + 3) & 3, (r + 1) & 3];
+    if (d.kind === 'merger') {
+      for (const s of [back, (r + 3) & 3, (r + 1) & 3]) out.push([e.x + DX[s], e.y + DY[s], (s + 2) & 3, false]);
+      out.push([e.x + DX[r], e.y + DY[r], r, true]);
+    } else {
+      out.push([e.x + DX[back], e.y + DY[back], r, false]);
+      for (const s of sides) out.push([e.x + DX[s], e.y + DY[s], s, true]);
+    }
+    return out;
+  }
   const hasIn = PORTED.has(d.kind) && !(d.kind === 'gen' && !(d.fuels && Object.keys(d.fuels).some(f => !ITEMS[f].fluid)));
   const hasOut = OUT_KINDS.has(d.kind) || !!d.waste;
-  const dx = DX[e.rot], dy = DY[e.rot], ry = -e.rot * HP;
-  const free = (x: number, y: number) => { if (pre) return true; const n = entAt(x, y, e.z || 0); return !(n && (BLD[n.type].kind === 'belt' || BLD[n.type].kind === 'tunnel')); };
-  if (hasOut) { const [fx, fy] = frontTiles(e)[0]; if (free(fx, fy)) pushModel(L, pre + 'arrowOut', outArrowModel(), compose(fx + 0.5 - dx * 0.2, 0.03, fy + 0.5 - dy * 0.2, ry, 1.5, 0.3, 1.5), undefined, false); }
-  if (hasIn) { const [ix, iy] = inPort(e); if (free(ix, iy)) pushModel(L, pre + 'arrowIn', inArrowModel(), compose(ix + 0.5 + dx * 0.2, 0.03, iy + 0.5 + dy * 0.2, ry, 1.5, 0.3, 1.5), undefined, false); }
+  if (hasOut) { const [fx, fy] = frontTiles(e)[0]; out.push([fx, fy, r, true]); }
+  if (hasIn) { const [ix, iy] = inPort(e); out.push([ix, iy, r, false]); }
+  return out;
+}
+function pushPortArrows(L: Layer, e: Ent, pre: string, force = false) {
+  const free = (x: number, y: number) => { if (pre || force) return true; const n = entAt(x, y, e.z || 0); return !(n && (BLD[n.type].kind === 'belt' || BLD[n.type].kind === 'tunnel')); };
+  // arrows on a selected building float above belts so they're always visible
+  const h = force ? 0.55 : 0.03, sc = force ? 1.8 : 1.5, sy = force ? 0.6 : 0.3;
+  for (const [x, y, dir, isOut] of portArrows(e)) {
+    if (!free(x, y)) continue;
+    const off = isOut ? -0.2 : 0.2;   // nudged toward the building
+    pushModel(L, pre + (isOut ? 'arrowOut' : 'arrowIn'), isOut ? outArrowModel() : inArrowModel(), compose(x + 0.5 + DX[dir] * off, h, y + 0.5 + DY[dir] * off, -dir * HP, sc, sy, sc), undefined, false);
+  }
 }
 const arrowModel = () => mdl('arrow', () => { const b = new B(); b.add(new THREE.ConeGeometry(0.16, 0.3, 3), M.orange, 0, 0.03, 0, 0, 0, -HP); return b.build(); });
 let cargoMat: THREE.Material | null = null;
@@ -341,6 +366,7 @@ function rebuildStatic(real: number) {
   for (const n of G.nodes) {
     if (G.grid[n.y * W + n.x] || !inR(n.x, n.y, 2)) continue;
     const v = n.id % 3;
+    if (isDepleted(n)) { pushModel(SL, 'node:spent', mdl('node:spent', () => MD.nodeModel('coal', 0)), compose(n.x + 1, -0.05, n.y + 1, n.id, 0.8, 0.25, 0.8)); continue; }
     const key = 'node:' + n.res + ':' + v;
     pushModel(SL, key, mdl(key, () => MD.nodeModel(n.res, v)), compose(n.x + 1, 0, n.y + 1, (n.id * 2.39) % (Math.PI * 2), n.p === 2 ? 1.1 : n.p === 0 ? 0.85 : 1, 1, n.p === 2 ? 1.1 : n.p === 0 ? 0.85 : 1));
   }
@@ -627,6 +653,8 @@ export function update3D(time: number, real: number, dt: number, labels: Label3[
     const rs = 1.1 + 0.25 * Math.sin(real * 4);
     DL.get('ring', ringGeo, ringMat, false, true).push(compose(mk.x, 0.15, mk.y, 0, rs, 1, rs), COL);
   }
+  // the selected / hovered building shows where things go in and out, even under belts
+  for (const se of [view.inspect, view.hover]) if (se && G.ents.has(se.id)) { ZO = (se.z || 0) * LH; pushPortArrows(DL, se, 'sel', true); }
   // power areas
   ZO = view.level * LH;
   if (view.showPower) for (const p of G.L.poles) {

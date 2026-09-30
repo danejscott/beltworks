@@ -31,6 +31,7 @@ export interface State {
   lenV?: number;                // 1 = milestone amounts scale with difficulty (game length)
   rngS?: number;                // state of the world's random generator (so every copy rolls the same)
   xn?: [number, number, string, number][]; // extra resource nodes (online spawns)
+  depV?: number; dep?: Record<number, number>; depT?: Record<number, number>; // fuel nodes run out (see deplete.ts)
   cq?: { q: string[]; active: boolean; t: number }; // hand-crafting queue
 }
 export interface Line { id: number; a: number; b: number; cells: number[]; split: number }
@@ -143,9 +144,12 @@ export function chopTree(x: number, y: number, give = true) {
 
 // ---------------------------------------------------------------------------
 // Placement
-/** index along the front/back edge of the single output (and input) port; rotation-symmetric */
+/** index along the front/back edge of the single output (and input) port.
+ *  Worlds from version 2 on: always left of centre as seen from behind the building (the middle when the edge is
+ *  an odd number of tiles). Older worlds keep their original placement so existing belts stay connected. */
 export function portIdx(e: { w: number; h: number; rot: number }) {
   const s = e.rot & 1 ? e.w : e.h;
+  if ((G.S?.portsV || 0) >= 2) return s & 1 ? (s - 1) / 2 : (e.rot === 0 || e.rot === 3) ? s / 2 - 1 : s / 2;
   return e.rot < 2 ? Math.floor(s / 2) : Math.ceil(s / 2) - 1;
 }
 /** the one tile in front of the building where its output comes out */
@@ -213,7 +217,7 @@ export function canPlace(type: string, x: number, y: number, rot: number, o: { f
     if (t === TT.ROCK && d.kind !== 'rail') return 'Can\'t build on rock (only railways can tunnel through mountains)';
     if (G.featGrid && G.featGrid[ty * W + tx]) return G.feats[G.featGrid[ty * W + tx] - 1].kind === 'site' ? 'A crash site is in the way (click it to loot it)' : 'A power crystal is in the way (click it to collect it)';
     if (d.on === 'water') { if (!isWater(t)) return 'Must be placed entirely on water'; }
-    else if (!d.logistic && !isLand(t)) return 'Can\'t build that on water';
+    else if (!d.logistic && !isLand(t) && !(d.on === 'oil' && G.nodeGrid[ty * W + tx])) return 'Can\'t build that on water';
     const n = G.nodeGrid[ty * W + tx];
     if (n) {
       if (!d.on || d.on === 'water') return 'Resource node in the way';
@@ -418,7 +422,7 @@ export function newState(seed: number, o: { name?: string; mode?: string; size?:
     seed, inv, unlocked: new Set(START_UNLOCKS), done: new Set(), maxTier: 0, elev: {}, time: 0, won: false,
     flags: {}, delivered: {}, speed: 1, points: 0, coupons: 0, couponsEarned: 0, shop: {}, stationSeq: 0, trainSeq: 0,
     name: o.name || 'New World', mode, size: o.size || 1024, regrow: [],
-    dayNight: o.dayNight !== false, genV: 6, portsV: 1, lenV: 1, lines: [], looted: [], alts: [], altOffer: null, ach: {}, made: {}, discN: null, discF: null, truckSeq: 0, lineSeq: 0,
+    dayNight: o.dayNight !== false, genV: 7, portsV: 2, lenV: 1, depV: 1, lines: [], looted: [], alts: [], altOffer: null, ach: {}, made: {}, discN: null, discF: null, truckSeq: 0, lineSeq: 0,
   };
   if (mode === 'creative') {
     for (const k in BLD) S.unlocked.add(k);

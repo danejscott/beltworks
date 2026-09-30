@@ -1,7 +1,7 @@
 // Online worlds: join codes, creating a server world, and spawning new players far apart with a fair start.
 // Pure game logic — used by the server (to run the world) and by the client (to read team info).
 import { BLD, ITEMS } from './data';
-import { biomeAtTiles, isLand, TT, W, H } from './terrain';
+import { biomeAtTiles, isLand, RINGS, TT, W, H } from './terrain';
 import { addTeam, enableTeams, MP, TeamInfo, wrand } from './teams';
 import { canPlace, G, newState, place, resetWorld } from './world';
 
@@ -39,6 +39,11 @@ export function pickSpawn(rand: () => number = wrand): { x: number; y: number } 
   const hubs = [...G.ents.values()].filter(e => BLD[e.type].kind === 'hub');
   const land = G.S.size, minSep = land * 0.16;
   const taken = new Set([...MP.info.values()].map(i => (i as any).biome).filter(Boolean));
+  // fairness: every spawn should be about as far from the late-game resources as the map intends
+  // (resources sit in rings around the map's middle, so a spawn near the edge would otherwise start next to uranium)
+  const R = land / 2, late: [string, number][] = (['coal', 'caterium_ore', 'raw_quartz', 'crude_oil', 'sulfur', 'bauxite', 'uranium'] as string[]).map(r => [r, (RINGS[r] || [0.3])[0] * R * 0.7]);
+  const byRes = new Map<string, { x: number; y: number }[]>();
+  for (const n of G.nodes) { let a = byRes.get(n.res); if (!a) byRes.set(n.res, a = []); a.push(n); }
   let best: { x: number; y: number; s: number } | null = null;
   for (let k = 0; k < 900; k++) {
     const x = Math.floor(rand() * W), y = Math.floor(rand() * H);
@@ -51,7 +56,13 @@ export function pickSpawn(rand: () => number = wrand): { x: number; y: number } 
     const iron = Math.min(3, nodesNear(x, y, 45, 'iron_ore')), cu = Math.min(2, nodesNear(x, y, 45, 'copper_ore')), li = Math.min(2, nodesNear(x, y, 45, 'limestone'));
     const coal = nodesNear(x, y, 160, 'coal') > 0 ? 1 : 0;
     const biome = biomeAtTiles(G.tiles, x + 2, y + 2);
-    const s = Math.min(sep, minSep * 2) / minSep * 3 + iron + cu + li + coal + (waterNear(x, y, 60) ? 1 : 0) + (taken.has(biome) ? 0 : 2) + (biome === 'water' ? -5 : 0);
+    let fair = 0;
+    for (const [res, want] of late) {
+      let d = Infinity;
+      for (const n of byRes.get(res) || []) { const dd = Math.abs(n.x - x) + Math.abs(n.y - y); if (dd < d) d = dd; }
+      if (d < want) fair -= (want - d) / want * 2;
+    }
+    const s = Math.min(sep, minSep * 2) / minSep * 3 + iron + cu + li + coal + (waterNear(x, y, 60) ? 1 : 0) + (taken.has(biome) ? 0 : 2) + (biome === 'water' ? -5 : 0) + fair;
     if (!best || s > best.s) best = { x, y, s };
   }
   return best;
@@ -83,11 +94,12 @@ function nodeSpotOK(x: number, y: number) {
 /** make sure a spawn has the basics within reach (adding nodes if the terrain didn't provide them) */
 function ensureStarter(x: number, y: number, rand: () => number) {
   const cx = x + 2, cy = y + 2;
-  const want: [string, number, number, number][] = [['iron_ore', 2, 45, 1], ['copper_ore', 1, 45, 1], ['limestone', 1, 45, 1], ['coal', 1, 160, 1]];
-  for (const [res, n, r, p] of want) {
+  // [resource, how many, within radius, purity, place between d0..d1]; the first iron sits inside the HUB's power area
+  const want: [string, number, number, number, number, number][] = [['iron_ore', 1, 13, 1, 7, 12], ['iron_ore', 2, 45, 1, 12, 30], ['copper_ore', 1, 45, 1, 12, 30], ['limestone', 1, 45, 1, 12, 30], ['coal', 1, 160, 1, 40, 90]];
+  for (const [res, n, r, p, d0, d1] of want) {
     let have = nodesNear(cx, cy, r, res);
-    for (let k = 0; k < 400 && have < n; k++) {
-      const a = rand() * Math.PI * 2, d = res === 'coal' ? 40 + rand() * 50 : 12 + rand() * 18;
+    for (let k = 0; k < 600 && have < n; k++) {
+      const a = rand() * Math.PI * 2, d = d0 + rand() * (d1 - d0);
       const nx = Math.round(cx + Math.cos(a) * d), ny = Math.round(cy + Math.sin(a) * d);
       if (nodeSpotOK(nx, ny)) { addExtraNode(nx, ny, res, p); have++; }
     }

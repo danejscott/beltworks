@@ -472,6 +472,7 @@ export function initInput(canvas: HTMLCanvasElement) {
     if (k === 'pageup' || k === 'e') { ev.preventDefault(); setLevel(view.level + 1); return; }
     if (k === 'pagedown' || k === 'z') { ev.preventDefault(); setLevel(view.level - 1); return; }
     if (k === ',' || k === '.') { tiltCamera(k === ',' ? -0.08 : 0.08); return; }
+    if (k === '\\') { UI.resetCamera(); return; }
     if (k === '[' || k === ']') { rotTarget += (k === '[' ? -1 : 1) * Math.PI / 4; return; }
     if (k === 'g' || k === ' ' || k === 'home') { ev.preventDefault(); locateHome(UI.flyTo); return; }
     if (k === '=' || k === '+') { view.cam.s *= 1.2; clampCam(); }

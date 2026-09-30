@@ -10,7 +10,7 @@ import { EXTRA_MODALS, LIVE_MODALS } from './ui2';
 import { openModal } from './ui';
 
 const CSS = `
-#netbar{position:fixed;left:50%;transform:translateX(-50%);top:46px;z-index:30;display:none;gap:8px;align-items:center;background:rgba(18,22,30,.88);border:1px solid #2c3442;border-radius:999px;padding:4px 12px;font-size:12px;color:#cfd6e2;cursor:pointer;backdrop-filter:blur(4px)}
+#netbar{position:fixed;right:10px;bottom:256px;z-index:30;display:none;gap:8px;align-items:center;background:rgba(18,22,30,.88);border:1px solid #2c3442;border-radius:999px;padding:4px 12px;font-size:12px;color:#cfd6e2;cursor:pointer;backdrop-filter:blur(4px)}
 #netbar b{color:#ffd48a;letter-spacing:.5px}#netbar button{font-size:11px;padding:2px 8px;border-radius:999px}#netbar .dot{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:2px;vertical-align:-1px}
 #netbar .pl{display:inline-flex;gap:3px}
 #chat{position:fixed;left:12px;bottom:118px;z-index:30;width:340px;max-width:calc(100vw - 24px);display:none;flex-direction:column;gap:3px;pointer-events:none}

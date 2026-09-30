@@ -37,17 +37,35 @@ export const ACHS: Ach[] = [
   { id: 'night_shift', n: 'Night Shift', d: 'Have 20 machines working at night.', i: '🌙', test: () => isNight() && G.L && G.L.machines.filter((e: any) => e.st === 'work').length >= 20 },
 ];
 
-let t = 0;
-/** checks achievements; calls onUnlock for each new one */
+let t = 0, silent = true;
+/** online worlds: achievements belong to the player and live in their browser (not in the shared save) */
+let store: { key: string; o: Record<string, number> } | null = null;
+export function useAchStore(key: string | null) {
+  silent = true;
+  if (!key) { store = null; return; }
+  let o: Record<string, number> = {};
+  try { o = JSON.parse(localStorage.getItem(key) || '{}'); } catch { }
+  store = { key, o };
+  for (const id in o) if (!G.S.ach[id]) G.S.ach[id] = o[id];
+}
+/** checks achievements; calls onUnlock for each new one. The first check after loading a world only records
+ *  (so a save's old achievements don't all pop up again). */
 export function tickAchievements(dt: number, onUnlock: (a: Ach) => void) {
   t += dt;
   if (t < 2) return;
   t = 0;
   const S = G.S;
+  let changed = false;
   for (const a of ACHS) {
-    if (S.ach[a.id]) continue;
+    if (S.ach[a.id] || (store && store.o[a.id])) { if (store && !S.ach[a.id]) S.ach[a.id] = store.o[a.id]; continue; }
     let ok = false;
     try { ok = a.test(); } catch { ok = false; }
-    if (ok) { S.ach[a.id] = Math.max(1, Math.round(S.time)); onUnlock(a); }
+    if (ok) {
+      S.ach[a.id] = Math.max(1, Math.round(S.time));
+      if (store) { store.o[a.id] = S.ach[a.id]; changed = true; }
+      if (!silent) onUnlock(a);
+    }
   }
+  if (changed && store) try { localStorage.setItem(store.key, JSON.stringify(store.o)); } catch { }
+  silent = false;
 }

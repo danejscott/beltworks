@@ -426,7 +426,47 @@ function genTerrainV3(seed: number, mode: string, v = 3, land = W): Terrain {
     for (let i = 0; i < Math.max(4, Math.round(16 * area * D.rich)); i++) tryPlace('uranium', u0 * R, u1 * R, undefined, cx, cy, 300);
   }
   carvePasses(tiles, cx, cy, nodes, isl ? seed : 0);
+  if (v >= 7) offshoreOil(tiles, trees, nodes, nodeGrid, r);
   return { tiles, trees, nodes, nodeGrid };
+}
+
+/** v7: an offshore oil reserve in every lake (and a few along the sea coast), in shallow water where a well can stand */
+function offshoreOil(tiles: Uint8Array, trees: Uint8Array, nodes: ResNode[], nodeGrid: Int32Array, r: () => number) {
+  const N = W * H, comp = new Int32Array(N).fill(-1), bodies: { size: number; shallow: number[]; edge: boolean }[] = [];
+  const wet = (t: number) => t === TT.WATER || t === TT.DEEP;
+  for (let i = 0; i < N; i++) {
+    if (comp[i] >= 0 || !wet(tiles[i])) continue;
+    const id = bodies.length, b = { size: 0, shallow: [] as number[], edge: false };
+    bodies.push(b);
+    const st = [i]; comp[i] = id;
+    while (st.length) {
+      const c = st.pop()!; b.size++;
+      const x = c % W, y = (c / W) | 0;
+      if (x === 0 || y === 0 || x === W - 1 || y === H - 1) b.edge = true;
+      if (tiles[c] === TT.WATER && (b.shallow.length < 4000 || (c & 7) === 0)) b.shallow.push(c);
+      for (const n of [x > 0 ? c - 1 : -1, x < W - 1 ? c + 1 : -1, y > 0 ? c - W : -1, y < H - 1 ? c + W : -1]) if (n >= 0 && comp[n] < 0 && wet(tiles[n])) { comp[n] = id; st.push(n); }
+    }
+  }
+  const spotOK = (c: number) => {
+    const x = c % W, y = (c / W) | 0;
+    if (x < 4 || y < 4 || x > W - 6 || y > H - 6) return false;
+    for (let j = -2; j < 4; j++) for (let i = -2; i < 4; i++) if (nodeGrid[(y + j) * W + x + i]) return false;
+    for (let j = 0; j < 2; j++) for (let i = 0; i < 2; i++) if (tiles[(y + j) * W + x + i] !== TT.WATER) return false;
+    return true;
+  };
+  for (const b of bodies) {
+    if (b.size < 250 || !b.shallow.length) continue;
+    // the open sea (touches the map edge) gets a few reserves along its coast; each lake gets one
+    const want = b.edge ? Math.max(2, Math.min(10, Math.round(b.size / 90000))) : 1;
+    for (let k = 0, got = 0; k < want * 60 && got < want; k++) {
+      const c = b.shallow[Math.floor(r() * b.shallow.length)];
+      if (!spotOK(c)) continue;
+      const x = c % W, y = (c / W) | 0, id = nodes.length + 1;
+      nodes.push({ id, x, y, res: 'crude_oil', p: r() < 0.3 ? 2 : 1 });
+      for (let j = 0; j < 2; j++) for (let i = 0; i < 2; i++) { nodeGrid[(y + j) * W + x + i] = id; trees[(y + j) * W + x + i] = 0; }
+      got++;
+    }
+  }
 }
 
 /**

@@ -4,7 +4,7 @@ import { BLD, ITEMS, Milestone, RECIPES } from './data';
 import { buildAtlas, iconHooks } from './atlas';
 import { applyDayNight, C, initCore, resizeCore, rotateCamera, updateCamera } from './r3/core';
 import { initDiscovery, tickExplore } from './explore';
-import { tickAchievements } from './achievements';
+import { tickAchievements, useAchStore } from './achievements';
 import * as TK from './trucks';
 import * as EX from './explore';
 import * as PL from './planner';
@@ -110,7 +110,23 @@ function setLoading(msg: string | null) {
   el.innerHTML = `<div class="logo">BELTWORKS</div><div>${msg}</div>`;
   el.classList.remove('hidden');
 }
+/** the camera angle is remembered per world (the title screen spins it, so never inherit that) */
+const camKey = () => slot.id ? 'bw-cam-' + slot.id : NET.code ? 'bw-cam-o' + NET.code : '';
+function restoreCamAngle() {
+  C.yaw = Math.PI / 4; C.pitch = 0.98;
+  try { const o = JSON.parse(localStorage.getItem(camKey()) || 'null'); if (o && isFinite(o.yaw) && isFinite(o.pitch)) { C.yaw = o.yaw; C.pitch = o.pitch; } } catch { }
+}
+let camSaveT = 0, camLast = '';
+function saveCamAngle(dt: number) {
+  camSaveT += dt; if (camSaveT < 2) return; camSaveT = 0;
+  const k = camKey(); if (!k) return;
+  const v = JSON.stringify({ yaw: +C.yaw.toFixed(3), pitch: +C.pitch.toFixed(3) });
+  if (v !== camLast) { camLast = v; try { localStorage.setItem(k, v); } catch { } }
+}
+export function resetCameraView() { C.yaw = Math.PI / 4; C.pitch = 0.98; UI.toast('🎥 Camera view reset', ''); }
 function afterWorldReady() {
+  restoreCamAngle();
+  useAchStore(NET.on && NET.code ? `bw-ach-${NET.code}-${MP.me}` : null);
   resetStats();
   view.level = 0; C.focusY = 0;
   initDiscovery();
@@ -158,8 +174,12 @@ function playOnline(o: { code?: string; create?: any }) {
       entered = true;
       afterWorldReady();
       setLoading(null);
-      const inf = MP.info.get(MP.myTeam);
-      if (inf) { view.cam.x = inf.hx + 2; view.cam.y = inf.hy + 2; view.cam.s = 30; }
+      const goHome = (tries = 0) => {
+        const inf = MP.myTeam ? MP.info.get(MP.myTeam) : null;
+        if (inf) { view.cam.x = inf.hx + 2; view.cam.y = inf.hy + 2; view.cam.s = 30; useAchStore(`bw-ach-${NET.code}-${MP.me}`); }
+        else if (tries < 100) setTimeout(() => goHome(tries + 1), 100);
+      };
+      goHome();
       OUI.netHud();
       UI.toast(`🌐 Welcome to <b>${G.S.name}</b> — join code <b>${fmtCode(NET.code)}</b>. Use <b>📋 Invite</b> at the top to bring friends.`, 'big');
       if (!G.S.flags.tutDone) UI.startOnboarding();
@@ -250,7 +270,7 @@ function frame(ms: number) {
   const labels: Label3[] = [];
   applyDayNight();
   updateCamera();
-  if (!title.open) { tickExplore(dt, C.dist); tickAchievements(dt, a => { UI.toast(`🏆 Achievement unlocked: <b>${a.n}</b> — ${a.d}`, 'big'); sfx('tier'); }); }
+  if (!title.open) { saveCamAngle(dt); tickExplore(dt, C.dist); tickAchievements(dt, a => { UI.toast(`🏆 Achievement unlocked: <b>${a.n}</b> — ${a.d}`, 'big'); sfx('tier'); }); }
   update3D(G.S.time, now, dt, labels);
   terrainTick(dt, now);
   C.renderer.render(C.scene, C.camera);
@@ -321,6 +341,7 @@ async function boot() {
   afterWorldReady();
   UI.setNewGameHandler(exitToTitle);
   UI.setFlyTo(flyTo);
+  UI.setResetCamera(resetCameraView);
   UI.setOnLoaded(() => { afterWorldReady(); });
   initInput(canvas);
   UI.initUI();

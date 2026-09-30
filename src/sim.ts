@@ -8,6 +8,7 @@ import { updateDrones } from './drones';
 import { updateTrucks } from './trucks';
 import { updateShips } from './ships';
 import { solarFactor } from './daynight';
+import { depletes, isDepleted, take, tickRefill } from './deplete';
 import { asTeam, MP, TS, useTeam } from './teams';
 
 export const SP = 0.5; // min spacing between items on a belt (tiles)
@@ -491,6 +492,7 @@ export function update(dt: number) {
     for (const n of G.pnets) { n.hist.push([n.cap, n.lastDemand, n.batFlow]); if (n.hist.length > 90) n.hist.shift(); }
     for (const n of G.fnets) { n.flowEMA = n.flowEMA * 0.5 + n.flow * 0.5; n.flow = 0; }
     tickRegrow();
+    tickRefill();
     if (sec % hist.every === 0 && stats.elapsed > 3) sampleHistory();
   }
   for (const n of G.fnets) n.budget = n.rate * dt;
@@ -510,8 +512,12 @@ export function update(dt: number) {
       const blocked = e.ob >= cap;
       e.req = blocked ? 0 : d.power * clockPow(e.clock);
       if (!blocked) { e.tm += dt * d.rate * PURITY[e.node.p].m * e.clock * sat / 60; }
-      while (e.tm >= 1 && e.ob < cap) { e.tm -= 1; e.ob++; stat(stats.P, res, 1); }
-      e.st = blocked ? 'block' : sat < 0.999 ? 'lowpower' : 'work';
+      while (e.tm >= 1 && e.ob < cap) {
+        if (depletes(res) && take(e.node, 1) < 1) { e.tm = 0; break; }
+        e.tm -= 1; e.ob++; stat(stats.P, res, 1);
+      }
+      e.st = isDepleted(e.node) ? 'depleted' : blocked ? 'block' : sat < 0.999 ? 'lowpower' : 'work';
+      if (e.st === 'depleted') e.req = 0;
       e.pnet.demand += e.req;
     }
     if (e.ob > 0 && pushOut(e, res)) e.ob--;
@@ -527,8 +533,13 @@ export function update(dt: number) {
       const blocked = e.ob >= cap;
       const pm = d.on === 'water' || !e.node ? 1 : PURITY[e.node.p].m;
       e.req = blocked ? 0 : d.power * clockPow(e.clock);
-      if (!blocked) { const amt = dt * d.rate * pm * e.clock * sat / 60; e.ob = Math.min(cap, e.ob + amt); stat(stats.P, res, amt); }
-      e.st = !e.fnets || !e.fnets.length ? 'noout' : blocked ? 'block' : sat < 0.999 ? 'lowpower' : 'work';
+      if (!blocked) {
+        let amt = dt * d.rate * pm * e.clock * sat / 60;
+        if (e.node && depletes(res)) amt = take(e.node, amt);
+        e.ob = Math.min(cap, e.ob + amt); stat(stats.P, res, amt);
+      }
+      e.st = e.node && isDepleted(e.node) ? 'depleted' : !e.fnets || !e.fnets.length ? 'noout' : blocked ? 'block' : sat < 0.999 ? 'lowpower' : 'work';
+      if (e.st === 'depleted') e.req = 0;
       e.pnet.demand += e.req;
     }
     if (e.ob > 0) e.ob -= pushFluid(e, res, e.ob);

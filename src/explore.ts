@@ -1,5 +1,6 @@
 // Exploration: node discovery, the resource scanner, crash sites / power crystals, and hard-drive research.
 import { wrand } from './teams';
+import { isDepleted } from './deplete';
 import { ALT_IDS, BLD, ITEMS, MACHINE_NAMES, RECIPES } from './data';
 import { H, HX, HY, W } from './terrain';
 import { view } from './view';
@@ -49,7 +50,7 @@ export function scan(kind: string): string {
   if (kind === 'site' || kind === 'crystal') {
     G.feats.forEach((f, i) => { if (f.kind === kind && !G.S.looted.includes(f.id)) { const d = Math.hypot(f.x - cx, f.y - cy); if (d < R) hits.push([d, f.x + f.w / 2, f.y + f.w / 2, i]); } });
   } else {
-    G.nodes.forEach((n, i) => { if (n.res === kind && !G.grid[n.y * W + n.x]) { const d = Math.hypot(n.x - cx, n.y - cy); if (d < R) hits.push([d, n.x + 1, n.y + 1, i]); } });
+    G.nodes.forEach((n, i) => { if (n.res === kind && !G.grid[n.y * W + n.x] && !isDepleted(n)) { const d = Math.hypot(n.x - cx, n.y - cy); if (d < R) hits.push([d, n.x + 1, n.y + 1, i]); } });
   }
   hits.sort((a, b) => a[0] - b[0]);
   const top = hits.slice(0, kind === 'site' || kind === 'crystal' ? 3 : 5);
