@@ -182,7 +182,7 @@ function playOnline(o: { code?: string; create?: any }) {
       };
       goHome();
       OUI.netHud();
-      UI.toast(`🌐 Welcome to <b>${G.S.name}</b> — join code <b>${fmtCode(NET.code)}</b>. Use <b>📋 Invite</b> on the server badge (bottom right) to bring friends.`, 'big');
+      UI.toast(`🌐 Welcome to <b>${G.S.name}</b> — join code <b>${fmtCode(NET.code)}</b>. Click <b>🌐</b> in the top bar (or press <b>Y</b>) for the code and invites.`, 'big');
       OUI.onlineTip('trade', "There's one 🤝 <b>Trade Post</b> near the middle of the map, shared by every team. Send a truck there to swap what you have for what you need.", 60000);
       if (!G.S.flags.tutDone) UI.startOnboarding();
     },

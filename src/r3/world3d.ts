@@ -107,6 +107,8 @@ let bbs: Billboards, bbAdd: Billboards;
 let prevWires: THREE.LineSegments, ringMat: THREE.Material, ringGeo: THREE.BufferGeometry;
 let wires: THREE.LineSegments, selPlane: THREE.Mesh, hoverBox: THREE.LineSegments, inspBox: THREE.LineSegments;
 let lastRev = -1, lastStatic = 0, animEnts: Ent[] = [], popping = false, lastFluidSig = '';
+/** buildings still playing their pop-in animation: drawn each frame in the dynamic layer, so the static layer isn't rebuilt every frame */
+let popEnts: Ent[] = [], popUntil = 0;
 let sigRails: Ent[] = [], lampEnts: Ent[] = [], visFeats: { x: number; y: number; kind: string; tier: number }[] = [];
 const AM = new THREE.Matrix4();
 function fluidSig() { let s = ''; for (const n of G.fnets) s += (n.fluid || '-')[0] + (n.fluid || '').length; return s; }
@@ -302,7 +304,7 @@ function rebuildStatic(real: number) {
     const k = qx > 0 && qy < 0 ? 0 : qx > 0 && qy > 0 ? 1 : qx < 0 && qy > 0 ? 2 : 3;
     pushModel(SL, 'railArc', mdl('railArc', MD.railArcBig), compose(c.ox, 0, c.oy, -k * HP), undefined, false);
   }
-  animEnts = []; lampEnts = []; sigRails = []; visFeats = []; popping = false;
+  animEnts = []; lampEnts = []; sigRails = []; visFeats = []; popping = false; popEnts = []; popUntil = 0;
   const SR = C.dist * 1.3 + 16, sx = view.cam.x, sy = view.cam.y;
   stX = sx; stY = sy; stR = SR;
   const inR = (x: number, y: number, pad = 0) => x > sx - SR - pad && x < sx + SR + pad && y > sy - SR - pad && y < sy + SR + pad;
@@ -346,9 +348,8 @@ function rebuildStatic(real: number) {
     const t = TPL[e.type];
     if (!t) continue;
     const age = real - e.born;
-    let sy = 1;
-    if (age < 0.45) { sy = Math.max(0.02, easeOutBack(Math.max(0, age / 0.45))); popping = true; }
-    const m = compose(e.x + e.w / 2, 0, e.y + e.h / 2, rotOf(e), 1, sy, 1);
+    if (age < 0.45) { popEnts.push(e); popUntil = Math.max(popUntil, e.born + 0.45); popping = true; continue; }
+    const m = compose(e.x + e.w / 2, 0, e.y + e.h / 2, rotOf(e));
     pushTemplate(SL, 'T:' + e.type, t, m, undefined, e.o);
     if (t.anims.length || t.light || t.smoke || t.glow) animEnts.push(e);
     if (e.type === 'lamp') lampEnts.push(e);
@@ -443,7 +444,7 @@ export function update3D(time: number, real: number, dt: number, labels: Label3[
   if (real - lastStatic > 1) { lastStatic = real; const sig = fluidSig(); if (sig !== lastFluidSig) { lastFluidSig = sig; lastRev = -1; } }
   const wantR = C.dist * 1.3 + 16;
   if (Math.abs(view.cam.x - stX) > stR * 0.3 || Math.abs(view.cam.y - stY) > stR * 0.3 || Math.abs(wantR - stR) > stR * 0.3) lastRev = -1;
-  if (G.rev !== lastRev || popping) { rebuildStatic(real); lastRev = G.rev; }
+  if (G.rev !== lastRev || (popping && real >= popUntil)) { rebuildStatic(real); lastRev = G.rev; }
   // trees near the camera
   const R = Math.min(150, C.dist * 1.7 + 25);
   const ts = treeState;
@@ -453,6 +454,14 @@ export function update3D(time: number, real: number, dt: number, labels: Label3[
   }
   // dynamic layer
   DL.begin(); bbs.begin(); bbAdd.begin();
+  for (const e of popEnts) {
+    if (!G.ents.has(e.id)) continue;
+    const t = TPL[e.type]; if (!t) continue;
+    ZO = (e.z || 0) * LH;
+    const sy = Math.max(0.02, easeOutBack(Math.min(1, Math.max(0, (real - e.born) / 0.45))));
+    pushTemplate(DL, 'T:' + e.type, t, compose(e.x + e.w / 2, 0, e.y + e.h / 2, rotOf(e), 1, sy, 1), undefined, e.o);
+  }
+  ZO = 0;
   const near = C.dist < 60, close = C.dist < 30;
   const tgx = view.cam.x, tgy = view.cam.y, VR = C.dist * 1.6 + 20;
   for (const e of animEnts) {

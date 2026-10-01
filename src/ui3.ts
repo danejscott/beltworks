@@ -1,4 +1,4 @@
-// Online HUD: the server badge (join code + who's here), chat, the players panel and the "disconnected" screen.
+// Online HUD: the 🌐 toolbar button (who's here), chat, the players panel and the "disconnected" screen.
 import { NET, sendChat } from './net';
 import { empireScore, fmtCode, seasonGain, seasonName } from './online';
 import { inviteLink, inviteText } from './codes';
@@ -10,9 +10,6 @@ import { EXTRA_MODALS, LIVE_MODALS } from './ui2';
 import { openModal, toast } from './ui';
 
 const CSS = `
-#netbar{position:fixed;right:10px;bottom:256px;z-index:30;display:none;gap:8px;align-items:center;background:rgba(18,22,30,.88);border:1px solid #2c3442;border-radius:999px;padding:4px 12px;font-size:12px;color:#cfd6e2;cursor:pointer;backdrop-filter:blur(4px)}
-#netbar b{color:#ffd48a;letter-spacing:.5px}#netbar button{font-size:11px;padding:2px 8px;border-radius:999px}#netbar .dot{width:9px;height:9px;border-radius:50%;display:inline-block;margin-right:2px;vertical-align:-1px}
-#netbar .pl{display:inline-flex;gap:3px}
 #chat{position:fixed;left:12px;bottom:118px;z-index:30;width:340px;max-width:calc(100vw - 24px);display:none;flex-direction:column;gap:3px;pointer-events:none}
 #chat .msg{background:rgba(14,18,24,.78);border-radius:8px;padding:4px 8px;font-size:12.5px;color:#e4e8ef;transition:opacity 1s}
 #chat .msg.old{opacity:0}#chat.typing .msg.old{opacity:1}
@@ -31,9 +28,6 @@ function build() {
   EXTRA_MODALS.invite = inviteHTML;
   LIVE_MODALS.add('players');
   const st = document.createElement('style'); st.textContent = CSS; document.head.appendChild(st);
-  const bar = document.createElement('div'); bar.id = 'netbar'; document.body.appendChild(bar);
-  bar.addEventListener('pointerdown', ev => { const b = (ev.target as HTMLElement).closest('button'); if (b && b.dataset.nb === 'inv') copyInvite(); else openPlayers(); });
-  bar.style.pointerEvents = 'auto';
   const chat = document.createElement('div'); chat.id = 'chat';
   chat.innerHTML = '<div id="chatlog" style="display:flex;flex-direction:column;gap:3px"></div><input id="chatin" maxlength="200" placeholder="Say something… (Enter to send, Esc to cancel)">';
   document.body.appendChild(chat);
@@ -58,14 +52,17 @@ function closeChat() { const c = document.getElementById('chat')!; c.classList.r
 /** show / hide the online HUD (called every so often from the UI tick) */
 export function netHud() {
   build();
-  const bar = document.getElementById('netbar')!, chat = document.getElementById('chat')!;
+  // online status lives in one small toolbar button (top right); it opens the Players panel with the join code and invite
+  const btn = document.getElementById('netbtn'), chat = document.getElementById('chat')!;
   const on = NET.on && NET.ready && !title.open;
-  bar.style.display = on ? 'flex' : 'none';
   chat.style.display = on ? 'flex' : 'none';
+  if (!btn) return;
+  btn.style.display = on ? '' : 'none';
   if (!on) return;
-  const here = NET.players.filter(p => p.online);
-  const html = `🌐 <b>${fmtCode(NET.code)}</b> <button data-nb="inv" title="Copy the join code, a link and instructions">📋 Invite</button> <span class="pl">${here.map(p => `<span class="dot" style="background:${p.col}" title="${esc(p.name)}"></span>`).join('')}</span> ${here.length} online${NET.ping ? ` · ${NET.ping} ms` : ''} <button data-nb="pl" title="Players, teams and leaderboard (Y)">👥 Players <kbd>Y</kbd></button>`;
-  if (bar.innerHTML !== html) bar.innerHTML = html;
+  const here = NET.players.filter(p => p.online).length;
+  const html = `🌐<b style="font-size:12px;margin-left:3px">${here}</b>`;
+  if (btn.innerHTML !== html) btn.innerHTML = html;
+  btn.title = `Online — ${here} player${here === 1 ? '' : 's'} here${NET.ping ? ` · ${NET.ping} ms` : ''}. Click (or press Y) for the join code, invites, teams and the leaderboard.`;
 }
 export function refreshPlayers() { netHud(); }
 export function chatMessage(c: { from: string; col: string; text: string }) {

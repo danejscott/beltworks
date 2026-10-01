@@ -74,7 +74,7 @@ export function placeTrain(x: number, y: number, rot: number): Train | null {
   return t;
 }
 /** longest train (locomotive + wagons), by map size */
-export const maxCars = () => { const s = G.S.size || 1024; return s <= 512 ? 12 : s <= 1024 ? 18 : s <= 2304 ? 24 : 30; };
+export const maxCars = () => { const s = G.S.size || 1024; return s <= 512 ? 20 : s <= 1024 ? 24 : s <= 2304 ? 27 : 30; };
 export function addWagon(t: Train) {
   if (t.v > 0.01) { G.fx.toast('Stop the train first (or wait for it to arrive)', 'bad'); return; }
   if (t.cars.length >= maxCars()) { G.fx.toast(`Trains can be at most ${maxCars()} cars long on this map size`, 'bad'); return; }

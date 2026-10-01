@@ -9,7 +9,7 @@ import { ACHS } from './achievements';
 import { altMachineOK, altPool, analyseDrive, CRYSTAL_NAMES, discoveredCount, lootSite, pickAlt, scan, scanCol, scanName, scanRange, SCAN_TARGETS } from './explore';
 import { Feat } from './features';
 import { machineName, plan, plannableItems } from './planner';
-import { addTrainToLine, lineOf, lineTrains, MAX_LINE_TRAINS, trainCap } from './trains';
+import { addTrainToLine, lineOf, lineTrains, MAX_LINE_TRAINS, maxCars, trainCap } from './trains';
 import { buyTruck, removeTruck, tradeVal, TRUCK_CAP, truckStations } from './trucks';
 import { buyShip, removeShip, Ship, SHIP_CAP, shipPorts } from './ships';
 import { esc, fmt, fmtR } from './util';
@@ -228,8 +228,9 @@ export function setRerender(f: () => void) { rerender = f; }
 // Inspector extras
 export function stationExtra(e: Ent): string {
   const lines = G.S.lines.filter(l => l.a === e.id || l.b === e.id);
-  if (!lines.length) return '';
-  let h = '<div class="sec">🛤 Lines</div>';
+  const cap = `<div class="sm" style="margin-top:6px">Trains on this map size can be up to <b>${maxCars()}</b> cars long (locomotive + wagons). Trucks can stop here too.</div>`;
+  if (!lines.length) return cap;
+  let h = cap + '<div class="sec">🛤 Lines</div>';
   for (const l of lines) {
     const o = G.ents.get(l.a === e.id ? l.b : l.a);
     h += `<div class="row">⇄ ${o ? esc(o.name) : '?'} · ${lineTrains(l).length} train${lineTrains(l).length === 1 ? '' : 's'} <button class="mini go" data-act="lineadd:${l.id}">+ Train</button></div>`;
