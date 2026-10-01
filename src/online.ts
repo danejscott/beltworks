@@ -32,7 +32,7 @@ function placeTradePost() {
       const a = k / steps * Math.PI * 2, x = Math.round(cx + Math.cos(a) * r) - 2, y = Math.round(cy + Math.sin(a) * r) - 2;
       if (canPlace('trade_post', x - 2, y - 2, 0, { free: true, z: 0 }) || canPlace('trade_post', x + 2, y + 2, 0, { free: true, z: 0 })) continue;   // room for trucks around it
       if (canPlace('trade_post', x, y, 0, { free: true, z: 0 })) continue;
-      const e = place('trade_post', x, y, 0, { free: true, quiet: true, owner: 0 }); e.name = 'Trade Post'; e.store = {}; e.tot = 0; e.mode = 'trade';
+      place('trade_post', x, y, 0, { free: true, quiet: true, owner: 0 });
       return;
     }
   }

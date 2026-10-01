@@ -78,6 +78,7 @@ export const G = {
   pings: [] as { x: number; y: number; t: number; col: string; label: string }[],
   dirty: { links: true, power: true, fluid: true },
   rev: 1, treeRev: 1, railRev: 1,
+  touched: [] as number[], touchN: 0,   // areas changed since the renderer last looked (x0,y0,x1,y1 each); lets it redraw just those chunks
   L: null as any,
   pnets: [] as any[],
   fnets: [] as any[],
@@ -297,6 +298,7 @@ export function place(type: string, x: number, y: number, rot: number, o: { free
     case 'battery': e.stored = 0; break;
     case 'rail': e.pairs = 0; break;
     case 'station': e.store = {}; e.tot = 0; e.mode = 'load'; e.name = 'Station ' + (++G.S.stationSeq); e.rr = 0; e.req = 0; break;
+    case 'trade': e.store = {}; e.tot = 0; e.mode = 'trade'; e.name = 'Trade Post'; break;
     case 'tstation': e.store = {}; e.tot = 0; e.mode = 'load'; e.name = 'Truck Stop ' + (++G.S.stationSeq); e.rr = 0; e.req = 0; break;
     case 'outpost': e.name = 'Outpost ' + (++G.S.stationSeq); break;
     case 'port': e.store = {}; e.tot = 0; e.mode = 'load'; e.name = 'Harbor ' + (++G.S.stationSeq); e.rr = 0; e.req = 0; break;
@@ -311,7 +313,7 @@ export function place(type: string, x: number, y: number, rot: number, o: { free
   if (e.z2 !== undefined) { gridOf(e.z2)[y * W + x] = e.id; if (e.z2 === 0 && G.trees[y * W + x]) chopTree(x, y, !o.free); }
   G.ents.set(e.id, e);
   if ((d.kind === 'tunnel' || d.kind === 'ptunnel') && !o.id) pairTunnel(e);
-  markDirty(d.kind);
+  markDirty(d.kind, e);
   if (!o.quiet) G.fx.placed(e);
   return e;
 }
@@ -332,10 +334,15 @@ export function setFloor(x: number, y: number, z: number, on: boolean) {
   const i = y * W + x, bit = 1 << z, had = !!(G.floor[i] & bit);
   if (on === had) return;
   if (on) { G.floor[i] |= bit; G.floorN++; } else { G.floor[i] &= ~bit; G.floorN--; }
-  G.rev++;
+  G.rev++; G.touched.push(x, y, x, y); G.touchN++;
 }
-export function markDirty(kind: string) {
+/** something changed: everything gets redrawn, or — given the area that changed — just the part of the map around it */
+export function markDirty(kind: string, a?: { x: number; y: number; w?: number; h?: number }) {
   G.rev++;
+  if (a && kind !== 'tunnel' && kind !== 'ptunnel') {   // tunnels pair up across several tiles: redraw everything
+    if (G.touched.length > 4000) G.touched.length = 0;   // nobody is drawing (catching up): forget it; the next draw is a full one
+    else { G.touched.push(a.x, a.y, a.x + (a.w || 1) - 1, a.y + (a.h || 1) - 1); G.touchN++; }
+  }
   if (kind === 'rail') G.railRev++;
   G.dirty.links = true;
   if (kind !== 'belt' && kind !== 'rail' && kind !== 'decor') G.dirty.power = true;
@@ -411,7 +418,7 @@ export function remove(e: Ent, o: { quiet?: boolean } = {}): boolean {
     for (const t of G.ships) t.sched = t.sched.filter((s: number) => s !== e.id);
     for (const p of G.ents.values()) if (p.target === e.id) p.target = 0;
   }
-  markDirty(d.kind);
+  markDirty(d.kind, e);
   if (!o.quiet) G.fx.removed(e);
   return true;
 }
@@ -421,7 +428,7 @@ export function rotateEnt(e: Ent, dir = 1) {
   if (d.noRotate || d.kind === 'rail' || d.kind === 'tunnel' || d.kind === 'ptunnel') return false;
   if (e.w !== e.h) return false;
   e.rot = (e.rot + dir + 4) & 3; e.pop = 1;
-  markDirty(d.kind);
+  markDirty(d.kind, e);
   return true;
 }
 

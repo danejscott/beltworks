@@ -106,8 +106,8 @@ function dragLay(type: string, path: { x: number; y: number; d: number }[], z: n
       if (!tileFree(p.x, p.y, 'belt', z)) continue;
       const e = at(p.x, p.y);
       if (e) {
-        if (e.type === type) { if (e.rot !== p.d) { e.rot = p.d; markDirty('belt'); placed++; } }
-        else { refund(BLD[e.type].cost); if (!canAfford(d.cost)) { pay(BLD[e.type].cost); out = true; break; } pay(d.cost); e.type = type; markDirty('belt'); placed++; }
+        if (e.type === type) { if (e.rot !== p.d) { e.rot = p.d; markDirty('belt', e); placed++; } }
+        else { refund(BLD[e.type].cost); if (!canAfford(d.cost)) { pay(BLD[e.type].cost); out = true; break; } pay(d.cost); e.type = type; markDirty('belt', e); placed++; }
       } else {
         if (!canAfford(d.cost)) { out = true; break; }
         place(type, p.x, p.y, p.d, { z }); placed++;
@@ -119,7 +119,7 @@ function dragLay(type: string, path: { x: number; y: number; d: number }[], z: n
     for (const p of path) {
       if (!tileFree(p.x, p.y, 'pipe', z)) continue;
       const e = at(p.x, p.y);
-      if (e) { if (e.type !== type) { refund(BLD[e.type].cost); if (!canAfford(d.cost)) { pay(BLD[e.type].cost); out = true; break; } pay(d.cost); e.type = type; markDirty('pipe'); placed++; } }
+      if (e) { if (e.type !== type) { refund(BLD[e.type].cost); if (!canAfford(d.cost)) { pay(BLD[e.type].cost); out = true; break; } pay(d.cost); e.type = type; markDirty('pipe', e); placed++; } }
       else { if (!canAfford(d.cost)) { out = true; break; } place(type, p.x, p.y, 0, { z }); placed++; }
     }
   } else if (d.kind === 'rail') {
@@ -129,8 +129,8 @@ function dragLay(type: string, path: { x: number; y: number; d: number }[], z: n
       const p = path[i];
       if (!tileFree(p.x, p.y, 'rail', 0)) continue;
       const e = at(p.x, p.y);
-      if (e) { const np = e.pairs | smartJunction(e.pairs, pairs[i], path, i); if (np !== e.pairs) { e.pairs = np; placed++; markDirty('rail'); } }
-      else { if (!canAfford(d.cost)) { out = true; break; } const r = place(type, p.x, p.y, 0); r.pairs = pairs[i]; placed++; markDirty('rail'); }
+      if (e) { const np = e.pairs | smartJunction(e.pairs, pairs[i], path, i); if (np !== e.pairs) { e.pairs = np; placed++; markDirty('rail', e); } }
+      else { if (!canAfford(d.cost)) { out = true; break; } const r = place(type, p.x, p.y, 0); r.pairs = pairs[i]; placed++; markDirty('rail', r); }
     }
   }
   if (placed) sfx('belt');
@@ -235,12 +235,12 @@ function paste(bp: any, ox: number, oy: number, z: number) {
     if (!tileOK(o)) { skipped++; continue; }
     const d = BLD[o.t], x = ox + o.x, y = oy + o.y;
     const ex = entAt(x, y, z);
-    if (ex && d.kind === 'rail') { ex.pairs |= o.pr || 0; markDirty('rail'); placed++; continue; }
-    if (ex && d.kind === 'belt') { if (ex.rot !== o.r || ex.type !== o.t) { if (ex.type !== o.t) { refund(BLD[ex.type].cost); if (!canAfford(d.cost)) { pay(BLD[ex.type].cost); broke = true; break; } pay(d.cost); ex.type = o.t; } ex.rot = o.r; markDirty('belt'); } placed++; continue; }
+    if (ex && d.kind === 'rail') { ex.pairs |= o.pr || 0; markDirty('rail', ex); placed++; continue; }
+    if (ex && d.kind === 'belt') { if (ex.rot !== o.r || ex.type !== o.t) { if (ex.type !== o.t) { refund(BLD[ex.type].cost); if (!canAfford(d.cost)) { pay(BLD[ex.type].cost); broke = true; break; } pay(d.cost); ex.type = o.t; } ex.rot = o.r; markDirty('belt', ex); } placed++; continue; }
     if (ex && d.kind === 'pipe') { placed++; continue; }
     if (!canAfford(d.cost)) { broke = true; for (const k in d.cost) need[k] = d.cost[k]; break; }
     const e = place(o.t, x, y, o.r, { quiet: bp.ents.length > 30, z });
-    if (o.pr) { e.pairs = o.pr; markDirty('rail'); }
+    if (o.pr) { e.pairs = o.pr; markDirty('rail', e); }
     if (o.rc && G.S.unlocked.has(o.rc)) setRecipe(e, o.rc);
     if (o.fl) e.filt = [...o.fl];
     if (o.md) e.mode = o.md;
@@ -263,7 +263,7 @@ function signal(x: number, y: number, sig: number, type: string) {
   if (!d || !G.S.unlocked.has(type)) return;
   if (!canAfford(d.cost)) { toast('Need: ' + missingText(d.cost), 'bad'); sfx('err'); return; }
   if (r.sig) refund(BLD[r.sig === 1 ? 'rail_signal' : 'path_signal'].cost);
-  pay(d.cost); r.sig = sig; markDirty('rail'); sfx('place');
+  pay(d.cost); r.sig = sig; markDirty('rail', r); sfx('place');
 }
 
 const findTrain = (id: any) => G.trains.find(t => t.id === +id) || null;
@@ -291,7 +291,7 @@ function exec(c: Cmd): any {
     case 'rm': {   // remove one building (or just the signal on a rail tile)
       const e = ent(c.id);
       if (!mine(e)) return;
-      if (c.sig && e.type === 'rail' && e.sig) { refund(BLD[e.sig === 1 ? 'rail_signal' : 'path_signal'].cost); e.sig = 0; markDirty('rail'); sfx('remove'); return; }
+      if (c.sig && e.type === 'rail' && e.sig) { refund(BLD[e.sig === 1 ? 'rail_signal' : 'path_signal'].cost); e.sig = 0; markDirty('rail', e); sfx('remove'); return; }
       const why = canRemove(e);
       if (why) { toast(why, 'bad'); sfx('err'); return; }
       if (remove(e)) { sfx('remove'); G.fx.ui('removed', e); }

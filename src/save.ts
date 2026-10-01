@@ -115,11 +115,12 @@ export function stateHash(): number {
   for (const e of G.ents.values()) {
     mix(e.id); mix(e.rot);
     if (e.items) { mix(e.items.length); for (const it of e.items) mix(it.pos); }
-    if (e.prog !== undefined) mix(e.prog);
-    if (e.tm !== undefined) mix(e.tm);
-    if (typeof e.ob === 'number') mix(e.ob); else mixO(e.ob);
+    // (saves leave out zeros, so 0 and 'not set' must fingerprint the same)
+    if (e.prog) mix(e.prog);
+    if (e.tm) mix(e.tm);
+    if (typeof e.ob === 'number') { if (e.ob) mix(e.ob); } else mixO(e.ob);
     if (e.ib) mixO(e.ib);
-    if (e.tot !== undefined) mix(e.tot);
+    if (e.tot) mix(e.tot);
     if (e.famt) mix(e.famt);
     if (e.fuelT) mix(e.fuelT);
     if (e.stored) mix(e.stored);

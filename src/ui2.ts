@@ -60,7 +60,7 @@ export const EXTRA_MODALS: Record<string, () => [string, string]> = {
       h += '<table class="st"><tr><th>Name</th><th>Status</th><th>Next stop</th><th>Cargo</th><th></th></tr>';
       for (const t of G.trains) {
         const st = G.ents.get(t.sched[t.si]);
-        h += `<tr><td>${esc(t.name)}</td><td>${status(vehLed(t.state), stTxt[t.state] || t.state)}</td><td>${st ? esc(st.name) : '—'}</td><td>${fmt(t.tot)} / ${fmt(trainCap(t))}</td><td><button class="mini" data-act="vview:t:${t.id}">View</button></td></tr>`;
+        h += `<tr><td>${esc(t.name)}</td><td>${status(vehLed(t.state), (t as any).queued && t.state === 'moving' ? 'Waiting in line' : stTxt[t.state] || t.state)}</td><td>${st ? esc(st.name) : '—'}</td><td>${fmt(t.tot)} / ${fmt(trainCap(t))}</td><td><button class="mini" data-act="vview:t:${t.id}">View</button></td></tr>`;
       }
       h += '</table>';
     }

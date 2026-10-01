@@ -79,13 +79,41 @@ class Batch {
     if (this.colors && c) c.toArray(this.mesh.instanceColor!.array as Float32Array, this.n * 3);
     this.n++;
   }
+  /** append recorded instances (16 floats per matrix, 3 per colour) */
+  pushArr(m: number[], c: number[]) {
+    const n = m.length >> 4;
+    if (!n) return;
+    if (this.n + n > this.cap) { while (this.n + n > this.cap) this.cap *= 2; this.make(this.mesh); }
+    (this.mesh.instanceMatrix.array as Float32Array).set(m, this.n * 16);
+    if (this.colors && c.length) (this.mesh.instanceColor!.array as Float32Array).set(c, this.n * 3);
+    this.n += n;
+  }
   end() {
     this.mesh.count = this.n;
     this.mesh.instanceMatrix.needsUpdate = true;
     if (this.colors) this.mesh.instanceColor!.needsUpdate = true;
   }
 }
-class Layer {
+interface Pusher { push(m: THREE.Matrix4, c?: THREE.Color): void }
+interface LayerLike { get(key: string, geo: THREE.BufferGeometry, mat: THREE.Material | THREE.Material[], shadow?: boolean, colors?: boolean): Pusher }
+/** records instances for one chunk of the static layer (copied into the real meshes later) */
+class RecBatch implements Pusher {
+  m: number[] = []; c: number[] = [];
+  constructor(public geo: THREE.BufferGeometry, public mat: THREE.Material | THREE.Material[], public shadow: boolean, public colors: boolean) { }
+  push(mx: THREE.Matrix4, col?: THREE.Color) {
+    mx.toArray(this.m, this.m.length);
+    if (this.colors) { if (col) col.toArray(this.c, this.c.length); else this.c.push(1, 1, 1); }
+  }
+}
+class Rec implements LayerLike {
+  map = new Map<string, RecBatch>();
+  get(key: string, geo: THREE.BufferGeometry, mat: THREE.Material | THREE.Material[], shadow = true, colors = false) {
+    let b = this.map.get(key);
+    if (!b) { b = new RecBatch(geo, mat, shadow, colors); this.map.set(key, b); }
+    return b;
+  }
+}
+class Layer implements LayerLike {
   map = new Map<string, Batch>();
   get(key: string, geo: THREE.BufferGeometry, mat: THREE.Material | THREE.Material[], shadow = true, colors = false, order = 0) {
     let b = this.map.get(key);
@@ -173,7 +201,7 @@ export function init3D() {
   hoverBox.renderOrder = inspBox.renderOrder = 20;
   C.scene.add(hoverBox); C.scene.add(inspBox);
 }
-export function reset3D() { lastRev = -1; treeState = { x: -999, y: -999, r: 0, rev: -1, t: 0 }; }
+export function reset3D() { lastRev = -1; fullNext = true; needAssemble = true; treeState = { x: -999, y: -999, r: 0, rev: -1, t: 0 }; }
 
 // ---------------------------------------------------------------------------
 /** height offset of the floor currently being drawn (added by compose) */
@@ -192,10 +220,10 @@ export function visHeight(e: Ent) {
   return TPL[e.type] ? TPL[e.type].height : 1;
 }
 
-function pushTemplate(L: Layer, key: string, t: MD.Template, m: THREE.Matrix4, mat?: THREE.Material, o?: number) {
+function pushTemplate(L: LayerLike, key: string, t: MD.Template, m: THREE.Matrix4, mat?: THREE.Material, o?: number) {
   L.get(key + (mat ? '' : tkey(o)), t.stat.geo, mat || tint(t.stat.mats, o)).push(m);
 }
-function pushModel(L: Layer, key: string, model: Model, m: THREE.Matrix4, mat?: THREE.Material, shadow = true, o?: number) {
+function pushModel(L: LayerLike, key: string, model: Model, m: THREE.Matrix4, mat?: THREE.Material, shadow = true, o?: number) {
   L.get(key + (mat ? '' : tkey(o)), model.geo, mat || tint(model.mats, o), shadow).push(m);
 }
 /** orange arrow in front (output) and blue arrow behind (input) for every building with ports */
@@ -226,7 +254,7 @@ export function portArrows(e: { type: string; x: number; y: number; w: number; h
   if (hasIn) { const [ix, iy] = inPort(e); out.push([ix, iy, r, false]); }
   return out;
 }
-function pushPortArrows(L: Layer, e: Ent, pre: string, force = false) {
+function pushPortArrows(L: LayerLike, e: Ent, pre: string, force = false) {
   const free = (x: number, y: number) => { if (pre || force) return true; const n = entAt(x, y, e.z || 0); return !(n && (BLD[n.type].kind === 'belt' || BLD[n.type].kind === 'tunnel')); };
   // arrows on a selected building float above belts so they're always visible
   const h = force ? 0.55 : 0.03, sc = force ? 1.8 : 1.5, sy = force ? 0.6 : 0.3;
@@ -237,12 +265,14 @@ function pushPortArrows(L: Layer, e: Ent, pre: string, force = false) {
   }
 }
 const arrowModel = () => mdl('arrow', () => { const b = new B(); b.add(new THREE.ConeGeometry(0.16, 0.3, 3), M.orange, 0, 0.03, 0, 0, 0, -HP); return b.build(); });
-let cargoMat: THREE.Material | null = null;
+/** level-of-detail settings (tweakable from the console for testing) */
+export const LOD = { itemFar: 0.45 };
+let cargoMat: THREE.Material | null = null, itemFarMat: THREE.Material | null = null;
 const beltKey = (b: Ent) => G.S.shop.gold ? 'gold' : (b.type in { belt1: 1, belt2: 1, belt3: 1, belt4: 1 } ? b.type : 'belt1');
 const surfS = () => mdl('surfS', () => ({ geo: MD.beltSurfaceStraight(), mats: [] }));
 const surfC = () => mdl('surfC', () => ({ geo: MD.beltSurfaceCurve(), mats: [] }));
 
-function pushBelt(L: Layer, b: Ent, mat?: THREE.Material, prefix = '') {
+function pushBelt(L: LayerLike, b: Ent, mat?: THREE.Material, prefix = '') {
   const cx = b.x + 0.5, cy = b.y + 0.5;
   if (BLD[b.type].kind === 'tunnel') {
     pushModel(L, prefix + (b.isExit ? 'tunOut' : 'tunIn'), mdl(b.isExit ? 'tunOut' : 'tunIn', () => MD.tunnelModel(!!b.isExit)), compose(cx, 0, cy, -b.rot * HP), mat);
@@ -260,7 +290,7 @@ function pushBelt(L: Layer, b: Ent, mat?: THREE.Material, prefix = '') {
     L.get(prefix + 'bsS:' + (mat ? 'g' : beltKey(b)), surfS().geo, mat || beltMats[beltKey(b)], false).push(m);
   }
 }
-function pushRail(L: Layer, x: number, y: number, pairs: number, mat?: THREE.Material, prefix = '', curves?: Map<number, Curve>) {
+function pushRail(L: LayerLike, x: number, y: number, pairs: number, mat?: THREE.Material, prefix = '', curves?: Map<number, Curve>) {
   const ti = y * W + x;
   if (!prefix && (G.tiles[ti] === 4 || G.tiles[ti] === 5)) pushModel(L, 'railBridge', mdl('railBridge', MD.railBridge), compose(x + 0.5, 0, y + 0.5, (pairs & 2) && !(pairs & 1) ? -HP : 0));
   if (curves && curves.has(ti)) return;   // drawn as part of a wide curve
@@ -282,118 +312,178 @@ function pipeConn(e: Ent, d: number, lv = e.z || 0) {
 /** tunnel mouths where a railway disappears into a mountain */
 /** a rail tile is 'inside' the mountain when all four of its corners are above the tunnel height */
 const inside = tunnelInside;
-function pushPortals(e: Ent) {
+function pushPortals(L: LayerLike, e: Ent) {
   if (!inside(e.x, e.y)) return;
   const sides = railSides(e.pairs);
   for (let s = 0; s < 4; s++) {
     if (!(sides & (1 << s))) continue;
     if (inside(e.x + DX[s], e.y + DY[s])) continue;
-    pushModel(SL, 'portal', mdl('portal', MD.portalModel), compose(e.x + 0.5 + DX[s] * 0.5, 0, e.y + 0.5 + DY[s] * 0.5, -s * HP));
+    pushModel(L, 'portal', mdl('portal', MD.portalModel), compose(e.x + 0.5 + DX[s] * 0.5, 0, e.y + 0.5 + DY[s] * 0.5, -s * HP));
   }
 }
 // ---------------------------------------------------------------------------
+// The static layer is recorded in 16x16-tile chunks. A change only re-records the chunks around it, and moving the
+// camera reuses chunks already recorded; the visible chunks are then copied into the instanced meshes.
+const CH = 16;
+interface VisFeat { x: number; y: number; kind: string; tier: number }
+interface Chunk { rec: Rec; anim: Ent[]; lamps: Ent[]; sig: Ent[]; feats: VisFeat[]; pops: Ent[]; popUntil: number }
+let chunks = new Map<number, Chunk>();
+const ckey = (cx: number, cy: number) => cy * 4096 + cx;
+let fullNext = true, lastTouchN = 0, lastCutRev = -1, needAssemble = true;
 let stX = -1e9, stY = -1e9, stR = 0;
-function rebuildStatic(real: number) {
-  ensureFresh();
-  { const rr: number[] = []; for (const r of G.L.rails) if (G.tiles[r.y * W + r.x] === 6) rr.push(r.y * W + r.x); updateCuts(rr); }
-  // wide rail curves
+
+/** record the given chunks (one pass over everything in the world) */
+function recordChunks(keys: Set<number>, real: number) {
+  const nc = new Map<number, Chunk>();
+  for (const k of keys) { const c: Chunk = { rec: new Rec(), anim: [], lamps: [], sig: [], feats: [], pops: [], popUntil: 0 }; nc.set(k, c); chunks.set(k, c); }
+  const at = (x: number, y: number) => nc.get(ckey(Math.floor(x / CH), Math.floor(y / CH)));
   const rc = railCurves(), curveTiles = rc.byTile;
-  SL.begin();
-  if (view.level === 0) for (const c of rc.corners) {
+  const lvl = view.level;
+  if (lvl === 0) for (const c of rc.corners) {
+    const ch = at(c.cx, c.cy); if (!ch) continue;
     const qx = -(DX[c.a] + DX[c.b]), qy = -(DY[c.a] + DY[c.b]);   // from the arc's centre toward the corner
     const k = qx > 0 && qy < 0 ? 0 : qx > 0 && qy > 0 ? 1 : qx < 0 && qy > 0 ? 2 : 3;
-    pushModel(SL, 'railArc', mdl('railArc', MD.railArcBig), compose(c.ox, 0, c.oy, -k * HP), undefined, false);
+    pushModel(ch.rec, 'railArc', mdl('railArc', MD.railArcBig), compose(c.ox, 0, c.oy, -k * HP), undefined, false);
   }
-  animEnts = []; lampEnts = []; sigRails = []; visFeats = []; popping = false; popEnts = []; popUntil = 0;
-  const SR = C.dist * 1.3 + 16, sx = view.cam.x, sy = view.cam.y;
-  stX = sx; stY = sy; stR = SR;
-  const inR = (x: number, y: number, pad = 0) => x > sx - SR - pad && x < sx + SR + pad && y > sy - SR - pad && y < sy + SR + pad;
-  const lvl = view.level;
   for (const e of G.ents.values()) {
-    if (!inR(e.x, e.y, e.w)) continue;
+    const ch = at(e.x, e.y);
+    if (!ch) continue;
+    const L = ch.rec;
     const d = BLD[e.type], k = d.kind, z = e.z || 0;
     const base = e.z2 !== undefined ? Math.min(z, e.z2) : z;
     const faded = base > lvl;
     ZO = base * LH;
-    if (k === 'lift') { pushModel(SL, (faded ? 'F' : '') + 'lift' + d.dz, mdl('lift' + d.dz, () => MD.liftModel(d.dz! > 0)), compose(e.x + 0.5, 0, e.y + 0.5, -e.rot * HP), faded ? fadeMat : undefined); continue; }
+    if (k === 'lift') { pushModel(L, (faded ? 'F' : '') + 'lift' + d.dz, mdl('lift' + d.dz, () => MD.liftModel(d.dz! > 0)), compose(e.x + 0.5, 0, e.y + 0.5, -e.rot * HP), faded ? fadeMat : undefined); continue; }
     if (e.type === 'pipe_lift') {
-      pushModel(SL, (faded ? 'F' : '') + 'pipeLift', mdl('pipeLift', MD.pipeLiftModel), compose(e.x + 0.5, 0, e.y + 0.5, 0), faded ? fadeMat : undefined);
-      for (const lv of [z, e.z2]) { if (lv > lvl) continue; ZO = lv * LH; for (let dd = 0; dd < 4; dd++) if (pipeConn(e, dd, lv)) pushModel(SL, 'pipeArm', mdl('pipeArm', MD.pipeArm), compose(e.x + 0.5, 0, e.y + 0.5, -dd * HP)); }
+      pushModel(L, (faded ? 'F' : '') + 'pipeLift', mdl('pipeLift', MD.pipeLiftModel), compose(e.x + 0.5, 0, e.y + 0.5, 0), faded ? fadeMat : undefined);
+      for (const lv of [z, e.z2]) { if (lv > lvl) continue; ZO = lv * LH; for (let dd = 0; dd < 4; dd++) if (pipeConn(e, dd, lv)) pushModel(L, 'pipeArm', mdl('pipeArm', MD.pipeArm), compose(e.x + 0.5, 0, e.y + 0.5, -dd * HP)); }
       continue;
     }
     if (faded) {
-      if (k === 'belt' || k === 'tunnel') pushBelt(SL, e, fadeMat, 'F');
-      else if (k === 'pipe') pushModel(SL, 'Fpipe', mdl('pipeHub', MD.pipeHub), compose(e.x + 0.5, 0, e.y + 0.5, 0), fadeMat);
-      else if (TPL[e.type]) pushTemplate(SL, 'F:' + e.type, TPL[e.type], compose(e.x + e.w / 2, 0, e.y + e.h / 2, rotOf(e)), fadeMat);
+      if (k === 'belt' || k === 'tunnel') pushBelt(L, e, fadeMat, 'F');
+      else if (k === 'pipe') pushModel(L, 'Fpipe', mdl('pipeHub', MD.pipeHub), compose(e.x + 0.5, 0, e.y + 0.5, 0), fadeMat);
+      else if (TPL[e.type]) pushTemplate(L, 'F:' + e.type, TPL[e.type], compose(e.x + e.w / 2, 0, e.y + e.h / 2, rotOf(e)), fadeMat);
       continue;
     }
-    if (k === 'belt' || k === 'tunnel') { pushBelt(SL, e); continue; }
+    if (k === 'belt' || k === 'tunnel') { pushBelt(L, e); continue; }
     if (k === 'rail') {
-      pushRail(SL, e.x, e.y, e.pairs, undefined, '', curveTiles);
-      if (e.sig) sigRails.push(e);
-      if (G.tiles[e.y * W + e.x] === 6) pushPortals(e);
+      pushRail(L, e.x, e.y, e.pairs, undefined, '', curveTiles);
+      if (e.sig) ch.sig.push(e);
+      if (G.tiles[e.y * W + e.x] === 6) pushPortals(L, e);
       continue;
     }
     if (k === 'pipe') {
       const cx = e.x + 0.5, cy = e.y + 0.5;
       const fl = e.fnet && e.fnet.fluid ? ITEMS[e.fnet.fluid].c : '#d0d4da';
       COL.set(fl).lerp(new THREE.Color('#ffffff'), 0.35);
-      SL.get('pipeHub', mdl('pipeHub', MD.pipeHub).geo, mdl('pipeHub', MD.pipeHub).mats, true, true).push(compose(cx, 0, cy, 0), COL);
+      L.get('pipeHub', mdl('pipeHub', MD.pipeHub).geo, mdl('pipeHub', MD.pipeHub).mats, true, true).push(compose(cx, 0, cy, 0), COL);
       let any = false;
-      for (let dd = 0; dd < 4; dd++) if (pipeConn(e, dd)) { any = true; pushModel(SL, 'pipeArm', mdl('pipeArm', MD.pipeArm), compose(cx, 0, cy, -dd * HP)); }
-      if (!any) pushModel(SL, 'pipeArm', mdl('pipeArm', MD.pipeArm), compose(cx, 0, cy, 0));
+      for (let dd = 0; dd < 4; dd++) if (pipeConn(e, dd)) { any = true; pushModel(L, 'pipeArm', mdl('pipeArm', MD.pipeArm), compose(cx, 0, cy, -dd * HP)); }
+      if (!any) pushModel(L, 'pipeArm', mdl('pipeArm', MD.pipeArm), compose(cx, 0, cy, 0));
       continue;
     }
-    if (k === 'ptunnel') { pushModel(SL, 'ptun', mdl('ptun', MD.ptunnelModel), compose(e.x + 0.5, 0, e.y + 0.5, -(e.isExit ? e.rot + 2 : e.rot) * HP)); continue; }
+    if (k === 'ptunnel') { pushModel(L, 'ptun', mdl('ptun', MD.ptunnelModel), compose(e.x + 0.5, 0, e.y + 0.5, -(e.isExit ? e.rot + 2 : e.rot) * HP)); continue; }
     const t = TPL[e.type];
     if (!t) continue;
-    const age = real - e.born;
-    if (age < 0.45) { popEnts.push(e); popUntil = Math.max(popUntil, e.born + 0.45); popping = true; continue; }
-    const m = compose(e.x + e.w / 2, 0, e.y + e.h / 2, rotOf(e));
-    pushTemplate(SL, 'T:' + e.type, t, m, undefined, e.o);
-    if (t.anims.length || t.light || t.smoke || t.glow) animEnts.push(e);
-    if (e.type === 'lamp') lampEnts.push(e);
-    pushPortArrows(SL, e, '');
+    // just placed: plays its pop-in animation in the dynamic layer, then this chunk is re-recorded
+    if (real - e.born < 0.45) { ch.pops.push(e); ch.popUntil = Math.max(ch.popUntil, e.born + 0.45); continue; }
+    pushTemplate(L, 'T:' + e.type, t, compose(e.x + e.w / 2, 0, e.y + e.h / 2, rotOf(e)), undefined, e.o);
+    if (t.anims.length || t.light || t.smoke || t.glow) ch.anim.push(e);
+    if (e.type === 'lamp') ch.lamps.push(e);
+    pushPortArrows(L, e, '');
   }
   ZO = 0;
   // foundation decks (and their support pillars)
   if (G.floorN) {
-    const x0 = Math.max(0, Math.floor(sx - SR)), x1 = Math.min(W - 1, Math.ceil(sx + SR)), y0 = Math.max(0, Math.floor(sy - SR)), y1 = Math.min(H - 1, Math.ceil(sy + SR));
     const dm = mdl('deck', MD.deckModel), pm = mdl('pillar', MD.pillarModel);
-    for (let y = y0; y <= y1; y++) for (let x = x0; x <= x1; x++) {
-      const f = G.floor[y * W + x];
-      if (!f) continue;
-      for (let z = 1; z < 4; z++) {
-        if (!(f & (1 << z))) continue;
-        const faded = z > lvl;
-        pushModel(SL, faded ? 'deckF' : 'deck', dm, compose(x + 0.5, z * LH - 0.3, y + 0.5, 0), faded ? deckFade : undefined, !faded);
-        if ((x & 3) === 0 && (y & 3) === 0 && !faded) {
-          let below = 0; for (let zz = z - 1; zz >= 1; zz--) if (f & (1 << zz)) { below = zz; break; }
-          const bh = below * LH, top = z * LH - 0.3;
-          pushModel(SL, 'pillar', pm, compose(x + 0.5, bh, y + 0.5, 0, 1, top - bh, 1));
+    for (const key of keys) {
+      const ch = nc.get(key)!, cx = key % 4096, cy = Math.floor(key / 4096);
+      for (let y = cy * CH; y < Math.min(H, cy * CH + CH); y++) for (let x = cx * CH; x < Math.min(W, cx * CH + CH); x++) {
+        const f = G.floor[y * W + x];
+        if (!f) continue;
+        for (let z = 1; z < 4; z++) {
+          if (!(f & (1 << z))) continue;
+          const faded = z > lvl;
+          pushModel(ch.rec, faded ? 'deckF' : 'deck', dm, compose(x + 0.5, z * LH - 0.3, y + 0.5, 0), faded ? deckFade : undefined, !faded);
+          if ((x & 3) === 0 && (y & 3) === 0 && !faded) {
+            let below = 0; for (let zz = z - 1; zz >= 1; zz--) if (f & (1 << zz)) { below = zz; break; }
+            const bh = below * LH, top = z * LH - 0.3;
+            pushModel(ch.rec, 'pillar', pm, compose(x + 0.5, bh, y + 0.5, 0, 1, top - bh, 1));
+          }
         }
       }
     }
   }
   // resource nodes (hidden under miners)
   for (const n of G.nodes) {
-    if (G.grid[n.y * W + n.x] || !inR(n.x, n.y, 2)) continue;
+    const ch = at(n.x, n.y);
+    if (!ch || G.grid[n.y * W + n.x]) continue;
     const v = n.id % 3;
-    if (isDepleted(n)) { pushModel(SL, 'node:spent', mdl('node:spent', () => MD.nodeModel('coal', 0)), compose(n.x + 1, -0.05, n.y + 1, n.id, 0.8, 0.25, 0.8)); continue; }
+    if (isDepleted(n)) { pushModel(ch.rec, 'node:spent', mdl('node:spent', () => MD.nodeModel('coal', 0)), compose(n.x + 1, -0.05, n.y + 1, n.id, 0.8, 0.25, 0.8)); continue; }
     const key = 'node:' + n.res + ':' + v;
-    pushModel(SL, key, mdl(key, () => MD.nodeModel(n.res, v)), compose(n.x + 1, 0, n.y + 1, (n.id * 2.39) % (Math.PI * 2), n.p === 2 ? 1.1 : n.p === 0 ? 0.85 : 1, 1, n.p === 2 ? 1.1 : n.p === 0 ? 0.85 : 1));
+    pushModel(ch.rec, key, mdl(key, () => MD.nodeModel(n.res, v)), compose(n.x + 1, 0, n.y + 1, (n.id * 2.39) % (Math.PI * 2), n.p === 2 ? 1.1 : n.p === 0 ? 0.85 : 1, 1, n.p === 2 ? 1.1 : n.p === 0 ? 0.85 : 1));
   }
   // crash sites and power crystals
   const looted = new Set(G.S.looted);
   for (const f of G.feats) {
-    if (looted.has(f.id) || !inR(f.x, f.y, 2)) continue;
+    const ch = at(f.x, f.y);
+    if (!ch || looted.has(f.id)) continue;
     const cx = f.x + f.w / 2, cy = f.y + f.w / 2, ry = (f.id * 1.7) % (Math.PI * 2);
-    if (f.kind === 'site') pushModel(SL, 'site', mdl('site', MD.siteModel), compose(cx, 0, cy, ry));
-    else pushModel(SL, 'crys' + f.tier, mdl('crys' + f.tier, () => MD.crystalModel(f.tier)), compose(cx, 0, cy, ry, 1.3, 1.3, 1.3));
-    visFeats.push({ x: cx, y: cy, kind: f.kind, tier: f.tier });
+    if (f.kind === 'site') pushModel(ch.rec, 'site', mdl('site', MD.siteModel), compose(cx, 0, cy, ry));
+    else pushModel(ch.rec, 'crys' + f.tier, mdl('crys' + f.tier, () => MD.crystalModel(f.tier)), compose(cx, 0, cy, ry, 1.3, 1.3, 1.3));
+    ch.feats.push({ x: cx, y: cy, kind: f.kind, tier: f.tier });
+  }
+}
+
+/** bring the static layer up to date: re-record what changed, then copy the visible chunks into the meshes */
+export const ST = { n: 0, fresh: 0, rec: 0, recN: 0, asm: 0, full: 0 };
+function rebuildStatic(real: number) {
+  const q0 = performance.now(); ST.n++;
+  ensureFresh();
+  const q1 = performance.now(); ST.fresh += q1 - q0;
+  if (G.railRev !== lastCutRev) { lastCutRev = G.railRev; const rr: number[] = []; for (const r of G.L.rails) if (G.tiles[r.y * W + r.x] === 6) rr.push(r.y * W + r.x); updateCuts(rr); }
+  // what changed since last time: specific areas (just those chunks) or anything else (everything)
+  const tagged = G.rev - lastRev === G.touchN - lastTouchN;
+  if (fullNext || !tagged) { chunks.clear(); fullNext = false; ST.full++; }
+  else {
+    const t = G.touched;
+    for (let i = 0; i + 3 < t.length; i += 4) {
+      const x0 = Math.floor((t[i] - 2) / CH), y0 = Math.floor((t[i + 1] - 2) / CH), x1 = Math.floor((t[i + 2] + 2) / CH), y1 = Math.floor((t[i + 3] + 2) / CH);
+      for (let cy = y0; cy <= y1; cy++) for (let cx = x0; cx <= x1; cx++) chunks.delete(ckey(cx, cy));
+    }
+  }
+  G.touched.length = 0; lastTouchN = G.touchN; lastRev = G.rev;
+  // chunks with finished pop-in animations are recorded again (now as normal buildings)
+  for (const [k, c] of chunks) if (c.pops.length && real >= c.popUntil) chunks.delete(k);
+  // the visible chunks
+  const SR = C.dist * 1.3 + 16, sx = view.cam.x, sy = view.cam.y;
+  stX = sx; stY = sy; stR = SR;
+  const cx0 = Math.max(0, Math.floor((sx - SR) / CH)), cx1 = Math.min(Math.ceil(W / CH) - 1, Math.floor((sx + SR) / CH));
+  const cy0 = Math.max(0, Math.floor((sy - SR) / CH)), cy1 = Math.min(Math.ceil(H / CH) - 1, Math.floor((sy + SR) / CH));
+  const vis: number[] = [], missing = new Set<number>();
+  for (let cy = cy0; cy <= cy1; cy++) for (let cx = cx0; cx <= cx1; cx++) { const k = ckey(cx, cy); vis.push(k); if (!chunks.has(k)) missing.add(k); }
+  const q2 = performance.now();
+  if (missing.size) recordChunks(missing, real);
+  const q3 = performance.now(); ST.rec += q3 - q2; ST.recN += missing.size;
+  // forget chunks far away (memory)
+  if (chunks.size > vis.length * 3 + 64) { const keep = new Set(vis); for (const k of [...chunks.keys()]) if (!keep.has(k)) chunks.delete(k); }
+  // copy into the meshes
+  SL.begin();
+  animEnts = []; lampEnts = []; sigRails = []; visFeats = []; popEnts = []; popUntil = 0; popping = false;
+  for (const k of vis) {
+    const c = chunks.get(k)!;
+    for (const [key, r] of c.rec.map) SL.get(key, r.geo, r.mat, r.shadow, r.colors).pushArr(r.m, r.c);
+    if (c.anim.length) animEnts.push(...c.anim);
+    if (c.lamps.length) lampEnts.push(...c.lamps);
+    if (c.sig.length) sigRails.push(...c.sig);
+    if (c.feats.length) visFeats.push(...c.feats);
+    if (c.pops.length) { popEnts.push(...c.pops); popUntil = Math.max(popUntil, c.popUntil); popping = true; }
   }
   SL.end();
+  needAssemble = false;
+  ST.asm += performance.now() - q3;
   // power lines
+  const inR = (x: number, y: number, pad = 0) => x > sx - SR - pad && x < sx + SR + pad && y > sy - SR - pad && y < sy + SR + pad;
   const pts: number[] = [];
   const wz = (e: Ent) => (e.type === 'outpost' ? 3.3 : e.type === 'tower' ? 4.45 : e.type === 'pole2' ? 2.3 : e.type === 'hub' ? 3.7 : 1.82) + (e.z || 0) * LH;
   const wxy = (e: Ent) => e.type === 'hub' ? [e.x + e.w / 2 + 1.3, e.y + e.h / 2 - 1.3] : [e.x + e.w / 2, e.y + e.h / 2];
@@ -441,10 +531,10 @@ export interface Label3 { x: number; y: number; z: number; t: string; c: string 
 export function update3D(time: number, real: number, dt: number, labels: Label3[]) {
   leafUniform.value = real;
   // static layer
-  if (real - lastStatic > 1) { lastStatic = real; const sig = fluidSig(); if (sig !== lastFluidSig) { lastFluidSig = sig; lastRev = -1; } }
+  if (real - lastStatic > 1) { lastStatic = real; const sig = fluidSig(); if (sig !== lastFluidSig) { lastFluidSig = sig; fullNext = true; needAssemble = true; } }
   const wantR = C.dist * 1.3 + 16;
-  if (Math.abs(view.cam.x - stX) > stR * 0.3 || Math.abs(view.cam.y - stY) > stR * 0.3 || Math.abs(wantR - stR) > stR * 0.3) lastRev = -1;
-  if (G.rev !== lastRev || (popping && real >= popUntil)) { rebuildStatic(real); lastRev = G.rev; }
+  if (Math.abs(view.cam.x - stX) > stR * 0.3 || Math.abs(view.cam.y - stY) > stR * 0.3 || Math.abs(wantR - stR) > stR * 0.3) needAssemble = true;
+  if (G.rev !== lastRev || needAssemble || (popping && real >= popUntil)) rebuildStatic(real);
   // trees near the camera
   const R = Math.min(150, C.dist * 1.7 + 25);
   const ts = treeState;
@@ -514,9 +604,13 @@ export function update3D(time: number, real: number, dt: number, labels: Label3[
     if (close && d.kind === 'machine' && (e.st === 'starve' || e.st === 'idle') && Math.random() < 0.003) spawn(cx, cy, { z: zoff + t.height, vz: 0.4, vx: 0.15, life: 2.2, spr: 'zz', size: 0.35, vr: 0, rot: 0, col: rgba(1, 1, 1, 0.8) });
   }
   // items on belts
+  // (far from the middle of the view they're simple coloured blocks: one draw call, no shadows)
   if (C.dist < 120) {
+    const FR = VR * LOD.itemFar, farM = mdl('itemFar', () => ({ geo: new THREE.BoxGeometry(0.3, 0.14, 0.3).translate(0, 0.07, 0), mats: [] }));
+    const farMat = itemFarMat || (itemFarMat = std('#ffffff', 0.8, 0.05));
     for (const b of G.L.belts) {
       if (!b.items.length || Math.abs(b.x - tgx) > VR || Math.abs(b.y - tgy) > VR || (b.z || 0) > view.level || b.type.startsWith('lift')) continue;
+      const far = Math.abs(b.x - tgx) > FR || Math.abs(b.y - tgy) > FR;
       const bz = (b.z || 0) * LH;
       const p = b.pts;
       const isT = b.type === 'tunnel', ex = isT && b.pair ? G.ents.get(b.pair) : null;
@@ -533,6 +627,7 @@ export function update3D(time: number, real: number, dt: number, labels: Label3[
           const tx = 2 * u * (p[2] - p[0]) + 2 * t * (p[4] - p[2]), ty = 2 * u * (p[3] - p[1]) + 2 * t * (p[5] - p[3]);
           ang = Math.atan2(ty, tx);
         }
+        if (far) { COL.set(ITEMS[it.it].c); DL.get('itemFar', farM.geo, farMat, false, true).push(compose(x, 0.23 + bz, y, -ang), COL); continue; }
         const im = MD.itemModel(it.it);
         DL.get('item:' + it.it, im.geo, im.mat, close).push(compose(x, 0.23 + bz, y, -ang));
       }

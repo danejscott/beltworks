@@ -424,7 +424,7 @@ function trainStatic(t: Train) {
 function trainDyn(t: Train) {
   const stTxt: Record<string, string> = { moving: 'Driving', loading: 'At station', nopath: 'No route! Check the track connects', noschedule: 'No schedule', stopped: 'Stopped', idle: 'Planning route' };
   const st = G.ents.get(t.sched[t.si]);
-  let h = `<div class="row">${status(t.state === 'nopath' ? 'block' : (t as any).sigWait ? 'starve' : t.state === 'moving' || t.state === 'loading' ? 'work' : 'idle', (t as any).sigWait ? 'Waiting at a red signal' : stTxt[t.state] || t.state)}</div>`;
+  let h = `<div class="row">${status(t.state === 'nopath' ? 'block' : (t as any).sigWait ? 'starve' : t.state === 'moving' || t.state === 'loading' ? 'work' : 'idle', (t as any).sigWait ? 'Waiting at a red signal' : (t as any).queued && t.state === 'moving' ? 'Waiting in line for the station' : stTxt[t.state] || t.state)}</div>`;
   if (st) h += `<div class="sm">Next: ${esc(st.name)} · ${fmtR(t.v)} tiles/s</div>`;
   h += `<div class="row">Cargo ${fmt(t.tot)} / ${fmt(trainCap(t))}</div><div class="bar"><i style="width:${trainCap(t) ? t.tot / trainCap(t) * 100 : 0}%"></i></div><div class="chips">`;
   for (const k in t.cargo) h += `<span class="chip">${ic(k, 18)}${fmt(t.cargo[k])}</span>`;
@@ -751,7 +751,7 @@ export function buildMapBase() {
     D[i * 4] = c[0] * tr; D[i * 4 + 1] = c[1] * (G.trees[i] ? 0.9 : 1); D[i * 4 + 2] = c[2] * tr; D[i * 4 + 3] = 255;
   }
   g.putImageData(img, 0, 0);
-  mapOver = document.createElement('canvas'); mapOver.width = W; mapOver.height = H;
+  mapOver = document.createElement('canvas'); mapOver.width = W; mapOver.height = H; overRev = -1;
 }
 /** a small image of everything built (for the timelapse) */
 export function snapshotOverlay(): string {
@@ -764,8 +764,11 @@ export function snapshotOverlay(): string {
   }
   return c.toDataURL('image/png');
 }
+let overRev = -1;
+/** buildings on the map overlay (only redrawn when something was built or removed) */
 function refreshMapOverlay() {
-  if (!mapOver) return;
+  if (!mapOver || overRev === G.rev) return;
+  overRev = G.rev;
   const g = mapOver.getContext('2d')!;
   g.clearRect(0, 0, W, H);
   for (const e of G.ents.values()) {
@@ -773,11 +776,20 @@ function refreshMapOverlay() {
     g.fillStyle = d.kind === 'belt' || d.kind === 'tunnel' ? '#d8a040' : d.kind === 'rail' ? '#c8c0b0' : d.kind === 'pipe' ? '#8ab0d0' : d.kind === 'pole' ? '#e8d890' : d.col;
     g.fillRect(e.x, e.y, e.w, e.h);
   }
-  for (const t of G.trains) { g.fillStyle = '#ff5030'; for (const c of t.cells) g.fillRect(c % W - 1, Math.floor(c / W) - 1, 3, 3); }
 }
+/** trains move, so they're drawn on top each time rather than baked into the overlay */
+function drawTrains(g: CanvasRenderingContext2D, ox: number, oy: number, k: number, span: number) {
+  g.fillStyle = '#ff5030';
+  for (const t of G.trains) for (const c of t.cells) { const x = c % W, y = Math.floor(c / W); if (x < ox || y < oy || x > ox + span || y > oy + span) continue; g.fillRect((x - 1 - ox) * k, (y - 1 - oy) * k, 3 * k, 3 * k); }
+}
+let mmAt = 0, mmSig = '';
 function drawMiniMap() {
   const c = document.getElementById('minimap') as HTMLCanvasElement;
   if (!c || !mapBase) return;
+  // about 12 times a second is plenty for the minimap (immediately when the view moves)
+  const now = performance.now(), sig = `${view.cam.x.toFixed(1)},${view.cam.y.toFixed(1)},${view.cam.s.toFixed(2)},${G.rev}`;
+  if (sig === mmSig && now - mmAt < 80) return;
+  mmSig = sig; mmAt = now;
   const g = c.getContext('2d')!, S = c.width;
   // show a 256x256 window around the camera
   const span = 256, cx = clamp(view.cam.x - span / 2, 0, W - span), cy = clamp(view.cam.y - span / 2, 0, H - span);
@@ -786,6 +798,7 @@ function drawMiniMap() {
   g.drawImage(mapOver!, cx, cy, span, span, 0, 0, S, S);
   const k = S / span;
   G.nodes.forEach((n, i) => { if (!G.disc[i] || n.x < cx || n.y < cy || n.x > cx + span || n.y > cy + span) return; g.fillStyle = RES_COL[n.res] || ITEMS[n.res].c; g.fillRect((n.x - cx) * k, (n.y - cy) * k, 2 * k + 1, 2 * k + 1); });
+  drawTrains(g, cx, cy, k, span);
   for (const p of G.pings) { if (p.x < cx || p.y < cy || p.x > cx + span || p.y > cy + span) continue; g.strokeStyle = p.col; g.lineWidth = 2; g.beginPath(); g.arc((p.x - cx) * k, (p.y - cy) * k, 5 + 2 * Math.sin(G.realNow * 5), 0, 7); g.stroke(); }
   const vr = viewDiamond();
   g.strokeStyle = '#fff'; g.lineWidth = 1.5; g.beginPath(); vr.forEach(([x, y], i) => i ? g.lineTo((x - cx) * k, (y - cy) * k) : g.moveTo((x - cx) * k, (y - cy) * k)); g.closePath(); g.stroke();
@@ -811,6 +824,7 @@ function drawBigMap() {
   g.imageSmoothingEnabled = true;
   g.drawImage(mapBase, 0, 0, c.width, c.height);
   g.drawImage(mapOver!, 0, 0, c.width, c.height);
+  drawTrains(g, 0, 0, k, W);
   G.nodes.forEach((n, i) => {
     // oil is always on the map (surveyed from the start) — everything else once you've found it
     if (mapFilter[n.res] === false || (!G.disc[i] && n.res !== 'crude_oil')) return;
@@ -838,8 +852,13 @@ function viewDiamond() { return [s2w(0, 0), s2w(view.cw, 0), s2w(view.cw, view.c
 
 // ---------------------------------------------------------------------------
 // Tooltip
+let tipAt = 0, tipX = -1, tipY = -1;
 function renderTip() {
   const tip = $('#tip'), m = view.mouse;
+  // while the mouse is still, 10 checks a second are enough
+  const now = performance.now();
+  if (m.sx === tipX && m.sy === tipY && now - tipAt < 100) return;
+  tipAt = now; tipX = m.sx; tipY = m.sy;
   let h = '';
   const hov = document.elementFromPoint(m.sx, m.sy) as HTMLElement | null;
   const tipEl = hov && hov.closest ? hov.closest('[data-tip]') as HTMLElement : null;

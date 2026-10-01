@@ -172,6 +172,16 @@ function planRoute(t: Train, st: Ent): boolean {
   return false;
 }
 
+/** is another train using station st ahead of t? (loading there, or heading there and closer) — then t waits in line */
+const QGAP = 4;
+function stationBusy(st: Ent, t: Train) {
+  for (const o of G.trains) {
+    if (o === t || o.sched[o.si] !== st.id) continue;
+    if (o.state === 'loading') return true;
+    if (o.state === 'moving' && (o.route.length < t.route.length || (o.route.length === t.route.length && o.id < t.id))) return true;
+  }
+  return false;
+}
 export function updateTrains(dt: number) {
   const occ = G.trainOcc;
   occ.clear();
@@ -198,14 +208,20 @@ export function updateTrains(dt: number) {
         break;
       case 'moving': {
         if (!t.route.length) { t.state = 'loading'; t.v = 0; t.frac = 0; t.waitT = 0; t.idleT = 0; break; }
+        const tt = t as any;
+        // the station is in use: wait in line a few tiles before it instead of pushing up behind
+        if (t.frac === 0 && t.route.length <= QGAP && stationBusy(st, t)) { t.v = 0; tt.queued = true; t.blockT = 0; break; }
         const nxt = t.route[0], who = occ.get(nxt);
         if (who !== undefined && who !== t.id) {
-          t.v = 0; t.blockT += dt;
+          t.v = 0;
+          // stuck behind a train going to the same station: that's the queue, just wait
+          const o = G.trains.find(x => x.id === who);
+          if (o && o.sched[o.si] === st.id) { tt.queued = true; t.blockT = 0; break; }
+          t.blockT += dt;
           if (t.blockT > 4) { t.blockT = 0; t.state = 'idle'; t.waitT = 99; }
           break;
         }
-        t.blockT = 0;
-        const tt = t as any;
+        t.blockT = 0; tt.queued = false;
         if (t.frac === 0 && !canEnter(t)) {   // red signal ahead
           t.v = 0; tt.sigWait = true; tt.sigT = (tt.sigT || 0) + dt;
           if (tt.sigT > 45) { tt.sigT = 0; t.state = 'idle'; t.waitT = 99; }

@@ -8,6 +8,7 @@ import { deserialize, serialize, stateHash } from './save';
 import { createServerWorld, ensureTradePost } from './online';
 import { MP } from './teams';
 import { G } from './world';
+import SimWorker from './simworker?worker&inline';
 
 export const PROTO = 2;
 /** when this copy of the game was built (online worlds require everyone on the newest build) */
@@ -150,13 +151,15 @@ async function onBinary(b: Uint8Array) {
   try {
     if (e.kind === 'welcome') H.progress('Unpacking the world…');
     const text = await gunzip(b);
-    startFrom(JSON.parse(text), e.baseTick);
+    startFrom(JSON.parse(text), e.baseTick, text);
   } catch (err) { console.error(err); H.error('Could not load the world save.'); disconnect(); }
 }
 /** load a save (or build the world fresh from its seed), then replay the actions since and catch up */
-function startFrom(save: any, baseTick: number) {
+function startFrom(save: any, baseTick: number, text = '') {
   const first = !NET.ready;
   NET.loading = true;
+  // mid-game reloads catch up in the background worker, so the game keeps drawing meanwhile
+  if (!first && save && text && catchUpInWorker(text, baseTick)) return;
   const run = () => {
     if (save) { deserialize(save, !first); ensureTradePost(); }
     else createServerWorld(NET.meta.seed, NET.meta);
@@ -167,6 +170,46 @@ function startFrom(save: any, baseTick: number) {
   };
   if (first) { H.progress(save ? 'Building the world…' : 'Generating the world… (big maps take a little while)'); setTimeout(run, 30); }
   else run();
+}
+// ---------------------------------------------------------------------------
+// the background worker (see simworker.ts)
+let worker: Worker | null = null, workerBroken = false, job = 0;
+function getWorker(): Worker | null {
+  if (worker || workerBroken) return worker;
+  try {
+    worker = new SimWorker();
+    worker.onerror = () => { workerBroken = true; worker = null; };
+  } catch { workerBroken = true; worker = null; }
+  return worker;
+}
+/** hand the save and the actions since it to the worker; false = do it here instead */
+function catchUpInWorker(text: string, baseTick: number): boolean {
+  if ((NET.meta?.size || 0) >= 4608) return false;   // enormous worlds: a second copy would need too much memory
+  const w = getWorker();
+  if (!w) return false;
+  const my = ++job, n = NET.n;
+  const log = NET.pending.filter(c => c[0] >= baseTick && c[0] < n);
+  w.onmessage = (ev: MessageEvent) => {
+    const m = ev.data;
+    if (!m || m.job !== my) return;   // an older job (a newer reload replaced it)
+    if (m.t !== 'done') { console.warn('background catch-up failed, doing it here', m.msg); workerBroken = true; mainThreadCatchUp(JSON.parse(text), baseTick); return; }
+    try {
+      deserialize(JSON.parse(m.save), true);
+      NET.tick = m.tick;
+      NET.pending = NET.pending.filter(c => c[0] >= m.tick);
+      G.dirty.links = true;
+      catchUp(false);   // the few ticks that arrived meanwhile
+    } catch (err) { console.error(err); mainThreadCatchUp(JSON.parse(text), baseTick); }
+  };
+  w.postMessage({ t: 'catch', job: my, save: text, baseTick, log, n, me: MP.me });
+  return true;
+}
+function mainThreadCatchUp(save: any, baseTick: number) {
+  deserialize(save, true); ensureTradePost();
+  NET.tick = baseTick;
+  NET.pending = NET.pending.filter(c => c[0] >= baseTick);
+  G.dirty.links = true;
+  catchUp(false);
 }
 /** run the ticks since the save as fast as possible (in slices, so the page stays responsive) */
 function catchUp(first: boolean) {
@@ -220,6 +263,7 @@ export function netStep(update: (dt: number) => void) {
   if (k) { NET.pending.splice(0, k); syncMyTeam(); }
   update(1 / 60);
   NET.tick++;
+  const D = (globalThis as any).__bwDiag; if (D && NET.tick === D.tick) D.cb();   // (debugging aid)
   if (NET.tick % 300 === 0 && !NET.loading) send({ t: 'hash', tick: NET.tick, h: stateHash() });
   return true;
 }
