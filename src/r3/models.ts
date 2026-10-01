@@ -333,12 +333,22 @@ export function buildTemplates(): Record<string, Template> {
   // ---- Transport
   {
     const b = new B();
-    b.box(2.9, 0.3, 2.9, 0, 0, 0, M.concrete);
-    b.box(2.9, 0.04, 0.12, 0, 0.3, 1.39, M.yellow); b.box(0.12, 0.04, 2.9, 1.39, 0.3, 0, M.yellow);
-    for (const sx of [-1.2, 1.2]) for (const sz of [-1.2, 1.2]) b.box(0.15, 1.8, 0.15, sx, 0.3, sz, M.orange);
-    b.box(2.7, 0.12, 2.7, 0, 2.1, 0, M.steelDk);
-    b.box(0.9, 1.0, 0.7, -0.8, 0.3, -0.8, M.orange); b.box(0.5, 0.3, 0.02, -0.8, 0.8, -0.44, M.glass);
-    T.station = { stat: b.build(), height: 2.3, light: [1.2, 2.2, 1.2], anims: [] };
+    // raised concrete platform with yellow safety edges on every side (tracks can run along any of them)
+    b.box(2.9, 0.34, 2.9, 0, 0, 0, M.concrete);
+    for (const z of [-1.39, 1.39]) b.box(2.9, 0.04, 0.12, 0, 0.34, z, M.yellow);
+    for (const x of [-1.39, 1.39]) b.box(0.12, 0.04, 2.9, x, 0.34, 0, M.yellow);
+    // station house with a clock
+    b.box(1.1, 1.3, 1.0, -0.8, 0.34, -0.8, M.orange); b.box(1.16, 0.1, 1.06, -0.8, 1.64, -0.8, M.steelDk);
+    b.box(0.6, 0.35, 0.02, -0.8, 0.95, -0.29, M.glass); b.box(0.02, 0.35, 0.5, -0.24, 0.95, -0.8, M.glass);
+    b.cyl(0.2, 0.05, -0.8, 1.76, -0.8, M.white, 16); b.box(0.03, 0.02, 0.14, -0.8, 1.82, -0.74, M.black);
+    // canopy over the platform on slim columns
+    for (const x of [-0.2, 1.2]) for (const z of [-1.2, 1.2]) b.box(0.1, 1.9, 0.1, x, 0.34, z, M.steelDk);
+    b.box(1.8, 0.1, 2.8, 0.5, 2.24, 0, M.greyLt); b.box(1.84, 0.05, 0.08, 0.5, 2.2, 1.4, M.orange); b.box(1.84, 0.05, 0.08, 0.5, 2.2, -1.4, M.orange);
+    // loading gantry and cargo crates waiting on the platform
+    b.box(0.08, 1.4, 0.08, 1.35, 0.34, -0.2, M.yellow); b.box(0.08, 1.4, 0.08, 1.35, 0.34, 0.6, M.yellow); b.box(0.1, 0.1, 1.0, 1.35, 1.74, 0.2, M.yellow);
+    b.box(0.45, 0.4, 0.45, 0.5, 0.34, 0.8, M.wood); b.box(0.45, 0.4, 0.45, 0.5, 0.74, 0.8, M.wood); b.box(0.45, 0.4, 0.45, 0.0, 0.34, 0.9, M.wood);
+    b.box(0.55, 0.45, 0.4, -0.9, 0.34, 0.9, M.blue);
+    T.station = { stat: b.build(), height: 2.4, light: [1.35, 1.9, 0.2], anims: [] };
   }
   {
     const b = new B();
@@ -725,6 +735,21 @@ export function railCurve(): Model {
   return one(b => {
     for (let i = 0; i < 3; i++) { const a = (i + 0.5) / 3 * Math.PI / 2; b.add(new THREE.BoxGeometry(0.7, 0.05, 0.12), M.wood, -0.5 + Math.sin(a) * 0.5, 0.025, 0.5 - Math.cos(a) * 0.5, 0, -a + Math.PI / 2, 0); }
     for (const r of [0.28, 0.72]) arcBeams(b, r, 0.05, 0.05, 0.06, M.steel, -0.5, 0.5, 6);
+  });
+}
+/** a wide rail curve: quarter circle of radius 1.5 around the origin, from (0,-1.5) to (1.5,0) */
+export function railArcBig(): Model {
+  return one(b => {
+    for (let i = 0; i < 8; i++) { const a = (i + 0.5) / 8 * Math.PI / 2; b.add(new THREE.BoxGeometry(0.7, 0.05, 0.12), M.wood, Math.sin(a) * 1.5, 0.025, -Math.cos(a) * 1.5, 0, -a + Math.PI / 2, 0); }
+    for (const r of [1.28, 1.72]) arcBeams(b, r, 0.05, 0.05, 0.06, M.steel, 0, 0, 14);
+  });
+}
+/** a concrete bridge span under a rail tile on water: deck + a pier into the water */
+export function railBridge(): Model {
+  return one(b => {
+    b.box(1.02, 0.22, 0.9, 0, -0.22, 0, M.concrete);
+    b.box(1.02, 0.1, 0.06, 0, 0.0, 0.45, M.greyLt); b.box(1.02, 0.1, 0.06, 0, 0.0, -0.45, M.greyLt);
+    b.box(0.34, 1.4, 0.5, 0, -1.62, 0, M.concrete);
   });
 }
 // Pipes

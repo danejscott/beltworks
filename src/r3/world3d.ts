@@ -19,6 +19,7 @@ import { B, M, Model, std } from './mat';
 import * as MD from './models';
 import { T3, tunnelInside, updateCuts } from './terrain3d';
 import { MP } from '../teams';
+import { Curve, railCurves } from '../railcurves';
 import { isDepleted } from '../deplete';
 
 // ---------------------------------------------------------------------------
@@ -256,7 +257,10 @@ function pushBelt(L: Layer, b: Ent, mat?: THREE.Material, prefix = '') {
     L.get(prefix + 'bsS:' + (mat ? 'g' : beltKey(b)), surfS().geo, mat || beltMats[beltKey(b)], false).push(m);
   }
 }
-function pushRail(L: Layer, x: number, y: number, pairs: number, mat?: THREE.Material, prefix = '') {
+function pushRail(L: Layer, x: number, y: number, pairs: number, mat?: THREE.Material, prefix = '', curves?: Map<number, Curve>) {
+  const ti = y * W + x;
+  if (!prefix && (G.tiles[ti] === 4 || G.tiles[ti] === 5)) pushModel(L, 'railBridge', mdl('railBridge', MD.railBridge), compose(x + 0.5, 0, y + 0.5, (pairs & 2) && !(pairs & 1) ? -HP : 0));
+  if (curves && curves.has(ti)) return;   // drawn as part of a wide curve
   for (let i = 0; i < 6; i++) {
     if (!(pairs & (1 << i))) continue;
     if (i < 2) pushModel(L, prefix + 'railS', mdl('railS', MD.railStraight), compose(x + 0.5, 0, y + 0.5, i === 0 ? 0 : -HP), mat, false);
@@ -289,7 +293,14 @@ let stX = -1e9, stY = -1e9, stR = 0;
 function rebuildStatic(real: number) {
   ensureFresh();
   { const rr: number[] = []; for (const r of G.L.rails) if (G.tiles[r.y * W + r.x] === 6) rr.push(r.y * W + r.x); updateCuts(rr); }
+  // wide rail curves
+  const rc = railCurves(), curveTiles = rc.byTile;
   SL.begin();
+  if (view.level === 0) for (const c of rc.corners) {
+    const qx = -(DX[c.a] + DX[c.b]), qy = -(DY[c.a] + DY[c.b]);   // from the arc's centre toward the corner
+    const k = qx > 0 && qy < 0 ? 0 : qx > 0 && qy > 0 ? 1 : qx < 0 && qy > 0 ? 2 : 3;
+    pushModel(SL, 'railArc', mdl('railArc', MD.railArcBig), compose(c.ox, 0, c.oy, -k * HP), undefined, false);
+  }
   animEnts = []; lampEnts = []; sigRails = []; visFeats = []; popping = false;
   const SR = C.dist * 1.3 + 16, sx = view.cam.x, sy = view.cam.y;
   stX = sx; stY = sy; stR = SR;
@@ -315,7 +326,7 @@ function rebuildStatic(real: number) {
     }
     if (k === 'belt' || k === 'tunnel') { pushBelt(SL, e); continue; }
     if (k === 'rail') {
-      pushRail(SL, e.x, e.y, e.pairs);
+      pushRail(SL, e.x, e.y, e.pairs, undefined, '', curveTiles);
       if (e.sig) sigRails.push(e);
       if (G.tiles[e.y * W + e.x] === 6) pushPortals(e);
       continue;

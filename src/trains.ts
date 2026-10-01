@@ -1,4 +1,5 @@
 import { MP, vctx } from './teams';
+import { onCurve } from './railcurves';
 import { BLD } from './data';
 import { H, W } from './terrain';
 import { DX, DY, opp } from './util';
@@ -72,8 +73,11 @@ export function placeTrain(x: number, y: number, rot: number): Train | null {
   G.fx.sfx('place');
   return t;
 }
+/** longest train (locomotive + wagons), by map size */
+export const maxCars = () => { const s = G.S.size || 1024; return s <= 512 ? 12 : s <= 1024 ? 18 : s <= 2304 ? 24 : 30; };
 export function addWagon(t: Train) {
-  if (t.frac > 0 || t.v > 0) { G.fx.toast('Stop the train first (or wait for it to arrive)', 'bad'); return; }
+  if (t.v > 0.01) { G.fx.toast('Stop the train first (or wait for it to arrive)', 'bad'); return; }
+  if (t.cars.length >= maxCars()) { G.fx.toast(`Trains can be at most ${maxCars()} cars long on this map size`, 'bad'); return; }
   const n = t.cells.length, tail = t.cells[n - 1], prev = t.cells[n - 2];
   const entry = sideToward(tail, prev);
   const r = railAt(tail);
@@ -89,7 +93,7 @@ export function addWagon(t: Train) {
 }
 export function removeWagon(t: Train) {
   if (wagonsOf(t) <= 0) return;
-  if (t.frac > 0 || t.v > 0) { G.fx.toast('Stop the train first', 'bad'); return; }
+  if (t.v > 0.01) { G.fx.toast('Stop the train first', 'bad'); return; }
   t.cars.pop(); t.cells.splice(t.cells.length - 2, 2);
   refund(BLD.wagon.cost);
   const cap = trainCap(t);
@@ -275,7 +279,7 @@ export function trainPoints(t: Train): number[][] {
   for (let k = 0; k < t.cells.length; k++) {
     const a = t.cells[k];
     const b = k === 0 ? (t.route.length && f > 0 ? t.route[0] : a) : t.cells[k - 1];
-    pts.push([tx(a) + 0.5 + (tx(b) - tx(a)) * f, ty(a) + 0.5 + (ty(b) - ty(a)) * f]);
+    pts.push(onCurve(tx(a) + 0.5 + (tx(b) - tx(a)) * f, ty(a) + 0.5 + (ty(b) - ty(a)) * f));
   }
   return pts;
 }

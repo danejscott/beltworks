@@ -113,7 +113,8 @@ export function tickWear(dt: number) {
   for (const [i, v] of G.wear) { const n = v - 2; if (n <= 0) { G.wear.delete(i); G.fx.wear(i, 0); } else { G.wear.set(i, n); G.fx.wear(i, n); } }
 }
 
-export function truckStations(): Ent[] { return G.L ? [...G.L.tstations, ...G.L.ports.filter((p: Ent) => BLD[p.type].pier)] : []; }
+/** everywhere a truck can stop: truck stops, harbors and train stations (so cargo can change hands) */
+export function truckStations(): Ent[] { return G.L ? [...G.L.tstations, ...G.L.ports.filter((p: Ent) => BLD[p.type].pier), ...G.L.stations] : []; }
 export function buyTruck(home: Ent, target: Ent | null): string | null {
   const docks = dockTiles(home);
   if (!docks.length) return 'No free ground next to this station for a truck to park';
