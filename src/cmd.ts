@@ -12,7 +12,7 @@ import { buyShop, loadElevator, submitMilestone } from './progress';
 import { flushNet, fluidsTouching, myCraft, setRecipe } from './sim';
 import { asTeam, MP } from './teams';
 import { joinTeam, leaveTeam, nearRivalBase, spawnTeam } from './online';
-import { addInv, canAfford, canPlace, canRemove, chopTree, Ent, entAt, floorBlocked, G, groundOnly, hasFloor, markDirty, missingText, nodeAt, pairBit, PAIRS, pay, place, refund, remove, rotateEnt, setFloor } from './world';
+import { addInv, canAfford, canPlace, canRemove, chopTree, Ent, entAt, floorBlocked, G, groundOnly, hasFloor, markDirty, missingText, nodeAt, pairBit, PAIRS, pay, place, refund, remove, rotateEnt, setFloor, upgradeTarget, creative } from './world';
 import { clamp } from './util';
 
 export type Cmd = { k: string; [x: string]: any };
@@ -146,7 +146,12 @@ function placeOne(c: Cmd) {
     const fl = fluidsTouching([[c.x, c.y], [c.x + d.w - 1, c.y + d.h - 1], [c.x + d.w - 1, c.y], [c.x, c.y + d.h - 1]], null, z);
     if (fl.length > 1) reason = 'That would mix fluids';
   }
-  if (reason) { if (c.loud) { toast(reason, 'bad'); sfx('err'); } return; }
+  if (reason) {
+    const old = upgradeTarget(c.type, c.x, c.y, z);
+    if (old && owns(old) && !canRemove(old)) return upgradeOne(old, c.type, z);
+    if (c.loud) { toast(reason, 'bad'); sfx('err'); }
+    return;
+  }
   const e = place(c.type, c.x, c.y, c.rot, { z });
   if (c.recipe && d.machine && G.S.unlocked.has(c.recipe)) setRecipe(e, c.recipe);
   if (c.clock && e.clock !== undefined) e.clock = Math.min(c.clock, 1);
@@ -154,6 +159,24 @@ function placeOne(c: Cmd) {
   if (c.mode && e.mode) e.mode = c.mode;
   sfx('place');
   if (d.kind === 'extractor' && !G.S.flags.tipExtr) { G.S.flags.tipExtr = 1; toast('Connect a pipe to any side of the extractor.', ''); }
+  return e;
+}
+
+/** swap a building for a higher tier in the same spot: refund the old one, keep its settings */
+function upgradeOne(old: Ent, type: string, z: number) {
+  const nd = BLD[type], od = BLD[old.type];
+  if (!creative()) for (const k in nd.cost) if ((G.S.inv[k] || 0) + (od.cost[k] || 0) < nd.cost[k]) { toast(`Can't upgrade: ${missingText(nd.cost)}`, 'bad'); sfx('err'); return; }
+  const keep = { id: old.id, rot: old.rot, clock: old.clock, shards: old.shards || 0, amp: old.amp || 0, recipe: old.recipe, mode: old.mode, filt: old.filt, name: old.name };
+  remove(old, { quiet: true });
+  const e = place(type, old.x, old.y, nd.noRotate ? 0 : keep.rot, { z, id: keep.id });
+  if (keep.shards && e.clock !== undefined) { const n = Math.min(keep.shards, G.S.inv.power_shard || 0); if (n) { G.S.inv.power_shard -= n; e.shards = n; } }
+  if (keep.amp && (G.S.inv.amplifier || 0) > 0) { G.S.inv.amplifier--; e.amp = 1; }
+  if (keep.clock !== undefined && e.clock !== undefined) e.clock = Math.min(keep.clock, 1 + 0.5 * (e.shards || 0));
+  if (keep.recipe && nd.machine) setRecipe(e, keep.recipe);
+  if (keep.mode && e.mode) e.mode = keep.mode;
+  if (keep.filt && e.filt) e.filt = [...keep.filt];
+  sfx('place');
+  if (!G.S.flags.tipUpg) { G.S.flags.tipUpg = 1; toast(`⬆ Upgraded to ${nd.n} — the old one was refunded and its settings kept`, 'good'); }
   return e;
 }
 
@@ -314,6 +337,14 @@ function exec(c: Cmd): any {
       return;
     }
     case 'mode': { const e = ent(c.id); if (mine(e) && e.mode) { e.mode = c.m; sfx('click'); } return; }
+    case 'paint': {   // copy-settings tool: recipe, clock speed, filters and mode from another building of the same type
+      const e = ent(c.id); if (!mine(e) || e.type !== c.type) return;
+      if (BLD[e.type].machine && c.r !== undefined && (!c.r || S.unlocked.has(c.r))) setRecipe(e, c.r || null);
+      if (e.clock !== undefined && c.clock !== undefined) e.clock = clamp(+c.clock, 0.01, 1 + 0.5 * (e.shards || 0));
+      if (e.filt && Array.isArray(c.filt)) for (let i = 0; i < Math.min(3, e.filt.length); i++) e.filt[i] = String(c.filt[i] ?? '');
+      if (e.mode && c.mode) e.mode = c.mode;
+      sfx('click'); return;
+    }
     case 'collect': {
       const e = ent(c.id); if (!mine(e) || !e.store) return;
       let n = 0; for (const k in e.store) { addInv(k, e.store[k]); n += e.store[k]; } e.store = {}; e.tot = 0;

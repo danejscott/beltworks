@@ -85,6 +85,7 @@ export function renderHotbar() {
   });
   const tk = tool.t && tool.t.k;
   h += `<div class="sep"></div><div class="slot tool ${tk === 'decon' ? 'sel' : ''}" data-act="decon" data-tip="tool:decon"><span class="k">X</span><span class="big" style="color:#ef5b5b">✖</span></div>`;
+  h += `<div class="slot tool ${tk === 'paint' ? 'sel' : ''}" data-act="paint" data-tip="tool:paint"><span class="k">⇧Q</span><span class="big" style="color:#b48cff">🖌</span></div>`;
   h += `<div class="slot tool ${tk === 'bpsel' || tk === 'paste' ? 'sel' : ''}" data-act="copy" data-tip="tool:copy"><span class="k">^C</span><span class="big" style="color:#8ad0ff">⧉</span></div>`;
   h += `<div class="slot tool" data-act="open:bp" data-tip="tool:bp"><span class="k">B</span><span class="big" style="color:#8ad0ff">▦</span></div>`;
   h += '</div>';
@@ -104,6 +105,7 @@ export function updateHint() {
   let h: string;
   if (!t) h = '<b>Drag</b> pan · <b>Wheel</b> zoom · <b>Click</b> ore to mine, trees to chop, buildings to inspect · <b>1–0</b> build · <b>F</b> belt · <b>Q</b> copy building · <b>M</b> map · <b>[ ]</b> rotate view';
   else if (t.k === 'decon') h = '<b>Deconstruct:</b> click one thing, or drag a box (also clears trees). 100% refund · <b>X</b>/<b>Right-click</b> exit';
+  else if (t.k === 'paint') h = t.src ? `<b>Copy settings</b> of a ${esc(BLD[t.src.type].n)}${t.src.r ? ` (${esc(RECIPES[t.src.r]?.n || t.src.r)})` : ''}: click or drag over others of the same kind · <b>Esc</b>/<b>Right-click</b> done` : '<b>Copy settings:</b> click the building to copy from (recipe, clock speed, filters) · <b>Esc</b> cancel';
   else if (t.k === 'bpsel') h = '<b>Blueprint:</b> drag a box around what you want to copy · <b>Esc</b> cancel';
   else if (t.k === 'paste') h = `<b>Pasting ${esc(t.bp.name || 'copy')}</b> (${t.bp.ents.length} pieces) · click to place · <b>R</b> rotate · cost ${costHTML(bpCost(t.bp))} · <b>Right-click</b> done`;
   else {
@@ -842,6 +844,7 @@ function renderTip() {
     if (tp.startsWith('bld:')) h = bldTip(tp.slice(4));
     else if (tp.startsWith('item:')) { const k = tp.slice(5), it = ITEMS[k]; h = `${ic(k, 20)} <b>${it.n}</b><div class="sm">Have ${fmt(G.S.inv[k] || 0)} · sink value ${fmt(it.val || 0)} pts</div><div class="sm">Made: ${fmtR(rate(stats.P, k))}/min · Used: ${fmtR(rate(stats.C, k))}/min</div>`; }
     else if (tp === 'tool:decon') h = '<b>Deconstruct</b> <kbd>X</kbd><div class="sm">Click one thing or drag a box. Full refund.</div>';
+    else if (tp === 'tool:paint') h = '<b>Copy settings</b> <kbd>Shift+Q</kbd><div class="sm">Pick a machine, then click others of the same kind to give them its recipe, clock speed and filters.</div>';
     else if (tp === 'tool:copy') h = '<b>Copy area</b> <kbd>Ctrl+C</kbd><div class="sm">Drag a box, then click to paste copies.</div>';
     else if (tp === 'tool:bp') h = '<b>Blueprint library</b> <kbd>B</kbd>';
     else if (tp === 'power') { h = '<b>Power</b><div class="sm">Total use / total production across all grids.</div>'; }
@@ -911,6 +914,7 @@ function act(cmd: string, a: string, b: string) {
     case 'slot': selectSlot(+a); break;
     case 'decon': setTool(tool.t && tool.t.k === 'decon' ? null : { k: 'decon' }); sfx('click'); break;
     case 'copy': setTool({ k: 'bpsel', quick: true }); sfx('click'); break;
+    case 'paint': setTool(tool.t && tool.t.k === 'paint' ? null : { k: 'paint', src: null }); sfx('click'); break;
     case 'recipe': if (e) { run({ k: 'recipe', id: e.id, r: a || null }); inspKey = ''; } break;
     case 'rot': if (e) run({ k: 'rot', id: e.id, dir: 1 }); break;
     case 'copyEnt': if (e) { setTool({ k: 'build', type: e.type, recipe: e.recipe || null, clock: e.clock, filt: e.filt, mode: e.mode }); closeInspect(); } break;

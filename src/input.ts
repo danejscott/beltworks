@@ -12,10 +12,12 @@ import { clampCam, s2w, sd2w, spawn, updMouseWorld, view } from './view';
 import { pickAt, poleReachT } from './r3/world3d';
 import { rotateCamera, tiltCamera } from './r3/core';
 import { title } from './title';
+import { upgradeTarget } from './world';
 import { addInv, canAfford, canPlace, canRemove, chopTree, def, dims, Ent, entAt, floorBlocked, G, groundOnly, hasFloor, inPort, LH, NL, PORTED, setFloor, markDirty, missingText, nodeAt, pairBit, PAIRS, pay, place, refund, remove, rotateEnt, rotatePairs } from './world';
 import * as UI from './ui';
 import { online, railPairsForPath, run, tileFree as tileFreeZ } from './cmd';
 import { DX, DY } from './util';
+import { MP } from './teams';
 
 // ---------------------------------------------------------------------------
 export interface BP { name: string; w: number; h: number; ents: any[] }
@@ -131,7 +133,7 @@ function tryPlace(loud: boolean) {
   const key = x + ',' + y;
   if (key === lastPlaced) return;
   const reason = canPlace(t.type, x, y, rot, { z: view.level });
-  if (reason) { if (loud) { UI.toast(reason, 'bad'); sfx('err'); } return; }
+  if (reason && !upgradeTarget(t.type, x, y, view.level)) { if (loud) { UI.toast(reason, 'bad'); sfx('err'); } return; }
   lastPlaced = key;
   run({ k: 'place', type: t.type, x, y, rot, z: view.level, loud, recipe: t.recipe || undefined, clock: t.clock, filt: t.filt, mode: t.mode });
 }
@@ -213,15 +215,45 @@ export function pasteFx(o: { x: number; y: number; w: number; h: number }) {
 }
 
 // ---------------------------------------------------------------------------
+// Copy-settings tool
+const owned = (e: Ent) => !MP.teams || (e.o || 0) === MP.myTeam;
+/** the settings worth copying from a building (null if it has none) */
+export function paintSrc(e: Ent): any {
+  const d = BLD[e.type];
+  if (!d.machine && e.clock === undefined && !e.filt && !e.mode) return null;
+  return { type: e.type, r: d.machine ? e.recipe || '' : undefined, clock: e.clock, filt: e.filt ? [...e.filt] : undefined, mode: e.mode || undefined };
+}
+let lastPaint = 0;
+function paintAt() {
+  const t = tool.t, m = view.mouse, e = pickAt(m.wx, m.wy);
+  if (!e || !t) return;
+  if (!t.src) {
+    const s = paintSrc(e);
+    if (!s) { UI.toast('That building has no settings to copy', 'bad'); sfx('err'); return; }
+    t.src = s; lastPaint = e.id; sfx('click');
+    UI.toast(`🖌 Copied the settings of this ${BLD[e.type].n} — click (or drag over) others of the same kind`, 'good');
+    return;
+  }
+  if (e.id === lastPaint) return;
+  lastPaint = e.id;
+  if (e.type !== t.src.type) { if (lmb) return; UI.toast(`The copied settings are for a ${BLD[t.src.type].n}`, 'bad'); sfx('err'); return; }
+  if (!owned(e)) return;
+  run({ k: 'paint', id: e.id, ...t.src });
+}
+// ---------------------------------------------------------------------------
 // Ghosts (called every frame)
 export function updateGhosts() {
   const g: any[] = [];
   view.sel = null;
   const t = tool.t, m = view.mouse;
   view.hover = null; view.powerPreview = null;
-  if (!t || t.k === 'decon') {
+  if (!t || t.k === 'decon' || t.k === 'paint') {
     const e = pickAt(m.wx, m.wy);
     if (e && m.inCanvas && !panning) view.hover = e;
+    if (e && t && t.k === 'paint' && m.inCanvas) {
+      const ok = !t.src || (e.type === t.src.type && owned(e));
+      view.sel = { x0: e.x, y0: e.y, x1: e.x + e.w - 1, y1: e.y + e.h - 1, col: ok ? rgba(0.6, 0.4, 1, 0.3) : rgba(1, 0.3, 0.3, 0.15) };
+    }
   }
   if (t && m.inCanvas) {
     if (t.k === 'build') {
@@ -246,7 +278,8 @@ export function updateGhosts() {
         g.push({ type: 'locomotive', x: m.tx, y: m.ty, rot, ok: !r.err, cells: r.cells });
       } else {
         const [x, y] = ghostPos(t.type);
-        const reason = canPlace(t.type, x, y, rot, { z: view.level });
+        let reason = canPlace(t.type, x, y, rot, { z: view.level });
+        if (reason && upgradeTarget(t.type, x, y, view.level)) reason = null;   // placing over a lower tier upgrades it
         let isExit = false;
         if (d.kind === 'tunnel' || d.kind === 'ptunnel') {
           for (let k = 1; k <= d.range; k++) { const q = at(x - DX[rot] * k, y - DY[rot] * k); if (q && q.type === t.type) { isExit = q.rot === rot && !q.isExit && !q.pair; break; } }
@@ -330,6 +363,7 @@ export function initInput(canvas: HTMLCanvasElement) {
       if (t.k === 'decon') { drag = { sx: m.tx, sy: m.ty, axis: null, kind: 'rect' }; return; }
       if (t.k === 'bpsel') { drag = { sx: m.tx, sy: m.ty, axis: null, kind: 'rect' }; return; }
       if (t.k === 'paste') { doPaste(); return; }
+      if (t.k === 'paint') { paintAt(); return; }
       const d = BLD[t.type];
       if (d.kind === 'foundation') { drag = { sx: m.tx, sy: m.ty, axis: null, kind: 'rect' }; return; }
       if ((d.kind === 'belt' || d.kind === 'pipe' || d.kind === 'rail') && !d.dz) { drag = { sx: m.tx, sy: m.ty, axis: null, kind: d.kind }; return; }
@@ -363,6 +397,7 @@ export function initInput(canvas: HTMLCanvasElement) {
     upd(ev);
     const m = view.mouse;
     if (rotating) { rotateCamera((ev.clientX - rotX) * 0.008); tiltCamera((ev.clientY - rotY) * 0.006); rotX = ev.clientX; rotY = ev.clientY; updMouseWorld(); return; }
+    if (lmb && tool.t && tool.t.k === 'paint') paintAt();
     if (panning) {
       const dx = ev.clientX - panStart.x, dy = ev.clientY - panStart.y;
       if (Math.abs(dx) + Math.abs(dy) > 4) panStart.moved = true;
@@ -444,6 +479,12 @@ export function initInput(canvas: HTMLCanvasElement) {
       if (tool.t && tool.t.k === 'paste') { tool.t.prot = ((tool.t.prot || 0) + (ev.shiftKey ? 3 : 1)) & 3; sfx('click'); return; }
       if (tool.t && tool.t.k === 'build') { rot = (rot + (ev.shiftKey ? 3 : 1)) & 3; sfx('click'); return; }
       const e = pickAt(view.mouse.wx, view.mouse.wy); if (e) run({ k: 'rot', id: e.id, dir: ev.shiftKey ? -1 : 1 });
+      return;
+    }
+    if (k === 'q' && ev.shiftKey) {   // copy settings: pick up this building's settings, then click others to apply
+      const e = pickAt(view.mouse.wx, view.mouse.wy);
+      if (e && paintSrc(e)) { setTool({ k: 'paint', src: paintSrc(e) }); sfx('click'); }
+      else setTool({ k: 'paint', src: null });
       return;
     }
     if (k === 'q') {

@@ -379,6 +379,20 @@ export function canRemove(e: Ent): string | null {
   return null;
 }
 
+/** upgrade in place: which lower tiers a building can be placed straight over */
+export const UPGRADES: Record<string, string[]> = { miner2: ['miner1'], miner3: ['miner1', 'miner2'], pole2: ['pole1'], pipe2: ['pipe1'] };
+/** the building `type` would upgrade if placed at x,y (same spot and size, a lower tier, ours, and nothing else in the way) */
+export function upgradeTarget(type: string, x: number, y: number, z = 0): Ent | null {
+  const lower = UPGRADES[type];
+  if (!lower) return null;
+  const old = entAt(x, y, z);
+  if (!old || !lower.includes(old.type) || old.x !== x || old.y !== y) return null;
+  const g = gridOf(z), cells: number[] = [];
+  for (let j = 0; j < old.h; j++) for (let i = 0; i < old.w; i++) { const k = (old.y + j) * W + old.x + i; if (g[k] === old.id) { cells.push(k); g[k] = 0; } }
+  const why = canPlace(type, x, y, BLD[type].noRotate ? 0 : old.rot, { z });
+  for (const k of cells) g[k] = old.id;
+  return why ? null : old;
+}
 export function remove(e: Ent, o: { quiet?: boolean } = {}): boolean {
   if (canRemove(e)) return false;
   const d = BLD[e.type];
