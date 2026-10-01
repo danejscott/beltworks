@@ -19,7 +19,7 @@ import { pickAt } from './r3/world3d';
 import { addInv, canAfford, count, def, Ent, entAt, G, hasFloor, missingText, nodeAt, remove, rotateEnt, Train, Truck } from './world';
 import { portDyn, portStatic, shipDyn, shipStatic } from './ui2';
 import { fmtTime, recapHTML, showTimer, startTimelapse } from './ui2';
-import { EXTRA_MODALS, extraAct, extraInput, LIVE_MODALS, outpostStatic, plannerAllowed, setRerender, stationExtra, travelPoints, truckDyn, truckStatic, tstationDyn, tstationStatic } from './ui2';
+import { EXTRA_MODALS, extraAct, extraInput, LIVE_MODALS, outpostStatic, plannerAllowed, setRerender, stationExtra, tradeDyn, travelPoints, truckDyn, truckStatic, tstationDyn, tstationStatic } from './ui2';
 import { clockText, cycleOn, solarFactor } from './daynight';
 import { locateHome, scanCol } from './explore';
 
@@ -388,6 +388,7 @@ function inspDyn(e: Ent): string {
       if (d.kind === 'port') h += portDyn(e);
       break;
     }
+    case 'trade': h += tradeDyn(e); break;
     case 'drone': {
       const dr = e.dr;
       h += `${status(e.pnet ? (e.target ? 'work' : 'idle') : 'nopower', e.pnet ? (e.target ? (dr.s === 'home' ? 'Waiting for cargo' : dr.s === 'out' ? `Delivering ${dr.n} items` : 'Returning') : 'No destination') : undefined)}`;

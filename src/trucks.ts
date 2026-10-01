@@ -1,6 +1,6 @@
 // Trucks: drive over open ground between Truck Stations (A* on the tile grid, re-planned when blocked).
 import { MP, vctx } from './teams';
-import { BLD } from './data';
+import { BLD, ITEMS } from './data';
 import { H, isLand, TT, W } from './terrain';
 import { borderTiles, canAfford, Ent, G, missingText, pay, pierAlong, pierBack, refund, addInv, Truck } from './world';
 
@@ -114,7 +114,7 @@ export function tickWear(dt: number) {
 }
 
 /** everywhere a truck can stop: truck stops, harbors and train stations (so cargo can change hands) */
-export function truckStations(): Ent[] { return G.L ? [...G.L.tstations, ...G.L.ports.filter((p: Ent) => BLD[p.type].pier), ...G.L.stations] : []; }
+export function truckStations(): Ent[] { return G.L ? [...G.L.tstations, ...G.L.ports.filter((p: Ent) => BLD[p.type].pier), ...G.L.stations, ...(G.L.trades || [])] : []; }
 export function buyTruck(home: Ent, target: Ent | null): string | null {
   const docks = dockTiles(home);
   if (!docks.length) return 'No free ground next to this station for a truck to park';
@@ -212,9 +212,10 @@ export function updateTrucks(dt: number) {
       }
       case 'loading': {
         t.waitT += dt;
-        const moved = transfer(t, st, dt);
+        const trade = st.type === 'trade_post';
+        const moved = trade ? tradeTransfer(t, st, dt) : transfer(t, st, dt);
         t.idleT = moved ? 0 : t.idleT + dt;
-        const full = st.mode === 'load' ? t.tot >= TRUCK_CAP : t.tot <= 0;
+        const full = trade || st.mode === 'load' ? t.tot >= TRUCK_CAP : t.tot <= 0;
         if (t.sched.length > 1 && ((t.waitT > 2 && (full || t.idleT > 1.5)) || t.waitT > 60)) {
           t.si = (t.si + 1) % t.sched.length; t.state = 'idle'; t.retryT = 0; (t as any).bay = -1;
         }
@@ -222,6 +223,35 @@ export function updateTrucks(dt: number) {
       }
     }
   }
+}
+/** the trade post: drop off everything that isn't the team's wanted item (earning credits), then pick up the wanted item (paying credits) */
+export const tradeVal = (k: string) => Math.max(1, ITEMS[k]?.val || 1);
+function tradeTransfer(t: Truck, st: Ent, dt: number): boolean {
+  (t as any).xacc = ((t as any).xacc || 0) + dt * 120;
+  let n = Math.floor((t as any).xacc);
+  if (n <= 0) return true;
+  (t as any).xacc -= n;
+  const F = G.S.flags, want: string = F.twant || '', cap = BLD[st.type].cap!;
+  let moved = 0;
+  for (const k of Object.keys(t.cargo)) {
+    if (k === want || n <= 0) continue;
+    const m = Math.min(n, t.cargo[k], cap - st.tot);
+    if (m <= 0) break;
+    t.cargo[k] -= m; t.tot -= m; if (!t.cargo[k]) delete t.cargo[k];
+    st.store[k] = (st.store[k] || 0) + m; st.tot += m; n -= m; moved += m;
+    F.tcr = (F.tcr || 0) + m * tradeVal(k);
+    F.tgave = (F.tgave || 0) + m;
+  }
+  if (want && n > 0 && st.store[want] > 0) {
+    const price = tradeVal(want);
+    const m = Math.min(n, st.store[want], TRUCK_CAP - t.tot, Math.floor((F.tcr || 0) / price));
+    if (m > 0) {
+      st.store[want] -= m; st.tot -= m; if (!st.store[want]) delete st.store[want];
+      t.cargo[want] = (t.cargo[want] || 0) + m; t.tot += m; moved += m;
+      F.tcr -= m * price;
+    }
+  }
+  return moved > 0;
 }
 function transfer(t: Truck, st: Ent, dt: number): boolean {
   if (!st.pnet || st.pnet.sat < 0.05) return false;

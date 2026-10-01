@@ -199,7 +199,7 @@ export function borderTiles(e: { x: number; y: number; w: number; h: number }): 
 export function canPlace(type: string, x: number, y: number, rot: number, o: { free?: boolean; replaceKind?: string; z?: number } = {}): string | null {
   const d = BLD[type];
   if (!d) return 'Unknown';
-  if (!G.S.unlocked.has(type) && d.kind !== 'hub') return 'Locked';
+  if (!G.S.unlocked.has(type) && d.kind !== 'hub' && !(o.free && d.kind === 'trade')) return 'Locked';
   const z = o.z || 0;
   if (z > 0 && groundOnly(type)) return 'Must be built on the ground floor';
   if (d.kind === 'lift') {

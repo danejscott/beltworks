@@ -57,7 +57,7 @@ export function ensureFresh() {
 }
 
 export function rebuildLinks() {
-  const L: any = { hubs: [], outposts: [], ports: [], belts: [], order: [], machines: [], miners: [], extractors: [], harvesters: [], logi: [], gens: [], bats: [], poles: [], stations: [], tstations: [], drones: [], sinks: [], pipes: [], rails: [], cnt: Object.create(null), powered: [] };
+  const L: any = { hubs: [], outposts: [], ports: [], belts: [], order: [], machines: [], miners: [], extractors: [], harvesters: [], logi: [], gens: [], bats: [], poles: [], stations: [], tstations: [], trades: [], drones: [], sinks: [], pipes: [], rails: [], cnt: Object.create(null), powered: [] };
   for (const e of G.ents.values()) {
     const d = BLD[e.type];
     L.cnt[e.type] = (L.cnt[e.type] || 0) + 1;
@@ -77,6 +77,7 @@ export function rebuildLinks() {
       case 'outpost': L.poles.push(e); L.outposts.push(e); break;
       case 'station': L.stations.push(e); break;
       case 'tstation': L.tstations.push(e); break;
+      case 'trade': L.trades.push(e); break;
       case 'port': L.ports.push(e); break;
       case 'drone': L.drones.push(e); break;
       case 'pipe': case 'ptunnel': case 'tank': L.pipes.push(e); break;

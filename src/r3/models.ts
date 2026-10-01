@@ -439,6 +439,25 @@ export function buildTemplates(): Record<string, Template> {
     b.box(0.5, 0.35, 0.5, -0.9, 1.65, -0.8, M.grey); b.cyl(0.15, 0.1, -0.9, 2.0, -0.8, M.steelDk, 10);
     T.truck_station = { stat: b.build(), height: 2.0, light: [-0.4, 1.4, 1.2], anims: [{ key: 'tfan', model: fan(0.2), fn: (o, _e, _t, real) => { o.x = -0.9; o.y = 2.1; o.z = -0.8; o.ry = real * 6; } }] };
   }
+  // ---- Trade Post: a market square with striped stall awnings, crates, a scale house and a flag
+  {
+    const b = new B();
+    b.box(3.95, 0.25, 3.95, 0, 0, 0, M.concrete);
+    for (const s of [-1, 1]) { b.box(3.95, 0.03, 0.12, 0, 0.25, 1.9 * s, M.yellow); b.box(0.12, 0.03, 3.95, 1.9 * s, 0.25, 0, M.yellow); }
+    const stall = (x: number, z: number, c: Mat) => {
+      for (const [dx, dz] of [[-0.5, -0.4], [0.5, -0.4], [-0.5, 0.4], [0.5, 0.4]]) b.box(0.06, 1.05, 0.06, x + dx, 0.25, z + dz, M.wood);
+      b.box(1.15, 0.4, 0.9, x, 0.25, z, M.wood); b.box(1.2, 0.05, 0.95, x, 0.65, z, M.steelDk);
+      for (let i = 0; i < 4; i++) b.add(new THREE.BoxGeometry(0.3, 0.04, 1.05), i % 2 ? M.white : c, x - 0.45 + i * 0.3, 1.38, z, 0.22, 0, 0);
+    };
+    stall(-1.1, -1.1, M.red); stall(1.1, -1.1, M.blue); stall(-1.1, 1.1, M.green);
+    for (const [x, z, m] of [[-1.3, -1.0, M.orange], [-0.9, -1.2, M.yellow], [1.2, -1.0, M.teal], [-1.1, 1.0, M.purple], [-1.35, 1.25, M.gold]] as [number, number, Mat][]) b.box(0.22, 0.2, 0.22, x, 0.7, z, m);
+    // scale house + crates
+    b.box(1.1, 1.0, 1.1, 1.15, 0.25, 1.15, M.orange); b.box(1.2, 0.1, 1.2, 1.15, 1.25, 1.15, M.steelDk); b.box(0.5, 0.3, 0.02, 1.15, 0.85, 0.59, M.glass);
+    for (const [x, z, h] of [[0.2, 0.3, 1], [0.2, -0.3, 2], [-0.3, 0.1, 1]]) for (let k = 0; k < h; k++) b.box(0.45, 0.42, 0.45, x, 0.25 + k * 0.43, z, M.wood);
+    // flag pole
+    b.cyl(0.05, 3.4, 1.7, 0.25, -1.7, M.steel, 8); b.box(0.7, 0.42, 0.02, 1.36, 3.2, -1.7, M.gold);
+    T.trade_post = { stat: b.build(), height: 1.6, light: [1.15, 1.6, 1.15], anims: [] };
+  }
   // ---- Solar panel array
   {
     const b = new B(); pad(b, 3);

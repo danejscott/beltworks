@@ -10,7 +10,7 @@ import { altMachineOK, altPool, analyseDrive, CRYSTAL_NAMES, discoveredCount, lo
 import { Feat } from './features';
 import { machineName, plan, plannableItems } from './planner';
 import { addTrainToLine, lineOf, lineTrains, MAX_LINE_TRAINS, trainCap } from './trains';
-import { buyTruck, removeTruck, TRUCK_CAP, truckStations } from './trucks';
+import { buyTruck, removeTruck, tradeVal, TRUCK_CAP, truckStations } from './trucks';
 import { buyShip, removeShip, Ship, SHIP_CAP, shipPorts } from './ships';
 import { esc, fmt, fmtR } from './util';
 import { W } from './terrain';
@@ -192,6 +192,7 @@ export function extraAct(cmd: string, a: string, b: string): boolean {
     case 'tlreplay': startTimelapse(null); return true;
     case 'invite': copyInvite(); return true;
     case 'players': closeModal(); setTimeout(() => openPlayers(), 0); return true;
+    case 'twant': run({ k: 'twant', it: a }); return true;
     case 'tinvite': netSend({ t: 'team', op: 'invite', pid: +a }); toast('Invitation sent', 'good'); return true;
     case 'taccept': netSend({ t: 'team', op: 'accept', team: +a }); return true;
     case 'tapprove': netSend({ t: 'team', op: 'approve', pid: +a }); return true;
@@ -254,6 +255,20 @@ export function tstationStatic(e: Ent): string {
   }
   return h;
 }
+export function tradeDyn(e: Ent): string {
+  const F = G.S.flags, want: string = F.twant || '', cr = Math.floor(F.tcr || 0);
+  let h = `<div class="sm">The world's market — every team can use it. Add it to any of your trucks' routes: the truck <b>drops off everything it carries</b> (you earn credits worth the items) and <b>picks up the item you want</b>, paid for with credits.</div>`;
+  h += `<div class="row" style="margin-top:6px">💰 Your credits: <b style="color:#ffd48a">${fmt(cr)}</b></div>`;
+  h += `<div class="sec">Your trucks pick up</div><div class="row">${want ? `${ic(want, 20)} <b>${esc(ITEMS[want].n)}</b> · ${fmt(tradeVal(want))} credits each · ${fmt(e.store[want] || 0)} here <button class="mini" data-act="twant:">Stop</button>` : '<span class="dim">Nothing — click an item below</span>'}</div>`;
+  h += `<div class="sec">On offer (${fmt(e.tot)} / ${fmt(BLD[e.type].cap!)})</div><div class="chips">`;
+  const ks = Object.keys(e.store).filter(k => e.store[k] > 0).sort((a, b) => e.store[b] - e.store[a]);
+  for (const k of ks) h += `<span class="chip" style="cursor:pointer${k === want ? ';outline:2px solid #ffd48a' : ''}" data-act="twant:${k}" data-tip="item:${k}">${ic(k, 18)}${fmt(e.store[k])}</span>`;
+  if (!ks.length) h += '<span class="dim sm">Empty — be the first to drop something off.</span>';
+  h += '</div>';
+  const tr = G.trucks.filter(t => t.sched.includes(e.id) && (t.o || 0) === MP.myTeam);
+  h += `<div class="sm" style="margin-top:6px">${tr.length ? 'Your trucks coming here: ' + tr.map(t => esc(t.name)).join(', ') : 'None of your trucks come here yet: click a truck, then add the Trade Post to its route.'}</div>`;
+  return h;
+}
 export function tstationDyn(e: Ent): string {
   const tr = G.trucks.filter(t => t.sched.includes(e.id));
   let h = `<div class="sm">${tr.length ? 'Served by ' + tr.map(t => esc(t.name)).join(', ') : 'No trucks visit this station yet.'}</div>`;
@@ -264,7 +279,7 @@ export function truckStatic(t: Truck): string {
   let h = `<div class="ih"><div class="it">🚚 Truck</div><button class="x" data-act="closeInsp">✕</button></div>`;
   h += `<input type="text" value="${esc(t.name)}" data-input="kname" maxlength="24" style="width:100%"><div id="idyn"></div>`;
   h += '<div class="sec">Route</div>';
-  t.sched.forEach((sid, i) => { const s = G.ents.get(sid); h += `<div class="stop"><span class="sn">${i + 1}. ${s ? esc(s.name) + (s.mode === 'load' ? ' ⬆' : ' ⬇') : '?'}</span><button class="mini" data-act="kdel:${i}">✕</button></div>`; });
+  t.sched.forEach((sid, i) => { const s = G.ents.get(sid); h += `<div class="stop"><span class="sn">${i + 1}. ${s ? esc(s.name) + (s.mode === 'trade' ? ' 🤝' : s.mode === 'load' ? ' ⬆' : ' ⬇') : '?'}</span><button class="mini" data-act="kdel:${i}">✕</button></div>`; });
   h += `<select data-input="kstop" style="width:100%;margin-top:4px"><option value="">+ Add a truck station…</option>${truckStations().map(s => `<option value="${s.id}">${esc(s.name)} (${s.mode})</option>`).join('')}</select>`;
   h += '<div class="ibtns"><button class="danger" data-act="kremove">Remove truck</button></div>';
   return h;
@@ -305,7 +320,7 @@ export function shipStatic(t: Ship): string {
   let h = `<div class="ih"><div class="it">🚢 Cargo Ship</div><button class="x" data-act="closeInsp">✕</button></div>`;
   h += `<input type="text" value="${esc(t.name)}" data-input="sname" maxlength="24" style="width:100%"><div id="idyn"></div>`;
   h += '<div class="sec">Route (visits these ports in order)</div>';
-  t.sched.forEach((sid, i) => { const s = G.ents.get(sid); h += `<div class="stop"><span class="sn">${i + 1}. ${s ? esc(s.name) + (s.mode === 'load' ? ' ⬆' : ' ⬇') : '?'}</span><button class="mini" data-act="sdel:${i}">✕</button></div>`; });
+  t.sched.forEach((sid, i) => { const s = G.ents.get(sid); h += `<div class="stop"><span class="sn">${i + 1}. ${s ? esc(s.name) + (s.mode === 'trade' ? ' 🤝' : s.mode === 'load' ? ' ⬆' : ' ⬇') : '?'}</span><button class="mini" data-act="sdel:${i}">✕</button></div>`; });
   h += `<select data-input="sstop" style="width:100%;margin-top:4px"><option value="">+ Add a port…</option>${shipPorts().map(s => `<option value="${s.id}">${esc(s.name)} (${s.mode})</option>`).join('')}</select>`;
   h += '<div class="ibtns"><button class="danger" data-act="sremove">Remove ship</button></div>';
   return h;

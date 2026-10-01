@@ -5,7 +5,7 @@
 // start or join the world at any time — whoever is online "hosts" it together.
 import { applyCmd, Cmd, setSender } from './cmd';
 import { deserialize, serialize, stateHash } from './save';
-import { createServerWorld } from './online';
+import { createServerWorld, ensureTradePost } from './online';
 import { MP } from './teams';
 import { G } from './world';
 
@@ -158,7 +158,7 @@ function startFrom(save: any, baseTick: number) {
   const first = !NET.ready;
   NET.loading = true;
   const run = () => {
-    if (save) deserialize(save, !first);
+    if (save) { deserialize(save, !first); ensureTradePost(); }
     else createServerWorld(NET.meta.seed, NET.meta);
     NET.tick = baseTick;
     NET.pending = NET.pending.filter(c => c[0] >= baseTick);

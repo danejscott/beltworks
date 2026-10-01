@@ -300,6 +300,7 @@ export const BLD: Record<string, BDef> = {
   // --- Special
   hub: { n: 'HUB', w: 4, h: 4, cat: 'special', kind: 'hub', area: 14, reach: 16, mw: 30, cost: {}, col: '#f5a524', desc: 'Your base. Belt anything in from any side to add it to your inventory. Supplies 30 MW to a large area.', noRotate: true, hidden: true },
   elevator: { n: 'Space Elevator', w: 5, h: 5, cat: 'special', kind: 'elevator', cost: { concrete: 300, iron_plate: 100, iron_rod: 100 }, col: '#dcdcf0', desc: 'Belt Project Parts in to complete Phases and unlock new Tiers. Other items go to your inventory.', noRotate: true },
+  trade_post: { n: 'Trade Post', w: 4, h: 4, cat: 'special', kind: 'trade', cap: 30000, cost: {}, col: '#d9a531', desc: 'The one market of an online world. Any team can send trucks here: they drop off what they carry (you earn credits worth the items) and pick up the item you want (paid in credits).', noRotate: true, hidden: true },
   statue: { n: 'Golden Nut Statue', w: 2, h: 2, cat: 'special', kind: 'decor', cost: { iron_plate: 10 }, col: '#f0c040', desc: 'Purely decorative. Very shiny.', noRotate: true },
   lamp: { n: 'Flood Light', w: 1, h: 1, cat: 'special', kind: 'decor', logistic: true, cost: { iron_rod: 2, wire: 4 }, col: '#fff2b0', desc: 'Decorative light.', noRotate: true },
 };

@@ -337,6 +337,7 @@ function exec(c: Cmd): any {
       return;
     }
     case 'mode': { const e = ent(c.id); if (mine(e) && e.mode) { e.mode = c.m; sfx('click'); } return; }
+    case 'twant': { if (!c.it || (ITEMS[c.it] && !ITEMS[c.it].fluid)) S.flags.twant = c.it || ''; sfx('click'); return; }
     case 'paint': {   // copy-settings tool: recipe, clock speed, filters and mode from another building of the same type
       const e = ent(c.id); if (!mine(e) || e.type !== c.type) return;
       if (BLD[e.type].machine && c.r !== undefined && (!c.r || S.unlocked.has(c.r))) setRecipe(e, c.r || null);
@@ -424,7 +425,7 @@ function exec(c: Cmd): any {
       v.sched.splice(+c.i, 1); if (v.si >= v.sched.length) v.si = 0; v.state = 'idle'; v.retryT = 0; return;
     }
     case 'vstop': {
-      const v: any = c.v === 'k' ? findTruck(c.id) : findShip(c.id), st = ent(c.to); if (!mine(v) || !st || !owns(st)) return;
+      const v: any = c.v === 'k' ? findTruck(c.id) : findShip(c.id), st = ent(c.to); if (!mine(v) || !st || (!owns(st) && !(c.v === 'k' && st.type === 'trade_post'))) return;
       if (!v.sched.includes(st.id)) v.sched.push(st.id);
       if (v.state === 'noschedule' || v.state === 'nopath') { v.state = 'idle'; v.retryT = 0; }
       sfx('click'); return;

@@ -2,7 +2,7 @@
 // Pure game logic — used by the server (to run the world) and by the client (to read team info).
 import { BLD, ITEMS } from './data';
 import { biomeAtTiles, isLand, RINGS, TT, W, H } from './terrain';
-import { addTeam, enableTeams, MP, TeamInfo, wrand } from './teams';
+import { addTeam, asTeam, enableTeams, MP, TeamInfo, wrand } from './teams';
 import { canPlace, G, newState, place, resetWorld } from './world';
 
 // ---------------------------------------------------------------------------
@@ -17,6 +17,25 @@ export function createServerWorld(seed: number, o: { name: string; size: number;
   resetWorld(seed, newState(seed, o));
   enableTeams(0);
   MP.info.set(0, { id: 0, name: 'Nature', col: '#888888', leader: 0, hx: 0, hy: 0 });
+  ensureTradePost();
+}
+/** every online world has one Trade Post, on open land near the middle of the map (added to older worlds when they load) */
+export function ensureTradePost() {
+  if (!MP.teams || [...G.ents.values()].some(e => e.type === 'trade_post')) return;
+  asTeam(0, placeTradePost);   // same search on every copy of the world, whoever's view it is
+}
+function placeTradePost() {
+  const cx = W >> 1, cy = H >> 1;
+  for (let r = 0; r < Math.min(W, H) / 2 - 10; r += 2) {
+    const steps = Math.max(1, Math.round(r * 2));
+    for (let k = 0; k < steps; k++) {
+      const a = k / steps * Math.PI * 2, x = Math.round(cx + Math.cos(a) * r) - 2, y = Math.round(cy + Math.sin(a) * r) - 2;
+      if (canPlace('trade_post', x - 2, y - 2, 0, { free: true, z: 0 }) || canPlace('trade_post', x + 2, y + 2, 0, { free: true, z: 0 })) continue;   // room for trucks around it
+      if (canPlace('trade_post', x, y, 0, { free: true, z: 0 })) continue;
+      const e = place('trade_post', x, y, 0, { free: true, quiet: true, owner: 0 }); e.name = 'Trade Post'; e.store = {}; e.tot = 0; e.mode = 'trade';
+      return;
+    }
+  }
 }
 
 const HUBW = 4;
@@ -36,7 +55,7 @@ function waterNear(x: number, y: number, r: number) {
 
 /** the best place for a new player's HUB: far from everyone else, in a biome nobody has yet, with resources nearby */
 export function pickSpawn(rand: () => number = wrand): { x: number; y: number } | null {
-  const hubs = [...G.ents.values()].filter(e => BLD[e.type].kind === 'hub');
+  const hubs = [...G.ents.values()].filter(e => BLD[e.type].kind === 'hub' || e.type === 'trade_post');
   const land = G.S.size, minSep = land * 0.16;
   const taken = new Set([...MP.info.values()].map(i => (i as any).biome).filter(Boolean));
   // fairness: every spawn should be about as far from the late-game resources as the map intends
@@ -143,6 +162,7 @@ export function joinTeam(pid: number, to: number) {
   for (const k of src.unlocked) dst.unlocked.add(k);
   for (const k of src.done) dst.done.add(k);
   dst.maxTier = Math.max(dst.maxTier, src.maxTier);
+  dst.flags.tcr = (dst.flags.tcr || 0) + (src.flags.tcr || 0);
   dst.points += src.points; dst.coupons += src.coupons; dst.couponsEarned += src.couponsEarned;
   for (const k in src.shop) dst.shop[k] = Math.max(dst.shop[k] || 0, src.shop[k]);
   for (const k in src.delivered) dst.delivered[k] = (dst.delivered[k] || 0) + src.delivered[k];
