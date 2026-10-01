@@ -11,7 +11,7 @@ import { analyseDrive, collectCrystal, lootSite, pickAlt } from './explore';
 import { buyShop, loadElevator, submitMilestone } from './progress';
 import { flushNet, fluidsTouching, myCraft, setRecipe } from './sim';
 import { asTeam, MP } from './teams';
-import { joinTeam, leaveTeam, nearRivalBase, spawnTeam } from './online';
+import { joinTeam, leaveTeam, nearRivalBase, newSeason, spawnTeam } from './online';
 import { addInv, canAfford, canPlace, canRemove, chopTree, Ent, entAt, floorBlocked, G, groundOnly, hasFloor, markDirty, missingText, nodeAt, pairBit, PAIRS, pay, place, refund, remove, rotateEnt, setFloor, upgradeTarget, creative } from './world';
 import { clamp } from './util';
 
@@ -442,6 +442,7 @@ function exec(c: Cmd): any {
       return;
     }
     case '_team': joinTeam(c.pid, c.to); return;
+    case '_season': newSeason(String(c.id)); return;
     case '_leave': leaveTeam(c.pid, c.team, c.col); return;
     case '_presence': {
       MP.paused = new Set(c.paused);

@@ -2,6 +2,7 @@
 // Connect with  wss://<worker>/ws?code=K7QM2XRP   or   wss://<worker>/ws?create=1   then send the usual 'hello'.
 import { PROTO, RelayStore, WorldRelay } from './relay';
 import { newCode, normCode } from '../src/codes';
+import { handleBP } from './bpstore';
 
 interface Env { WORLD: DurableObjectNamespace }
 const SIZES = new Set([512, 1024, 2304, 4608]);
@@ -9,6 +10,8 @@ const SIZES = new Set([512, 1024, 2304, 4608]);
 export default {
   async fetch(req: Request, env: Env): Promise<Response> {
     const url = new URL(req.url);
+    // shared blueprints all live in one Durable Object
+    if (url.pathname.startsWith('/bp')) return env.WORLD.get(env.WORLD.idFromName('~blueprints')).fetch(req);
     if (req.headers.get('Upgrade') !== 'websocket') return new Response('Beltworks relay is running.', { headers: { 'access-control-allow-origin': '*' } });
     let code = normCode(url.searchParams.get('code') || '');
     const create = url.searchParams.get('create') === '1';
@@ -31,6 +34,12 @@ export class World {
     this.relay = new WorldRelay(store, (...a) => console.log(...a));
   }
   async fetch(req: Request): Promise<Response> {
+    const url = new URL(req.url);
+    if (url.pathname.startsWith('/bp')) {
+      const st = this.state.storage;
+      const r = await handleBP(req.method, url.pathname, req.method === 'POST' ? await req.text() : '', { get: k => st.get<string>('bp:' + k), put: (k, v) => st.put('bp:' + k, v) });
+      return new Response(r.body || null, { status: r.status, headers: r.headers });
+    }
     const code = req.headers.get('x-bw-code')!, create = req.headers.get('x-bw-create') === '1';
     const pair = new WebSocketPair();
     const [client, server] = [pair[0], pair[1]];

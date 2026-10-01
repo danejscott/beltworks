@@ -1,13 +1,13 @@
 // Online HUD: the server badge (join code + who's here), chat, the players panel and the "disconnected" screen.
 import { NET, sendChat } from './net';
-import { empireScore, fmtCode } from './online';
+import { empireScore, fmtCode, seasonGain, seasonName } from './online';
 import { inviteLink, inviteText } from './codes';
 import { MP } from './teams';
 import { G } from './world';
 import { esc } from './util';
 import { title } from './title';
 import { EXTRA_MODALS, LIVE_MODALS } from './ui2';
-import { openModal } from './ui';
+import { openModal, toast } from './ui';
 
 const CSS = `
 #netbar{position:fixed;right:10px;bottom:256px;z-index:30;display:none;gap:8px;align-items:center;background:rgba(18,22,30,.88);border:1px solid #2c3442;border-radius:999px;padding:4px 12px;font-size:12px;color:#cfd6e2;cursor:pointer;backdrop-filter:blur(4px)}
@@ -78,6 +78,22 @@ export function chatMessage(c: { from: string; col: string; text: string }) {
   setTimeout(() => d.classList.add('old'), 12000);
 }
 
+/** a one-time online tip (each shows once per player, ever) */
+export function onlineTip(key: string, html: string, delay = 400) {
+  if (!NET.on) return;
+  let s: any = {};
+  try { s = JSON.parse(localStorage.getItem('bw-tips') || '{}'); } catch { }
+  if (s[key]) return;
+  s[key] = 1;
+  try { localStorage.setItem('bw-tips', JSON.stringify(s)); } catch { }
+  setTimeout(() => toast('💡 ' + html, 'big'), delay);
+}
+/** tips for the first time something online-only gets in the way */
+export function tipForToast(html: string) {
+  if (!NET.on) return;
+  if (html.startsWith('That belongs to another')) onlineTip('rival', "Other teams' buildings can't be removed or changed — but you <b>can</b> run your belts into them (or take from theirs). It's all fair in trade.");
+  else if (html.startsWith('Too close to')) onlineTip('buffer', `Nobody can build within 14 tiles of another team's HUB, so no one can wall a base in. Build a little further out.`);
+}
 /** copy the join code, a link and how-to-join instructions to the clipboard */
 export async function copyInvite() {
   const text = inviteText(NET.code, G.S.name || 'Beltworks');
@@ -90,6 +106,7 @@ export async function copyInvite() {
   }
   if (ok) G.fx.toast(`📋 Invite copied — paste it to your friends (code <b>${fmtCode(NET.code)}</b> + link + how to join).`, 'good');
   else { inviteFallback = text; openModal('invite'); }
+  onlineTip('invite', 'Friends who join start a base of their own. To team up with you instead, they enter your <b>team code</b> in the Players panel (<kbd>Y</kbd>) and you approve.', 2500);
 }
 let inviteFallback = '';
 function inviteHTML(): [string, string] {
@@ -121,6 +138,18 @@ function playersHTML(): [string, string] {
       h += `<div class="plrow" style="padding-left:30px"><span>${p.cap && l.length > 1 ? '👑 ' : ''}${esc(p.name)}</span>${btn}<span class="st ${p.online ? 'on' : 'off'}">${p.online ? '● online' : '○ offline (paused)'}</span></div>`;
     }
   });
+  // ranking season
+  const W: any = MP.world || {};
+  if (W.season) {
+    const end = new Date(); end.setUTCMonth(end.getUTCMonth() + 1, 1); end.setUTCHours(0, 0, 0, 0);
+    const days = Math.max(1, Math.ceil((+end - Date.now()) / 864e5));
+    const sr = [...teams.keys()].map(t => ({ t, g: seasonGain(t) })).sort((a, b) => b.g - a.g);
+    h += `<h3 class="ch">🏅 Season: ${esc(seasonName(W.season))} <span class="sm dim">· ends in ${days} day${days > 1 ? 's' : ''}</span></h3>`;
+    sr.forEach((r, i) => { const inf = MP.info.get(r.t); h += `<div class="plrow"${r.t === MP.myTeam ? ' style="background:#2b261655"' : ''}><b style="width:22px">${i < 3 ? ['🥇', '🥈', '🥉'][i] : i + 1 + '.'}</b><span class="sw" style="background:${inf?.col || '#888'}"></span><span>${esc(teams.get(r.t)!.map(p => p.name).join(' & '))}</span><span class="st">+<b style="color:#ffd48a">${r.g.toLocaleString()}</b> this season</span></div>`; });
+    const past = (W.seasons || []).slice(-6).reverse();
+    if (past.length) h += `<div class="sm" style="margin-top:6px">Past winners: ${past.map((s: any) => `${esc(seasonName(s.id))} — ${s.top[0] ? `🥇 <b style="color:${s.top[0].col}">${esc(s.top[0].name)}</b>` : '—'}`).join(' · ')}</div>`;
+    h += `<p class="sm dim">Each month is a new season: everyone's season score starts at zero, so newcomers can win too.</p>`;
+  }
   h += `<p class="sm dim">Score = tiers and milestones reached, plus the value of everything your factory has ever made, plus what you've built. Teams share everything: inventory, research, power and colour.</p>`;
   h += `<p class="sm dim">Press <kbd>Enter</kbd> to chat.</p></div>`;
   return ['Players', h];

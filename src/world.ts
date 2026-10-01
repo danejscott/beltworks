@@ -31,6 +31,7 @@ export interface State {
   lenV?: number;                // 1 = milestone amounts scale with difficulty (game length)
   rngS?: number;                // state of the world's random generator (so every copy rolls the same)
   xn?: [number, number, string, number][]; // extra resource nodes (online spawns)
+  season?: string; seasons?: { id: string; top: { name: string; col: string; gain: number }[] }[];   // online ranking seasons (monthly)
   depV?: number; dep?: Record<number, number>; depT?: Record<number, number>; // fuel nodes run out (see deplete.ts)
   cq?: { q: string[]; active: boolean; t: number }; // hand-crafting queue
 }

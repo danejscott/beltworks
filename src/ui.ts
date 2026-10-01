@@ -3,7 +3,8 @@ import { isDepleted, nodeCap, remaining } from './deplete';
 import { NET } from './net';
 import { fmtCode } from './online';
 import { online, run } from './cmd';
-import { netHud } from './ui3';
+import { netHud, tipForToast } from './ui3';
+import { fetchBP, fmtBPCode, shareBP } from './bpshare';
 import { audio, setVolume, sfx, setSound, vol } from './audio';
 import { BLD, CATS, Cost, HANDCRAFT, isFluid, ITEM_KEYS, ITEMS, MACHINE_NAMES, MAX_TIER, MILESTONES, RECIPES, SHOP, TIER_NAMES } from './data';
 import { DRONE_LOAD } from './drones';
@@ -31,6 +32,7 @@ export const status = (st: string, txt?: string) => `<span class="stat"><span cl
 
 // ---------------------------------------------------------------------------
 export function toast(html: string, kind = '') {
+  if (kind === 'bad') tipForToast(html);
   const box = $('#toasts');
   const d = document.createElement('div'); d.className = 'toast ' + kind; d.innerHTML = `<span>${html}</span>`; box.appendChild(d);
   while (box.children.length > 6) box.firstChild!.remove();
@@ -528,9 +530,10 @@ function renderModal() {
   } else if (k === 'bp') {
     t = 'Blueprints';
     const list = loadBlueprints();
-    h = `<p class="sm" style="margin-top:0">Copy any part of your factory and paste it again anywhere. Recipes, directions and filters come along. <b>Ctrl+C</b> = quick copy, <b>Ctrl+V</b> = paste again.</p><div class="row"><button class="go" data-act="bpnew">⧉ New blueprint (drag a box)</button>${clipboard ? `<button data-act="bpclip">Paste clipboard (${clipboard.ents.length})</button><button data-act="bpsaveclip">Save clipboard…</button>` : ''}</div><div class="cgrid" style="margin-top:10px">`;
+    h = `<p class="sm" style="margin-top:0">Copy any part of your factory and paste it again anywhere. Recipes, directions and filters come along. <b>Ctrl+C</b> = quick copy, <b>Ctrl+V</b> = paste again.</p><div class="row"><button class="go" data-act="bpnew">⧉ New blueprint (drag a box)</button>${clipboard ? `<button data-act="bpclip">Paste clipboard (${clipboard.ents.length})</button><button data-act="bpsaveclip">Save clipboard…</button>` : ''}</div>
+      <div class="row" style="margin-top:8px;align-items:center;gap:6px"><span class="sm">Got a code from a friend?</span><input id="bpcode" maxlength="9" placeholder="BP-K7QM2X" style="width:110px;text-transform:uppercase"><button data-act="bpimport">⬇ Import</button></div><div class="cgrid" style="margin-top:10px">`;
     if (!list.length) h += '<div class="dim">No saved blueprints yet.</div>';
-    list.forEach((bp, i) => { h += `<div class="ccard"><div><b>${esc(bp.name)}</b><div class="sm">${bp.w}×${bp.h} · ${bp.ents.length} pieces</div><div class="sm">${costHTML(bpCost(bp))}</div></div><div class="cb" style="flex-direction:column"><button class="go" data-act="bpuse:${i}">Place</button><button class="danger" data-act="bpdel:${i}">Delete</button></div></div>`; });
+    list.forEach((bp, i) => { h += `<div class="ccard"><div><b>${esc(bp.name)}</b><div class="sm">${bp.w}×${bp.h} · ${bp.ents.length} pieces</div><div class="sm">${costHTML(bpCost(bp))}</div></div><div class="cb" style="flex-direction:column"><button class="go" data-act="bpuse:${i}">Place</button><button data-act="bpshare:${i}" title="Get a short code anyone can import">🔗 Share</button><button class="danger" data-act="bpdel:${i}">Delete</button></div></div>`; });
     h += '</div>';
   } else if (k === 'bpname') {
     t = 'Save blueprint';
@@ -942,6 +945,21 @@ function act(cmd: string, a: string, b: string) {
     case 'bpsaveclip': if (clipboard) nameBlueprint(clipboard); break;
     case 'bpuse': { const bp = loadBlueprints()[+a]; if (bp) { closeModal(); setTool({ k: 'paste', bp, prot: 0 }); } break; }
     case 'bpdel': { const l = loadBlueprints(); l.splice(+a, 1); storeBlueprints(l); break; }
+    case 'bpshare': {
+      const bp = loadBlueprints()[+a]; if (!bp) break;
+      toast('Uploading blueprint…', '');
+      shareBP(bp).then(c => {
+        const code = fmtBPCode(c);
+        navigator.clipboard?.writeText(code).catch(() => { });
+        toast(`🔗 Blueprint "${esc(bp.name)}" shared — code <b style="color:#ffd48a">${code}</b> (copied). Friends enter it under Blueprints → Import.`, 'big');
+      }, e => toast(esc(e.message), 'bad'));
+      break;
+    }
+    case 'bpimport': {
+      const code = ((document.getElementById('bpcode') as HTMLInputElement)?.value || '').trim();
+      fetchBP(code).then(bp => { const l = loadBlueprints(); l.push(bp); storeBlueprints(l); toast(`⬇ Imported blueprint "${esc(bp.name)}" (${bp.ents.length} pieces)`, 'good'); if (modalKind === 'bp') { ($('#mbody') as any).dataset.h = ''; renderModal(); } }, e => toast(esc(e.message), 'bad'));
+      break;
+    }
     case 'bpsave': case 'bpjust': {
       const bp = bpPending; if (!bp) break;
       if (cmd === 'bpsave') { const nm = ((document.getElementById('bpn') as HTMLInputElement)?.value || '').trim() || `Blueprint ${loadBlueprints().length + 1}`; bp.name = nm; const l = loadBlueprints(); l.push(bp); storeBlueprints(l); toast(`Saved blueprint "${esc(nm)}"`, 'good'); }

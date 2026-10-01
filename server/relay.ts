@@ -42,6 +42,7 @@ export class WorldRelay {
   lastSnapReq = 0; snapWaiters: number[] = []; snapPending = false;
   dirty = false; lastSave = 0;
   build = 0;   // newest game build seen in this world
+  season = '';  // the current ranking season (a month, UTC)
 
   constructor(public store: RelayStore, public log_ = (..._a: any[]) => { }) { }
 
@@ -56,7 +57,7 @@ export class WorldRelay {
     this.build = st.build || 0;
     this.log = st.log || [];
     for (const p of st.players || []) this.players.set(p.id, p);
-    this.caps = st.caps || {}; this.tcodes = st.tcodes || {};
+    this.caps = st.caps || {}; this.tcodes = st.tcodes || {}; this.season = st.season || '';
     const bm = await this.store.get('base');
     if (bm) {
       const parts: Uint8Array[] = [];
@@ -78,7 +79,7 @@ export class WorldRelay {
   async persist(force = false) {
     if (!this.meta || (!this.dirty && !force)) return;
     this.dirty = false; this.lastSave = Date.now();
-    await this.store.put('state', { tick: this.tick, log: this.log, players: [...this.players.values()], build: this.build, caps: this.caps, tcodes: this.tcodes });
+    await this.store.put('state', { tick: this.tick, log: this.log, players: [...this.players.values()], build: this.build, caps: this.caps, tcodes: this.tcodes, season: this.season });
   }
   async saveBase() {
     if (!this.base) return;
@@ -290,6 +291,9 @@ export class WorldRelay {
     this.persist(true);
   }
   step() {
+    // a new month starts a new ranking season
+    const d = new Date(), sid = `${d.getUTCFullYear()}-${String(d.getUTCMonth() + 1).padStart(2, '0')}`;
+    if (sid !== this.season) { this.season = sid; this.dirty = true; this.queue.push([0, 0, { k: '_season', id: sid }]); }
     const out: Entry[] = [];
     for (const [pid, team, c] of this.queue.splice(0)) out.push([this.tick, pid, team, c]);
     this.tick += PER;

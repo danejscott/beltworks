@@ -6,6 +6,7 @@ import { join, resolve } from 'node:path';
 import { WebSocketServer } from 'ws';
 import { PROTO, RelayStore, WorldRelay } from './relay';
 import { newCode, normCode } from '../src/codes';
+import { handleBP } from './bpstore';
 
 const arg = (k: string, d: string) => { const i = process.argv.indexOf('--' + k); return i > 0 ? process.argv[i + 1] : d; };
 const PORT = +arg('port', '8787'), DATA = resolve(arg('data', './data'));
@@ -30,7 +31,22 @@ const worlds = new Map<string, WorldRelay>();
 const world = (code: string) => { let w = worlds.get(code); if (!w) worlds.set(code, w = new WorldRelay(fileStore(code), (...a) => console.log(new Date().toISOString(), ...a))); return w; };
 const exists = (code: string) => worlds.has(code) || existsSync(join(DATA, code, 'meta.json'));
 
-const http = createServer((_q, r) => { r.writeHead(200, { 'content-type': 'text/plain', 'access-control-allow-origin': '*' }); r.end('Beltworks relay is running.'); });
+const BPDIR = join(DATA, '_blueprints');
+mkdirSync(BPDIR, { recursive: true });
+const http = createServer((q, r) => {
+  const path = (q.url || '/').split('?')[0];
+  if (path.startsWith('/bp')) {
+    let body = '';
+    q.on('data', d => { body += d; if (body.length > 500_000) q.destroy(); });
+    q.on('end', async () => {
+      const f = (c: string) => join(BPDIR, c + '.json');
+      const res = await handleBP(q.method || 'GET', path, body, { get: async c => existsSync(f(c)) ? readFileSync(f(c), 'utf8') : undefined, put: async (c, v) => writeFileSync(f(c), v) });
+      r.writeHead(res.status, res.headers); r.end(res.body);
+    });
+    return;
+  }
+  r.writeHead(200, { 'content-type': 'text/plain', 'access-control-allow-origin': '*' }); r.end('Beltworks relay is running.');
+});
 const wss = new WebSocketServer({ server: http, perMessageDeflate: { threshold: 1024 }, maxPayload: 64 * 1024 * 1024 });
 let nextId = 1;
 wss.on('connection', ws => {

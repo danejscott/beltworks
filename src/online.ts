@@ -193,6 +193,23 @@ export function leaveTeam(pid: number, id: number, col: string, rand: () => numb
   return true;
 }
 
+/** a new ranking season (the relay sends this when the month changes): record the winners, then everyone starts from zero */
+export function newSeason(id: string) {
+  if (!MP.teams) return;
+  const W: any = MP.world;
+  if (W.season === id) return;
+  if (W.season) {
+    const top = [...MP.teams.keys()].filter(t => t).map(t => ({ t, gain: seasonGain(t) })).sort((a, b) => b.gain - a.gain).slice(0, 3)
+      .map(r => ({ name: MP.info.get(r.t)?.name || '?', col: MP.info.get(r.t)?.col || '#888', gain: r.gain }));
+    W.seasons = [...(W.seasons || []), { id: W.season, top }].slice(-24);
+  }
+  W.season = id;
+  for (const [t, s] of MP.teams) s.flags.sBase = empireScore(t).score;
+}
+/** score a team has gained this season */
+export function seasonGain(o: number) { const t = MP.teams?.get(o); return t ? Math.max(0, empireScore(o).score - (t.flags.sBase || 0)) : 0; }
+export const seasonName = (id: string) => { const [y, m] = id.split('-').map(Number); return new Date(Date.UTC(y, m - 1, 15)).toLocaleString(undefined, { month: 'long', year: 'numeric', timeZone: 'UTC' }); };
+
 /** how big an empire is: tiers, milestones, everything it has ever made and what it has built */
 export function empireScore(o: number) {
   const t = MP.teams?.get(o);
