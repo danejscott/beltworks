@@ -50,7 +50,7 @@ export interface Train {
 
 /** floors: 0 = ground, 1..3 = on foundations; LH = height of one floor in world units */
 export const NL = 4, LH = 4;
-const TALL: Record<string, number> = { elevator: 13, tower: 5, hub: 4.5 };
+const TALL: Record<string, number> = Object.assign(Object.create(null), { elevator: 13, tower: 5, hub: 4.5 });
 const GROUND_ONLY = new Set(['miner', 'extractor', 'harvester', 'rail', 'train', 'wagon', 'station', 'tstation', 'hub', 'elevator', 'drone', 'foundation', 'outpost', 'port']);
 export const groundOnly = (type: string) => { const d = BLD[type]; return GROUND_ONLY.has(d.kind) || !!(d.on && d.on !== 'water'); };
 export const G = {
@@ -388,7 +388,7 @@ export function canRemove(e: Ent): string | null {
 }
 
 /** upgrade in place: which lower tiers a building can be placed straight over */
-export const UPGRADES: Record<string, string[]> = { miner2: ['miner1'], miner3: ['miner1', 'miner2'], pole2: ['pole1'], pipe2: ['pipe1'] };
+export const UPGRADES: Record<string, string[]> = Object.assign(Object.create(null), { miner2: ['miner1'], miner3: ['miner1', 'miner2'], pole2: ['pole1'], pipe2: ['pipe1'] });
 /** the building `type` would upgrade if placed at x,y (same spot and size, a lower tier, ours, and nothing else in the way) */
 export function upgradeTarget(type: string, x: number, y: number, z = 0): Ent | null {
   const lower = UPGRADES[type];
