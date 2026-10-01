@@ -1,7 +1,7 @@
 // UI for the newer systems: vehicles list, scanner, research, planner, achievements, crash sites, trucks.
 import { sfx } from './audio';
 import { copyInvite, openPlayers } from './ui3';
-import { send as netSend } from './net';
+import { NET, send as netSend } from './net';
 import { MP } from './teams';
 import { online, run } from './cmd';
 import { ALT_IDS, BLD, isFluid, ITEMS, MACHINE_NAMES, RECIPES } from './data';
@@ -194,6 +194,13 @@ export function extraAct(cmd: string, a: string, b: string): boolean {
     case 'players': closeModal(); setTimeout(() => openPlayers(), 0); return true;
     case 'tinvite': netSend({ t: 'team', op: 'invite', pid: +a }); toast('Invitation sent', 'good'); return true;
     case 'taccept': netSend({ t: 'team', op: 'accept', team: +a }); return true;
+    case 'tapprove': netSend({ t: 'team', op: 'approve', pid: +a }); return true;
+    case 'tdeny': netSend({ t: 'team', op: 'deny', pid: +a }); return true;
+    case 'tkick': { const p = NET.players.find(q => q.id === +a); if (p && confirm(`Remove ${p.name} from your team? They start over with a new base of their own; your team keeps everything.`)) netSend({ t: 'team', op: 'kick', pid: +a }); return true; }
+    case 'tpromote': { const p = NET.players.find(q => q.id === +a); if (p && confirm(`Make ${p.name} the team captain? Only the captain can invite, approve requests and remove players.`)) netSend({ t: 'team', op: 'promote', pid: +a }); return true; }
+    case 'tnewcode': netSend({ t: 'team', op: 'newcode' }); toast('New team code made — the old one no longer works', 'good'); return true;
+    case 'tcopy': navigator.clipboard?.writeText(NET.tcode).then(() => toast(`📋 Team code ${NET.tcode} copied`, 'good'), () => toast(`Team code: <b>${NET.tcode}</b>`, '')); return true;
+    case 'trequest': { const i = document.getElementById('tcodein') as HTMLInputElement | null; const c = (i?.value || '').toUpperCase().replace(/[^A-Z0-9]/g, ''); if (c.length !== 6) toast('Team codes are 6 letters/numbers', 'bad'); else netSend({ t: 'team', op: 'request', code: c }); return true; }
     case 'tleave': if (confirm('Leave your team? You will start over with a brand-new base somewhere else (your team keeps everything).')) netSend({ t: 'team', op: 'leave' }); return true;
     case 'dn': if (online()) return true; run({ k: 'dn' }); sfx('click'); toast(S.dayNight ? '🌙 Day/night cycle on' : '☀️ Day/night cycle off (always daytime)', ''); return true;
   }

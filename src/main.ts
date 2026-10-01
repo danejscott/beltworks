@@ -199,6 +199,7 @@ function playOnline(o: { code?: string; create?: any }) {
     players: () => OUI.refreshPlayers(),
     chat: c => OUI.chatMessage(c),
     invite: m => OUI.showInvite(m),
+    joinreq: m => OUI.showJoinReq(m),
   } as NetHandlers;
   connect(o, h);
 }

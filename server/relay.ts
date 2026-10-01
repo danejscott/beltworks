@@ -15,6 +15,8 @@ export interface RelayConn { id: number; send(m: string | Uint8Array): void; clo
 type Cmd = { k: string; [x: string]: any };
 type Entry = [number, number, number, Cmd];   // tick, player, team, command
 
+import { CODE_ABC } from '../src/codes';
+
 export const PROTO = 2;
 const PLAYER_COLS = ['#e8543f', '#3a7bd5', '#2fb86b', '#f2c12e', '#9b59d6', '#1fb5b5', '#ff7fb0', '#8d6e4f', '#e67e22', '#d0d4dc', '#6a8f2f', '#2c3e8f'];
 const PER = 6, STEP_MS = 100, SNAP_EVERY = 120_000, CHUNK = 1_000_000;
@@ -32,6 +34,9 @@ export class WorldRelay {
   conns = new Map<number, { c: RelayConn; pid: number; at: number; budget: number; last: number }>();
   hashes = new Map<number, Map<number, number>>();   // tick -> conn -> hash
   invites = new Map<number, { team: number; at: number }>();
+  reqs = new Map<number, { team: number; at: number }>();      // join requests made with a team code (pid -> team)
+  caps: Record<number, number> = {};                           // team -> its captain
+  tcodes: Record<number, string> = {};                         // team -> its join code
   loaded = false;
   timer: any = null;
   lastSnapReq = 0; snapWaiters: number[] = []; snapPending = false;
@@ -51,6 +56,7 @@ export class WorldRelay {
     this.build = st.build || 0;
     this.log = st.log || [];
     for (const p of st.players || []) this.players.set(p.id, p);
+    this.caps = st.caps || {}; this.tcodes = st.tcodes || {};
     const bm = await this.store.get('base');
     if (bm) {
       const parts: Uint8Array[] = [];
@@ -72,7 +78,7 @@ export class WorldRelay {
   async persist(force = false) {
     if (!this.meta || (!this.dirty && !force)) return;
     this.dirty = false; this.lastSave = Date.now();
-    await this.store.put('state', { tick: this.tick, log: this.log, players: [...this.players.values()], build: this.build });
+    await this.store.put('state', { tick: this.tick, log: this.log, players: [...this.players.values()], build: this.build, caps: this.caps, tcodes: this.tcodes });
   }
   async saveBase() {
     if (!this.base) return;
@@ -137,7 +143,56 @@ export class WorldRelay {
   }
   broadcastPlayers() {
     const on = this.onlinePids();
-    this.broadcast({ t: 'players', list: [...this.players.values()].map(p => ({ id: p.id, name: p.name, team: p.team, col: p.col, online: on.has(p.id) })) });
+    const list = [...this.players.values()].map(p => ({ id: p.id, name: p.name, team: p.team, col: p.col, online: on.has(p.id), cap: this.captain(p.team) === p.id }));
+    // captains also get their team's join code
+    for (const k of this.conns.values()) {
+      const p = this.players.get(k.pid);
+      const tcode = p && this.captain(p.team) === p.id ? this.teamCode(p.team) : '';
+      k.c.send(JSON.stringify({ t: 'players', list, tcode }));
+    }
+  }
+  members(team: number) { return [...this.players.values()].filter(p => p.team === team).sort((a, b) => a.id - b.id); }
+  /** a team's captain (the first member, unless it was handed over) */
+  captain(team: number) {
+    const c = this.caps[team], m = this.members(team);
+    if (c && m.some(p => p.id === c)) return c;
+    if (!m.length) return 0;
+    this.caps[team] = m[0].id; this.dirty = true;
+    return m[0].id;
+  }
+  teamCode(team: number, fresh = false) {
+    if (!this.tcodes[team] || fresh) {
+      const used = new Set(Object.values(this.tcodes));
+      let c = '';
+      do { c = ''; for (let i = 0; i < 6; i++) c += CODE_ABC[Math.floor(Math.random() * CODE_ABC.length)]; } while (used.has(c));
+      this.tcodes[team] = c; this.dirty = true;
+    }
+    return this.tcodes[team];
+  }
+  /** p joins `team` (their base joins too if they were alone) */
+  doJoin(p: Player, team: number) {
+    const to = this.members(team)[0];
+    if (!to || p.team === team) return;
+    const from = p.team;
+    p.team = team; p.col = to.col;
+    if (!this.members(from).length) { delete this.caps[from]; delete this.tcodes[from]; }
+    this.invites.delete(p.id); this.reqs.delete(p.id);
+    this.queue.push([0, 0, { k: '_team', pid: p.id, to: team }]);
+    this.queuePresence(); this.broadcastPlayers(); this.dirty = true;
+  }
+  /** p leaves their team and starts over with a new base (they captain it) */
+  doLeave(p: Player) {
+    if (!this.members(p.team).some(q => q.id !== p.id)) return false;
+    const old = p.team;
+    const team = Math.max(0, ...[...this.players.values()].map(q => q.team)) + 1;
+    p.team = team;
+    const used = new Set([...this.players.values()].filter(q => q.id !== p.id).map(q => q.col.toLowerCase()));
+    p.col = PLAYER_COLS.find(q => !used.has(q.toLowerCase())) || p.col;
+    this.caps[team] = p.id;
+    if (this.caps[old] === p.id) this.caps[old] = this.members(old)[0].id;
+    this.queue.push([0, 0, { k: '_leave', pid: p.id, team, col: p.col }]);
+    this.queuePresence(); this.broadcastPlayers(); this.dirty = true;
+    return true;
   }
   broadcast(m: any) { const s = JSON.stringify(m); for (const k of this.conns.values()) k.c.send(s); }
   sendTo(pid: number, m: any) { const s = JSON.stringify(m); for (const k of this.conns.values()) if (k.pid === pid) k.c.send(s); }
@@ -165,28 +220,50 @@ export class WorldRelay {
       case 'ping': k.c.send(JSON.stringify({ t: 'pong', at: m.at })); return;
       case 'resync': this.requestSnap(connId); return;
       case 'team': {
+        const soft = (msg: string) => k.c.send(JSON.stringify({ t: 'err-soft', msg }));
+        const isCap = this.captain(p.team) === p.id;
         if (m.op === 'invite') {
           const q = this.players.get(+m.pid);
           if (!q || q.team === p.team || !this.onlinePids().has(q.id)) return;
+          if (!isCap) { soft('Only your team captain can invite players'); return; }
           this.invites.set(q.id, { team: p.team, at: Date.now() });
           this.sendTo(q.id, { t: 'invite', from: p.name, team: p.team, col: p.col });
         } else if (m.op === 'accept') {
           const inv = this.invites.get(p.id);
-          if (!inv || inv.team !== +m.team || Date.now() - inv.at > 120_000) { k.c.send(JSON.stringify({ t: 'err-soft', msg: 'That invitation has expired' })); return; }
-          this.invites.delete(p.id);
-          const to = this.players.get([...this.players.values()].find(q => q.team === inv.team)?.id || 0);
-          if (!to) return;
-          p.team = inv.team; p.col = to.col;
-          this.queue.push([0, 0, { k: '_team', pid: p.id, to: inv.team }]);
-          this.queuePresence(); this.broadcastPlayers(); this.dirty = true;
+          if (!inv || inv.team !== +m.team || Date.now() - inv.at > 120_000) { soft('That invitation has expired'); return; }
+          this.doJoin(p, inv.team);
         } else if (m.op === 'leave') {
-          if (![...this.players.values()].some(q => q.id !== p.id && q.team === p.team)) return;
-          const team = Math.max(0, ...[...this.players.values()].map(q => q.team)) + 1;
-          p.team = team;
-          const used = new Set([...this.players.values()].filter(q => q.id !== p.id).map(q => q.col.toLowerCase()));
-          p.col = PLAYER_COLS.find(q => !used.has(q.toLowerCase())) || p.col;
-          this.queue.push([0, 0, { k: '_leave', pid: p.id, team, col: p.col }]);
-          this.queuePresence(); this.broadcastPlayers(); this.dirty = true;
+          this.doLeave(p);
+        } else if (m.op === 'request') {   // "I have a team code": ask that team's captain
+          const code = String(m.code || '').toUpperCase().replace(/[^A-Z0-9]/g, '');
+          const team = +(Object.keys(this.tcodes).find(t => this.tcodes[+t] === code) ?? NaN);
+          if (!(team >= 0) || !this.members(team).length) { soft('No team has that code'); return; }
+          if (team === p.team) { soft("You're already on that team"); return; }
+          const cap = this.players.get(this.captain(team))!;
+          if (!this.onlinePids().has(cap.id)) { soft(`${cap.name} (the captain) is offline — try again when they're on`); return; }
+          this.reqs.set(p.id, { team, at: Date.now() });
+          this.sendTo(cap.id, { t: 'joinreq', pid: p.id, name: p.name, col: p.col });
+          k.c.send(JSON.stringify({ t: 'info', msg: `Asked ${cap.name} (the captain) to let you join — wait for them to approve` }));
+        } else if (m.op === 'approve' || m.op === 'deny') {
+          const q = this.players.get(+m.pid), r = q && this.reqs.get(q.id);
+          if (!q || !r || !isCap || r.team !== p.team) return;
+          this.reqs.delete(q.id);
+          if (m.op === 'deny') { this.sendTo(q.id, { t: 'err-soft', msg: `${p.name} declined your request to join` }); return; }
+          if (Date.now() - r.at > 300_000) { soft('That request has expired'); return; }
+          this.doJoin(q, p.team);
+        } else if (m.op === 'kick') {
+          const q = this.players.get(+m.pid);
+          if (!q || !isCap || q.id === p.id || q.team !== p.team) return;
+          if (this.doLeave(q)) this.sendTo(q.id, { t: 'err-soft', msg: `${p.name} removed you from the team — you have a new base of your own` });
+        } else if (m.op === 'promote') {
+          const q = this.players.get(+m.pid);
+          if (!q || !isCap || q.id === p.id || q.team !== p.team) return;
+          this.caps[p.team] = q.id; this.dirty = true;
+          this.broadcastPlayers();
+        } else if (m.op === 'newcode') {
+          if (!isCap) return;
+          this.teamCode(p.team, true);
+          this.broadcastPlayers();
         }
         return;
       }

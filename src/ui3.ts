@@ -24,7 +24,7 @@ const CSS = `
 .plrow{display:flex;align-items:center;gap:8px;padding:6px 4px;border-bottom:1px solid #232a36}.plrow .sw{width:14px;height:14px;border-radius:4px}
 .plrow .st{margin-left:auto;font-size:12px}.plrow .on{color:#4cc38a}.plrow .off{color:#7d8696}
 `;
-let built = false;
+let built = false, tcodeDraft = '';
 function build() {
   if (built) return; built = true;
   EXTRA_MODALS.players = playersHTML;
@@ -49,6 +49,7 @@ function build() {
     if (tg && (tg.tagName === 'INPUT' || tg.tagName === 'TEXTAREA' || tg.tagName === 'SELECT')) return;
     ev.preventDefault(); openChat();
   });
+  addEventListener('input', ev => { const t = ev.target as HTMLInputElement; if (t && t.id === 'tcodein') tcodeDraft = t.value; });
   const down = document.createElement('div'); down.id = 'netdown'; document.body.appendChild(down);
 }
 function openChat() { const c = document.getElementById('chat')!; c.classList.add('typing'); (c.querySelector('#chatin') as HTMLInputElement).focus(); }
@@ -104,14 +105,20 @@ function playersHTML(): [string, string] {
   const ranked = [...teams.keys()].map(t => ({ t, ...empireScore(t) })).sort((a, b) => b.score - a.score);
   const myMates = NET.players.filter(p => p.team === MP.myTeam).length;
   const mates = NET.players.filter(p => p.team === MP.myTeam && p.id !== MP.me).map(p => esc(p.name));
+  const amCap = !!NET.players.find(p => p.id === MP.me)?.cap;
   let h = `<div id="plist"><div class="row" style="align-items:center;gap:10px;margin-bottom:6px"><span>Join code <b style="color:#ffd48a;font-size:16px;letter-spacing:1px">${fmtCode(NET.code)}</b></span><button class="go" data-act="invite">📋 Copy invite (code + link + how to join)</button></div>
-    <p class="sm" style="margin-top:0">Anyone with the code can join at any time — even when you're offline — and starts their own base far away. ${mates.length ? `You're on a team with <b>${mates.join(', ')}</b>: you share inventory, research, power and colour.` : `You're playing on your own. Invite someone to your team with the button next to their name (they'll get a prompt to accept) — teams share everything.`}</p><h3 class="ch">🏆 Leaderboard</h3>`;
+    <p class="sm" style="margin-top:0">Anyone with the code can join at any time — even when you're offline — and starts their own base far away. ${mates.length ? `You're on a team with <b>${mates.join(', ')}</b>: you share inventory, research, power and colour.` : `You're playing on your own. Invite someone to your team with the button next to their name (they'll get a prompt to accept) — teams share everything.`}</p>`;
+  h += `<h3 class="ch">🤝 Team</h3><div class="row" style="align-items:center;gap:8px;flex-wrap:wrap">`;
+  if (amCap && NET.tcode) h += `<span>👑 You're the captain. Team code <b style="color:#ffd48a;font-size:15px;letter-spacing:1px">${NET.tcode}</b></span><button class="mini" data-act="tcopy">Copy</button><button class="mini" data-act="tnewcode" title="Make a new code (the old one stops working)">New code</button><span class="sm dim" style="flex-basis:100%">Players in this world can enter it to ask to join — you approve each request.</span>`;
+  h += `<span class="sm">Have another team's code?</span><input id="tcodein" maxlength="7" placeholder="ABC123" value="${esc(tcodeDraft)}" style="width:90px;text-transform:uppercase"><button class="mini" data-act="trequest">Ask to join</button></div><h3 class="ch">🏆 Leaderboard</h3>`;
   ranked.forEach((r, i) => {
     const t = r.t, l = teams.get(t)!, inf = MP.info.get(t), mine = t === MP.myTeam;
     h += `<div class="plrow"${mine ? ' style="background:#2b261655"' : ''}><b style="width:22px">${i + 1}.</b><span class="sw" style="background:${inf?.col || '#888'}"></span><b>${esc(l.map(p => p.name).join(' & '))}</b>${mine ? ' <span class="dim">(you)</span>' : ''}<span class="st">Tier ${r.tier} · ${r.built} built · <b style="color:#ffd48a">${r.score.toLocaleString()}</b></span></div>`;
     for (const p of l) {
-      const btn = !mine && p.online ? `<button class="mini" data-act="tinvite:${p.id}">Invite to my team</button>` : mine && p.id === MP.me && myMates > 1 ? `<button class="mini danger" data-act="tleave">Leave team</button>` : '';
-      h += `<div class="plrow" style="padding-left:30px"><span>${esc(p.name)}</span>${btn}<span class="st ${p.online ? 'on' : 'off'}">${p.online ? '● online' : '○ offline (paused)'}</span></div>`;
+      const btn = !mine && p.online && amCap ? `<button class="mini" data-act="tinvite:${p.id}">Invite to my team</button>`
+        : mine && p.id === MP.me && myMates > 1 ? `<button class="mini danger" data-act="tleave">Leave team</button>`
+          : mine && amCap && p.id !== MP.me ? `<button class="mini" data-act="tpromote:${p.id}" title="Hand the captain role to them">👑 Make captain</button><button class="mini danger" data-act="tkick:${p.id}">Remove</button>` : '';
+      h += `<div class="plrow" style="padding-left:30px"><span>${p.cap && l.length > 1 ? '👑 ' : ''}${esc(p.name)}</span>${btn}<span class="st ${p.online ? 'on' : 'off'}">${p.online ? '● online' : '○ offline (paused)'}</span></div>`;
     }
   });
   h += `<p class="sm dim">Score = tiers and milestones reached, plus the value of everything your factory has ever made, plus what you've built. Teams share everything: inventory, research, power and colour.</p>`;
@@ -132,6 +139,17 @@ export function showInvite(m: { from: string; team: number; col: string }) {
   setTimeout(() => d.remove(), 60000);
 }
 
+/** someone entered our team code: the captain approves or declines */
+export function showJoinReq(m: { pid: number; name: string; col: string }) {
+  build();
+  const d = document.createElement('div');
+  d.className = 'toast big';
+  d.style.cssText = 'position:fixed;left:50%;top:90px;transform:translateX(-50%);z-index:96;background:#161b24;border:1px solid ' + m.col + ';border-radius:12px;padding:12px 16px;color:#e4e8ef';
+  d.innerHTML = `🙋 <b style="color:${m.col}">${esc(m.name)}</b> used your team code and wants to join your team. Their base would join yours and you'd share everything. <div style="margin-top:8px;display:flex;gap:8px;justify-content:center"><button class="go" data-act="tapprove:${m.pid}">Let them in</button><button data-act="tdeny:${m.pid}">Decline</button></div>`;
+  document.body.appendChild(d);
+  d.addEventListener('pointerdown', ev => { const t = ev.target as HTMLElement; if (t.closest('button')) setTimeout(() => d.remove(), 50); });
+  setTimeout(() => d.remove(), 300000);
+}
 /** a small "reconnecting…" notice while we rejoin after a dropped connection */
 export function showReconnecting(on: boolean) {
   build();

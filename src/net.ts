@@ -24,7 +24,8 @@ export const NET = {
   tick: 0,              // ticks simulated here
   n: 0,                 // ticks the relay has finished (we may run up to this)
   pending: [] as [number, number, number, Cmd][],   // tick, player, team, command
-  players: [] as { id: number; name: string; team: number; col: string; online: boolean }[],
+  players: [] as { id: number; name: string; team: number; col: string; online: boolean; cap?: boolean }[],
+  tcode: '',            // my team's join code (captains only)
   chat: [] as { from: string; col: string; text: string; t: number }[],
   ping: 0,
   drift: 0,
@@ -43,6 +44,7 @@ export interface NetHandlers {
   players: () => void;
   chat: (m: { from: string; col: string; text: string }) => void;
   invite: (m: { from: string; team: number; col: string }) => void;
+  joinreq: (m: { pid: number; name: string; col: string }) => void;
 }
 
 export function serverURL() {
@@ -131,10 +133,12 @@ function onMsg(m: any) {
       for (const c of m.cmds) NET.pending.push(c);
       break;
     case 'snapreq': NET.snapWanted = true; if (NET.ready && !NET.loading) uploadSave(); break;
-    case 'players': NET.players = m.list; H.players(); break;
+    case 'players': NET.players = m.list; NET.tcode = m.tcode || ''; H.players(); break;
     case 'chat': { const c = { from: m.from, col: m.col || '#ccc', text: m.text, t: Date.now() }; NET.chat.push(c); if (NET.chat.length > 50) NET.chat.shift(); H.chat(c); break; }
     case 'pong': NET.ping = Date.now() - m.at; break;
     case 'invite': H.invite(m); break;
+    case 'joinreq': H.joinreq(m); break;
+    case 'info': G.fx.toast(m.msg, 'good'); break;
     case 'err-soft': G.fx.toast(m.msg, 'bad'); break;
     case 'err': H.error(m.msg); disconnect(); break;
     case 'update': NET.outdated = true; H.error(m.msg); disconnect(); break;
