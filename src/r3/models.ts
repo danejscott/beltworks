@@ -558,6 +558,16 @@ export function treeModels(): Model[] {
   out.push(one(b => { b.add(new THREE.IcosahedronGeometry(0.34, 0), leaf[0], 0, 0.2, 0); b.add(new THREE.IcosahedronGeometry(0.26, 0), leaf[2], 0.25, 0.15, 0.1); }));
   return out;
 }
+/** cheap stand-ins for far-away trees (same silhouettes, a fraction of the triangles) */
+export function treeModelsLow(): Model[] {
+  const leaf = [std('#3d5e2a', 0.85, 0, { flatShading: true }), std('#4a6b30', 0.85, 0, { flatShading: true }), std('#2e4f2c', 0.85, 0, { flatShading: true })];
+  const out: Model[] = [];
+  out.push(one(b => { b.cone(0.5, 1.6, 0, 0.2, 0, leaf[2], 5); }));
+  out.push(one(b => { b.add(new THREE.OctahedronGeometry(0.55, 0), leaf[0], 0, 1.0, 0); }));
+  out.push(one(b => { b.add(new THREE.OctahedronGeometry(0.47, 0), leaf[1], 0, 0.95, 0); }));
+  out.push(one(b => { b.add(new THREE.OctahedronGeometry(0.38, 0), leaf[0], 0, 0.2, 0); }));
+  return out;
+}
 
 // Vehicles
 export function locoModel(): Model {

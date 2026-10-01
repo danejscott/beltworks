@@ -229,7 +229,9 @@ async function exitToTitle() {
 let last = 0, acc = 0, saveT = 0, dbgT = 1e7, simErr = false, ambT = 0;
 let fly: null | { x0: number; y0: number; x1: number; y1: number; t: number } = null;
 function flyTo(x: number, y: number) { fly = { x0: view.cam.x, y0: view.cam.y, x1: x, y1: y, t: 0 }; if (view.cam.s < 22) view.cam.s = 26; }
-let lastFrameAt = 0;
+let lastFrameAt = 0, lastCamSig = 0, shadowTick = 0;
+/** where frame time goes (ms summed since the last reset) — handy for tuning: BW.PERF */
+const PERF = { frames: 0, ghosts: 0, scene: 0, terrain: 0, render: 0, ui: 0 };
 function frame(ms: number) {
   lastFrameAt = performance.now();
   // an online world is loading / catching up in the background: don't draw half-built state
@@ -267,14 +269,25 @@ function frame(ms: number) {
   updParts(dt);
   for (const e of G.L.machines) if (e.pop > 0) e.pop = Math.max(0, e.pop - dt * 5);
   if (view.inspect && view.inspect.pop > 0) view.inspect.pop = Math.max(0, view.inspect.pop - dt * 5);
+  let pt = performance.now();
   updateGhosts();
+  PERF.ghosts += performance.now() - pt; pt = performance.now();
   const labels: Label3[] = [];
   applyDayNight();
   updateCamera();
   if (!title.open) { saveCamAngle(dt); tickExplore(dt, C.dist); tickAchievements(dt, a => { UI.toast(`🏆 Achievement unlocked: <b>${a.n}</b> — ${a.d}`, 'big'); sfx('tier'); }); }
+  pt = performance.now();
   update3D(G.S.time, now, dt, labels);
+  PERF.scene += performance.now() - pt; pt = performance.now();
   terrainTick(dt, now);
+  PERF.terrain += performance.now() - pt; pt = performance.now();
+  // shadows: refresh every other frame while the view is still (every frame while it moves)
+  const camSig = view.cam.x + view.cam.y * 7 + view.cam.s * 13 + C.yaw * 17 + C.pitch * 19;
+  C.renderer.shadowMap.autoUpdate = false;
+  if (camSig !== lastCamSig || (++shadowTick & 1)) C.renderer.shadowMap.needsUpdate = true;
+  lastCamSig = camSig;
   C.renderer.render(C.scene, C.camera);
+  PERF.render += performance.now() - pt; pt = performance.now();
   // text overlay
   octx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
   octx.clearRect(0, 0, view.cw, view.ch);
@@ -288,7 +301,9 @@ function frame(ms: number) {
     octx.fillStyle = 'rgba(0,0,0,.7)'; octx.fillText(t, sx + 1, sy + 1);
     octx.fillStyle = c; octx.fillText(t, sx, sy);
   }
+  pt = performance.now();
   if (!title.open) UI.uiTick(dt);
+  PERF.ui += performance.now() - pt; PERF.frames++;
   // real play time + a timelapse frame every 3 minutes
   if (!title.open && G.S && slot.id) {
     G.S.playT = (G.S.playT ?? G.S.time) + dt;
@@ -361,7 +376,7 @@ async function boot() {
     while (ticksAvailable() > 0 && performance.now() - t0 < 250) { try { netStep(update); } catch (err) { console.error(err); NET.tick++; } }
   }, 1000);
   (window as any).G = G; // debugging aid
-  (window as any).BW = { frame: (n = 1, dt = 1 / 60) => { for (let i = 0; i < n; i++) { dbgT += dt * 1000; frame(dbgT); } }, T3, PL, DATA, TER, G, W: W_, SIM, TR, TK, EX, INP, PR, UI, view, DR, CORE, CMD, TEAMS, SAVE, NET };
+  (window as any).BW = { frame: (n = 1, dt = 1 / 60) => { for (let i = 0; i < n; i++) { dbgT += dt * 1000; frame(dbgT); } }, T3, PL, DATA, TER, G, W: W_, SIM, TR, TK, EX, INP, PR, UI, view, DR, CORE, CMD, TEAMS, SAVE, NET, PERF };
 }
 boot();
 export { audioInit, ITEMS, parts, rgba };

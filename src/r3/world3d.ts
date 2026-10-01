@@ -138,7 +138,8 @@ export function init3D() {
   deckFade = new THREE.MeshStandardMaterial({ color: '#b8c0c8', transparent: true, opacity: 0.1, depthWrite: false, roughness: 0.8 });
   lightMat = new THREE.MeshBasicMaterial({ color: '#ffffff', toneMapped: false });
   // gently swaying leaves (idle animation)
-  for (const t of MD.treeModels()) models['tree' + Object.keys(models).filter(k => k.startsWith('tree')).length] = t;
+  MD.treeModels().forEach((t, i) => { models['tree' + i] = t; });
+  MD.treeModelsLow().forEach((t, i) => { models['treeL' + i] = t; });
   for (const k in models) if (k.startsWith('tree')) for (const m of models[k].mats) {
     const sm = m as THREE.MeshStandardMaterial;
     if ((sm as any)._sway) continue; (sm as any)._sway = 1;
@@ -419,8 +420,10 @@ function rebuildTrees(cx: number, cy: number, R: number) {
     if (!G.trees[y * W + x]) continue;
     const h = hash2(x, y, 7), v = h < 0.3 ? 0 : h < 0.65 ? 1 : h < 0.9 ? 2 : 3;
     const s = 0.8 + hash2(x, y, 11) * 0.55;
-    const key = 'tree' + v;
-    TL.get(key, models[key].geo, models[key].mats).push(compose(x + 0.5 + (h - 0.5) * 0.4, 0, y + 0.5 + (hash2(y, x, 3) - 0.5) * 0.4, h * 20, s, s * (0.9 + hash2(x, y, 5) * 0.3), s));
+    // trees further out use the cheap stand-ins
+    const far = Math.abs(x - cx) + Math.abs(y - cy) > R * 0.55;
+    const key = (far ? 'treeL' : 'tree') + v;
+    TL.get(key, models[key].geo, models[key].mats, !far).push(compose(x + 0.5 + (h - 0.5) * 0.4, 0, y + 0.5 + (hash2(y, x, 3) - 0.5) * 0.4, h * 20, s, s * (0.9 + hash2(x, y, 5) * 0.3), s));
     n++;
   }
   TL.end();
