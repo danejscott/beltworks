@@ -16,11 +16,13 @@ On the title screen, **🌐 Play online** lets you create a server or join one w
 
 - **Competitive:** every player starts their own base far from the others, in a different biome, with starter resources nearby. Race to build the biggest empire; the **leaderboard** (press **Y**) scores tiers, milestones, everything your factory has made and what you've built.
 - **Economy only:** nobody can remove or change another player's buildings, and you can't build right next to someone else's HUB. You *can* run a belt out of a rival's open output port and take what comes out.
-- **Teams:** invite a player from the Players panel. Teammates share inventory, research, power and colour; a player who was on their own brings their whole base along.
+- **Teams:** each team has a 👑 captain. The captain invites players from the Players panel, or shares the team's 6-letter **team code**: anyone who enters it asks to join and the captain approves. Captains can remove players or hand the role over. Teammates share inventory, research, power and colour; a player who was on their own brings their whole base along.
+- **Trade Post:** one neutral market near the middle of every online map. Add it to a truck's route: the truck drops off what it carries (your team earns credits worth the items) and picks up the item you chose, paid in credits.
+- **Ranking seasons:** every month is a new season. The Players panel ranks score gained this season and lists past winners.
 - **Your colour** replaces the orange trim on your buildings and vehicles, and your name floats above your HUB.
 - **No host needed:** anyone with the code can start or join the world at any time; the world runs in the players' browsers while anyone is online, and your factory pauses while you're away.
 - **Enormous** maps (4608² of land, 4× Large) work for servers and single-player; they need a desktop computer with plenty of memory.
-- Chat with **Enter**. Fast travel works between your own team's bases.
+- Chat with **Enter**. Fast travel works between your own team's bases. A few one-time tips explain the online rules the first time they matter.
 
 ### How online works (and running the relay)
 
@@ -58,6 +60,8 @@ These are the main keys; press **?** in the game for the rest.
 | G (or Space) | Locate and fly to your HUB |
 | O | Fast travel between HUB and Outposts |
 | Y | Players and leaderboard (online) |
+| Shift+Q | Copy settings tool |
+| \ | Reset the camera angle |
 | Enter | Chat (online) |
 | PageUp / PageDown (or E / Z) | Change floor |
 
@@ -94,22 +98,24 @@ After building, copy `dist/index.html` over `Play Beltworks.html` to update the 
 - **Advanced machines:** Packager (fluids in canisters), Blender (Cooling Systems, Turbofuel) and Particle Accelerator (Quantum Cores for the final launch). Plus Sulfur, Compacted Coal, Heat Sinks and Turbo Motors.
 - **Inventory screen (I):** grouped by category, searchable, with production rates and what your goals still need.
 - **Nuclear power:** uranium (rare, glowing, near the map edges) goes to encased cells, then fuel rods, then a 2500 MW Nuclear Power Plant. Its waste has to be stored.
-- **Ships:** Ship Ports on lake and sea shores. Cargo ships (2400 items) sail between the ports you choose.
+- **Ships:** Ship Ports on lake and sea shores, plus the industrial **Harbor** (a concrete pier with a gantry crane and several berths). Cargo ships (2400 items) sail lakes and the open ocean around the island.
+- **Energy resources run out (new worlds):** coal, oil and uranium nodes hold a reserve (impure half, pure double). In Easy, spent nodes refill after an hour. Every lake and sea also has an offshore oil well, always shown on the map.
 - **Train signals:** Block and Path Signals let many trains share hand-built networks safely.
 - **Production graphs:** the last hour of every item and of power, in Stats (P).
 - **Soundscapes & music:** wind, water, birds and crickets depending on where you look, and a generated soundtrack that changes each tier. Separate volume sliders in the menu.
 - **Run recap:** play time, items made, track laid, a timelapse of your factory growing, and personal bests per difficulty and map size (menu → Run recap; opens automatically when you win).
-- **Trucks:** Truck Stations plus trucks that path over open ground.
+- **Trucks:** Truck Stations plus trucks that path over open ground. Stations have several bays; extra trucks queue nearby. Busy routes wear dirt tracks into the ground.
 - **Floors (unlocked with Logistics Mk2):** build on up to 3 floors above the ground using Foundations. Conveyor Lifts and Pipe Lifts link the floors. Change floor with PageUp/PageDown; floors above the active one fade out.
 - **Mountains:** taller, with snow caps. Railways (and Quick Route) tunnel straight through them; trucks drive around.
-- **Trains:** Quick Route lays a one-way loop between two stations. Run up to 12 trains per loop. Manual rails and schedules still work.
+- **Trains:** Quick Route lays a one-way loop between two stations. Run up to 12 trains per loop. Manual rails and schedules still work. Corners are drawn as smooth curves, track over water gets concrete bridges, and trains can be 12–30 cars long depending on map size.
 - **Drones:** point-to-point delivery across the map.
 - **Exploration:**
   - Nodes are revealed as you look around.
   - The Scanner (N) pings resources, 💎 power crystals (free Power Shards) and 🛸 crash sites.
   - Crash sites hold Hard Drives, which you research (U) to choose alternate recipes.
 - **Production Planner** (L, Easy/Creative only) and **25 achievements** (J).
-- **Blueprints**, **overclocking**, **Output Amplifiers** and the coupon **shop**.
+- **Blueprints** (share one with a short **BP-** code; friends import it from the Blueprints panel), **overclocking**, **Output Amplifiers** and the coupon **shop**.
+- **Copy settings** (Shift+Q): pick a machine, then click others of the same kind to give them its recipe, clock speed and filters. **Upgrade in place:** place a Miner Mk2/Mk3, Power Pole Mk2 or Pipe Mk2 over the lower tier to swap it, keeping its settings.
 - **Progression:** 8 tiers, 20 milestones and 4 Space Elevator phases.
 
 ## Code map (`src/`)
