@@ -12,7 +12,7 @@ import { buyShop, loadElevator, submitMilestone } from './progress';
 import { flushNet, fluidsTouching, myCraft, setRecipe } from './sim';
 import { asTeam, MP } from './teams';
 import { joinTeam, leaveTeam, nearRivalBase, newSeason, spawnTeam } from './online';
-import { addInv, canAfford, canPlace, canRemove, chopTree, Ent, entAt, floorBlocked, G, groundOnly, hasFloor, markDirty, missingText, nodeAt, pairBit, PAIRS, pay, place, refund, remove, rotateEnt, setFloor, upgradeTarget, creative } from './world';
+import { addInv, canAfford, canPlace, canRemove, chopTree, Ent, entAt, floorBlocked, G, groundOnly, hasFloor, markDirty, missingText, nodeAt, pairBit, PAIRS, pay, place, refund, remove, rotateEnt, setFloor, upgradeTarget, creative, NL } from './world';
 import { clamp } from './util';
 
 export type Cmd = { k: string; [x: string]: any };
@@ -220,20 +220,30 @@ function deconRect(x0: number, y0: number, x1: number, y1: number, z: number) {
   if (blocked && !n) { toast(blocked, 'bad'); sfx('err'); }
 }
 
-function paste(bp: any, ox: number, oy: number, z: number) {
+function paste(bp: any, ox: number, oy: number, z0: number) {
+  const zOf = (o: any) => z0 + (+o.z || 0);
   const tileOK = (o: any) => {
-    const d = BLD[o.t], x = ox + o.x, y = oy + o.y;
-    if (!d || !G.S.unlocked.has(o.t)) return false;
+    const d = BLD[o.t], x = ox + o.x, y = oy + o.y, z = zOf(o);
+    if (!d || !G.S.unlocked.has(o.t) || z < 0 || z >= NL) return false;
     if (z > 0 && groundOnly(o.t)) return false;
     if (d.kind === 'rail' || d.kind === 'belt' || d.kind === 'pipe') return tileFree(x, y, d.kind, z);
     return !canPlace(o.t, x, y, o.r, { free: true, z });
   };
-  let placed = 0, skipped = 0, broke = false;
-  const order = [...bp.ents].sort((a: any, b: any) => (a.ex ? 1 : 0) - (b.ex ? 1 : 0));
+  let placed = 0, skipped = 0, broke = false, decks = 0;
   const need: Cost = {};
-  for (const o of order) {
+  // the foundation decks first (lowest floor up), so the upper floors have something to stand on
+  const fl: number[][] = Array.isArray(bp.fl) ? [...bp.fl].sort((a, b) => a[2] - b[2]) : [];
+  if (fl.length && G.S.unlocked.has('foundation')) for (const [fx, fy, fz] of fl) {
+    const x = ox + fx, y = oy + fy, z = z0 + fz;
+    if (z < 1 || z >= NL || hasFloor(x, y, z) || floorBlocked(x, y, z)) continue;
+    if (!canAfford(BLD.foundation.cost)) { broke = true; for (const k in BLD.foundation.cost) need[k] = BLD.foundation.cost[k]; break; }
+    pay(BLD.foundation.cost); setFloor(x, y, z, true); decks++;
+  }
+  // then the buildings, floor by floor from the bottom (tunnel exits after their entrances)
+  const order = [...bp.ents].sort((a: any, b: any) => zOf(a) - zOf(b) || (a.ex ? 1 : 0) - (b.ex ? 1 : 0));
+  for (const o of broke ? [] : order) {
     if (!tileOK(o)) { skipped++; continue; }
-    const d = BLD[o.t], x = ox + o.x, y = oy + o.y;
+    const d = BLD[o.t], x = ox + o.x, y = oy + o.y, z = zOf(o);
     const ex = entAt(x, y, z);
     if (ex && d.kind === 'rail') { ex.pairs |= o.pr || 0; markDirty('rail', ex); placed++; continue; }
     if (ex && d.kind === 'belt') { if (ex.rot !== o.r || ex.type !== o.t) { if (ex.type !== o.t) { refund(BLD[ex.type].cost); if (!canAfford(d.cost)) { pay(BLD[ex.type].cost); broke = true; break; } pay(d.cost); ex.type = o.t; } ex.rot = o.r; markDirty('belt', ex); } placed++; continue; }
@@ -247,8 +257,8 @@ function paste(bp: any, ox: number, oy: number, z: number) {
     if (o.ck && e.clock !== undefined) e.clock = o.ck;
     placed++;
   }
-  if (placed) { sfx('paste'); G.fx.ui('pasted', { x: ox + bp.w / 2, y: oy + bp.h / 2, w: bp.w, h: bp.h }); }
-  let msg = `Pasted ${placed} piece${placed === 1 ? '' : 's'}`;
+  if (placed || decks) { sfx('paste'); G.fx.ui('pasted', { x: ox + bp.w / 2, y: oy + bp.h / 2, w: bp.w, h: bp.h }); }
+  let msg = `Pasted ${placed} piece${placed === 1 ? '' : 's'}${decks ? ` and ${decks} foundation tile${decks === 1 ? '' : 's'}` : ''}`;
   if (skipped) msg += ` · ${skipped} blocked`;
   if (broke) msg += ` · ran out of materials (${missingText(need)})`;
   toast(msg, broke || skipped ? 'bad' : 'good');

@@ -20,7 +20,8 @@ import { DX, DY } from './util';
 import { MP } from './teams';
 
 // ---------------------------------------------------------------------------
-export interface BP { name: string; w: number; h: number; ents: any[] }
+/** a blueprint: buildings (o.z = floor, counted up from the lowest floor copied) and foundation decks (fl: [x, y, floor]) */
+export interface BP { name: string; w: number; h: number; ents: any[]; fl?: number[][] }
 export const tool: { t: any } = { t: null }; // {k:'build',type,recipe?,clock?} | {k:'decon'} | {k:'bpsel',quick?} | {k:'paste',bp,prot}
 export let rot = 0;
 let drag: null | { sx: number; sy: number; axis: 'h' | 'v' | null; kind: string } = null;
@@ -152,18 +153,20 @@ function deconRect(x0: number, y0: number, x1: number, y1: number) { run({ k: 'd
 
 // ---------------------------------------------------------------------------
 // Blueprints
+/** copy everything inside the box — on every floor, plus the foundation decks that hold the upper floors up */
 export function captureBP(x0: number, y0: number, x1: number, y1: number): BP | null {
   const xa = Math.min(x0, x1), xb = Math.max(x0, x1), ya = Math.min(y0, y1), yb = Math.max(y0, y1);
-  const ents: any[] = [];
+  const ents: any[] = [], fl: number[][] = [];
   const seen = new Set<Ent>();
-  for (let y = ya; y <= yb; y++) for (let x = xa; x <= xb; x++) {
-    const e = at(x, y);
+  for (let z = 0; z < NL; z++) for (let y = ya; y <= yb; y++) for (let x = xa; x <= xb; x++) {
+    if (z > 0 && hasFloor(x, y, z)) fl.push([x - xa, y - ya, z]);
+    const e = entAt(x, y, z);
     if (!e || seen.has(e)) continue;
     seen.add(e);
     const d = def(e);
     if (d.kind === 'hub' || d.kind === 'elevator') continue;
     if (e.x < xa || e.y < ya || e.x + e.w - 1 > xb || e.y + e.h - 1 > yb) continue;
-    const o: any = { t: e.type, x: e.x - xa, y: e.y - ya, r: e.rot };
+    const o: any = { t: e.type, x: e.x - xa, y: e.y - ya, r: e.rot, z: e.z || 0 };
     if (e.recipe) o.rc = e.recipe;
     if (e.pairs) o.pr = e.pairs;
     if (e.filt) o.fl = [...e.filt];
@@ -172,9 +175,17 @@ export function captureBP(x0: number, y0: number, x1: number, y1: number): BP | 
     if (e.clock !== undefined && e.clock < 1) o.ck = e.clock;
     ents.push(o);
   }
-  if (!ents.length) return null;
-  return { name: '', w: xb - xa + 1, h: yb - ya + 1, ents };
+  if (!ents.length && !fl.length) return null;
+  // floors count from the lowest one copied, so a copy of floors 1–2 pastes onto whatever floor you're on
+  const zmin = Math.min(...ents.map(o => o.z), ...fl.map(f => f[2]));
+  for (const o of ents) { o.z -= zmin; if (!o.z) delete o.z; }
+  for (const f of fl) f[2] -= zmin;
+  const bp: BP = { name: '', w: xb - xa + 1, h: yb - ya + 1, ents };
+  if (fl.length) bp.fl = fl;
+  return bp;
 }
+/** how many floors a blueprint spans */
+export const bpFloors = (bp: BP) => 1 + Math.max(0, ...bp.ents.map(o => o.z || 0), ...(bp.fl || []).map(f => f[2]));
 function rotBP(bp: BP, times: number): BP {
   let cur = bp;
   for (let k = 0; k < (times & 3); k++) {
@@ -185,29 +196,37 @@ function rotBP(bp: BP, times: number): BP {
       if (o.pr) n.pr = rotatePairs(o.pr, 1);
       return n;
     });
-    cur = { name: cur.name, w: cur.h, h: cur.w, ents };
+    const fl = cur.fl ? cur.fl.map(([x, y, z]) => [cur.h - (y + 1), x, z]) : undefined;
+    cur = { name: cur.name, w: cur.h, h: cur.w, ents, fl };
   }
   return cur;
 }
 export function bpCost(bp: BP): Cost {
   const c: Cost = {};
   for (const o of bp.ents) for (const k in BLD[o.t].cost) c[k] = (c[k] || 0) + BLD[o.t].cost[k];
+  for (const _ of bp.fl || []) for (const k in BLD.foundation.cost) c[k] = (c[k] || 0) + BLD.foundation.cost[k];
   return c;
 }
 function pasteOrigin(bp: BP): [number, number] { const m = view.mouse; return [m.tx - Math.floor(bp.w / 2), m.ty - Math.floor(bp.h / 2)]; }
-function bpEntOK(o: any, ox: number, oy: number) {
-  const d = BLD[o.t], x = ox + o.x, y = oy + o.y;
-  if (!G.S.unlocked.has(o.t)) return false;
-  if (view.level > 0 && groundOnly(o.t)) return false;
+/** can this blueprint piece go here? (upper floors count as OK where the blueprint brings its own foundations) */
+function bpEntOK(o: any, ox: number, oy: number, decks?: Set<number>) {
+  const d = BLD[o.t], x = ox + o.x, y = oy + o.y, z = view.level + (o.z || 0);
+  if (z >= NL || !G.S.unlocked.has(o.t)) return false;
+  if (z > 0 && groundOnly(o.t)) return false;
+  if (z > 0 && decks && !hasFloor(x, y, z)) {
+    const [w, h] = o.r & 1 ? [d.h, d.w] : [d.w, d.h];
+    for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) if (!hasFloor(x + i, y + j, z) && !decks.has(((y + j) * W + x + i) * 4 + z)) return false;
+    return !entAt(x, y, z);
+  }
   if (d.kind === 'rail') return tileFree(x, y, 'rail');
-  if (d.kind === 'belt') return tileFree(x, y, 'belt');
-  if (d.kind === 'pipe') return tileFree(x, y, 'pipe');
-  return !canPlace(o.t, x, y, o.r, { free: true, z: view.level });
+  if (d.kind === 'belt') return tileFreeZ(x, y, 'belt', z);
+  if (d.kind === 'pipe') return tileFreeZ(x, y, 'pipe', z);
+  return !canPlace(o.t, x, y, o.r, { free: true, z });
 }
 function doPaste() {
   const t = tool.t, bp: BP = rotBP(t.bp, t.prot || 0);
   const [ox, oy] = pasteOrigin(bp);
-  run({ k: 'paste', bp: { w: bp.w, h: bp.h, ents: bp.ents }, ox, oy, z: view.level });
+  run({ k: 'paste', bp: { w: bp.w, h: bp.h, ents: bp.ents, fl: bp.fl }, ox, oy, z: view.level });
 }
 /** sparkles where a blueprint landed */
 export function pasteFx(o: { x: number; y: number; w: number; h: number }) {
@@ -302,7 +321,9 @@ export function updateGhosts() {
       }
     } else if (t.k === 'paste') {
       const bp = rotBP(t.bp, t.prot || 0), [ox, oy] = pasteOrigin(bp);
-      for (const o of bp.ents) g.push({ type: o.t, x: ox + o.x, y: oy + o.y, rot: o.r, ok: bpEntOK(o, ox, oy), recipe: o.rc, pairs: o.pr, isExit: !!o.ex });
+      const decks = new Set<number>();
+      for (const [fx, fy, fz] of bp.fl || []) { const z = view.level + fz; if (z > 0 && z < NL) { decks.add(((oy + fy) * W + ox + fx) * 4 + z); if (!hasFloor(ox + fx, oy + fy, z)) g.push({ type: 'foundation', x: ox + fx, y: oy + fy, rot: 0, z, ok: !floorBlocked(ox + fx, oy + fy, z) }); } }
+      for (const o of bp.ents) g.push({ type: o.t, x: ox + o.x, y: oy + o.y, rot: o.r, z: view.level + (o.z || 0), ok: bpEntOK(o, ox, oy, decks), recipe: o.rc, pairs: o.pr, isExit: !!o.ex });
       view.sel = { x0: ox, y0: oy, x1: ox + bp.w - 1, y1: oy + bp.h - 1, col: rgba(0.4, 0.8, 1, 0.06) };
     } else if (t.k === 'decon' && drag) {
       view.sel = { x0: drag.sx, y0: drag.sy, x1: m.tx, y1: m.ty, col: rgba(1, 0.3, 0.3, 0.18) };

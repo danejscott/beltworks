@@ -10,8 +10,8 @@ export async function handleBP(method: string, path: string, body: string, st: B
   if (method === 'POST' && path === '/bp') {
     if (body.length > 400_000) return json({ err: 'That blueprint is too big to share' }, 413);
     let bp: any; try { bp = JSON.parse(body); } catch { return json({ err: 'Not a blueprint' }, 400); }
-    if (!bp || !Array.isArray(bp.ents) || !bp.ents.length || !(bp.w > 0) || !(bp.h > 0)) return json({ err: 'Not a blueprint' }, 400);
-    const clean = JSON.stringify({ name: String(bp.name || 'Shared blueprint').slice(0, 30), w: +bp.w, h: +bp.h, ents: bp.ents });
+    if (!bp || !Array.isArray(bp.ents) || !(bp.ents.length || (Array.isArray(bp.fl) && bp.fl.length)) || !(bp.w > 0) || !(bp.h > 0)) return json({ err: 'Not a blueprint' }, 400);
+    const clean = JSON.stringify({ name: String(bp.name || 'Shared blueprint').slice(0, 30), w: +bp.w, h: +bp.h, ents: bp.ents, ...(Array.isArray(bp.fl) ? { fl: bp.fl } : {}) });
     for (let tries = 0; tries < 8; tries++) {
       let c = ''; for (let i = 0; i < 6; i++) c += CODE_ABC[Math.floor(Math.random() * CODE_ABC.length)];
       if (await st.get(c)) continue;

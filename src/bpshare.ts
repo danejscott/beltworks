@@ -8,7 +8,7 @@ export const fmtBPCode = (c: string) => 'BP-' + c;
 
 /** upload a blueprint; resolves to its code */
 export async function shareBP(bp: any): Promise<string> {
-  const body = JSON.stringify({ name: bp.name, w: bp.w, h: bp.h, ents: bp.ents });
+  const body = JSON.stringify({ name: bp.name, w: bp.w, h: bp.h, ents: bp.ents, fl: bp.fl });
   if (body.length > 400_000) throw new Error('That blueprint is too big to share (try a smaller area)');
   // text/plain keeps it a "simple" request (no CORS preflight)
   const r = await fetch(httpBase() + '/bp', { method: 'POST', body, headers: { 'content-type': 'text/plain' } });

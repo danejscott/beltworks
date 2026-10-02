@@ -809,6 +809,9 @@ function updateGhosts(real: number) {
     const d = BLD[gh.type];
     if (!d) continue;
     const mat = gh.ok !== false ? ghostOK : ghostBad, pre = gh.ok !== false ? 'gok:' : 'gbad:';
+    const gz = gh.z ?? view.level;   // blueprint pieces can be on other floors
+    ZO = gz * LH;
+    if (d.kind === 'foundation') { pushModel(GL, pre + 'deck', mdl('deck', MD.deckModel), compose(gh.x + 0.5, -0.3, gh.y + 0.5, 0), mat, false); continue; }
     if (d.kind === 'train') {
       const cells = gh.cells || [];
       for (let i = 0; i + 1 < cells.length; i += 2) {
@@ -818,7 +821,7 @@ function updateGhosts(real: number) {
       }
       continue;
     }
-    if (d.kind === 'lift') { ZO = (view.level + Math.min(0, d.dz!)) * LH; pushModel(GL, pre + 'lift' + d.dz, mdl('lift' + d.dz, () => MD.liftModel(d.dz! > 0)), compose(gh.x + 0.5, 0, gh.y + 0.5, -gh.rot * HP), mat, false); ZO = view.level * LH; continue; }
+    if (d.kind === 'lift') { ZO = (gz + Math.min(0, d.dz!)) * LH; pushModel(GL, pre + 'lift' + d.dz, mdl('lift' + d.dz, () => MD.liftModel(d.dz! > 0)), compose(gh.x + 0.5, 0, gh.y + 0.5, -gh.rot * HP), mat, false); continue; }
     if (gh.type === 'pipe_lift') { pushModel(GL, pre + 'pipeLift', mdl('pipeLift', MD.pipeLiftModel), compose(gh.x + 0.5, 0, gh.y + 0.5, 0), mat, false); continue; }
     if (d.kind === 'belt' || d.kind === 'tunnel') { pushBelt(GL, { ...gh, curve: -1, isExit: gh.isExit } as any, mat, pre); continue; }
     if (d.kind === 'rail') { pushRail(GL, gh.x, gh.y, gh.pairs || 1, mat, pre); continue; }

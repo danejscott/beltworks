@@ -8,7 +8,7 @@ import { fetchBP, fmtBPCode, shareBP } from './bpshare';
 import { audio, setVolume, sfx, setSound, vol } from './audio';
 import { BLD, CATS, Cost, HANDCRAFT, isFluid, ITEM_KEYS, ITEMS, MACHINE_NAMES, MAX_TIER, MILESTONES, RECIPES, SHOP, TIER_NAMES } from './data';
 import { DRONE_LOAD } from './drones';
-import { BP, bestOf, bpCost, captureBP, clipboard, curCat, dragInfo, selectSlot, setCat, setLevel, setTool, tool } from './input';
+import { BP, bestOf, bpCost, bpFloors, captureBP, clipboard, curCat, dragInfo, selectSlot, setCat, setLevel, setTool, tool } from './input';
 import { buyShop, couponCost, curPhase, loadElevator, milestoneReady, submitMilestone, unlockName } from './progress';
 import { exportSave, importSave, loadBlueprints, saveGame, storeBlueprints } from './save';
 import { clockPow, myCraft, ensureFresh, flushNet, handTime, hist, inCap, outCap, PURITY, rate, setRecipe, stats } from './sim';
@@ -109,7 +109,7 @@ export function updateHint() {
   else if (t.k === 'decon') h = '<b>Deconstruct:</b> click one thing, or drag a box (also clears trees). 100% refund · <b>X</b>/<b>Right-click</b> exit';
   else if (t.k === 'paint') h = t.src ? `<b>Copy settings</b> of a ${esc(BLD[t.src.type].n)}${t.src.r ? ` (${esc(RECIPES[t.src.r]?.n || t.src.r)})` : ''}: click or drag over others of the same kind · <b>Esc</b>/<b>Right-click</b> done` : '<b>Copy settings:</b> click the building to copy from (recipe, clock speed, filters) · <b>Esc</b> cancel';
   else if (t.k === 'bpsel') h = '<b>Blueprint:</b> drag a box around what you want to copy · <b>Esc</b> cancel';
-  else if (t.k === 'paste') h = `<b>Pasting ${esc(t.bp.name || 'copy')}</b> (${t.bp.ents.length} pieces) · click to place · <b>R</b> rotate · cost ${costHTML(bpCost(t.bp))} · <b>Right-click</b> done`;
+  else if (t.k === 'paste') h = `<b>Pasting ${esc(t.bp.name || 'copy')}</b> (${t.bp.ents.length} pieces${bpFloors(t.bp) > 1 ? ` on ${bpFloors(t.bp)} floors` : ''}${t.bp.fl?.length ? ` + ${t.bp.fl.length} foundation tiles` : ''}) · click to place · <b>R</b> rotate · cost ${costHTML(bpCost(t.bp))} · <b>Right-click</b> done`;
   else {
     const d = BLD[t.type], di = dragInfo();
     if (di) h = `Laying <b>${di.n}</b> × ${d.n} · ${costHTML(di.cost) || 'free'} · <b>R</b> flip corner · release to build`;
@@ -533,7 +533,7 @@ function renderModal() {
     h = `<p class="sm" style="margin-top:0">Copy any part of your factory and paste it again anywhere. Recipes, directions and filters come along. <b>Ctrl+C</b> = quick copy, <b>Ctrl+V</b> = paste again.</p><div class="row"><button class="go" data-act="bpnew">⧉ New blueprint (drag a box)</button>${clipboard ? `<button data-act="bpclip">Paste clipboard (${clipboard.ents.length})</button><button data-act="bpsaveclip">Save clipboard…</button>` : ''}</div>
       <div class="row" style="margin-top:8px;align-items:center;gap:6px"><span class="sm">Got a code from a friend?</span><input id="bpcode" maxlength="9" placeholder="BP-K7QM2X" style="width:110px;text-transform:uppercase"><button data-act="bpimport">⬇ Import</button></div><div class="cgrid" style="margin-top:10px">`;
     if (!list.length) h += '<div class="dim">No saved blueprints yet.</div>';
-    list.forEach((bp, i) => { h += `<div class="ccard"><div><b>${esc(bp.name)}</b><div class="sm">${bp.w}×${bp.h} · ${bp.ents.length} pieces</div><div class="sm">${costHTML(bpCost(bp))}</div></div><div class="cb" style="flex-direction:column"><button class="go" data-act="bpuse:${i}">Place</button><button data-act="bpshare:${i}" title="Get a short code anyone can import">🔗 Share</button><button class="danger" data-act="bpdel:${i}">Delete</button></div></div>`; });
+    list.forEach((bp, i) => { h += `<div class="ccard"><div><b>${esc(bp.name)}</b><div class="sm">${bp.w}×${bp.h} · ${bp.ents.length} pieces${bpFloors(bp) > 1 ? ` · ${bpFloors(bp)} floors` : ""}</div><div class="sm">${costHTML(bpCost(bp))}</div></div><div class="cb" style="flex-direction:column"><button class="go" data-act="bpuse:${i}">Place</button><button data-act="bpshare:${i}" title="Get a short code anyone can import">🔗 Share</button><button class="danger" data-act="bpdel:${i}">Delete</button></div></div>`; });
     h += '</div>';
   } else if (k === 'bpname') {
     t = 'Save blueprint';
