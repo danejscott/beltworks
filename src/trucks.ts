@@ -4,7 +4,8 @@ import { BLD, ITEMS } from './data';
 import { H, isLand, TT, W } from './terrain';
 import { borderTiles, canAfford, Ent, G, missingText, pay, pierAlong, pierBack, refund, addInv, Truck, markDirty } from './world';
 
-export const TRUCK_CAP = 800;
+/** a truck is a small hauler: a few dozen items a trip (trains are the bulk carriers) */
+export const TRUCK_CAP = 25;
 const VMAX = 7, ACC = 6;
 const DRIVE_OVER = new Set(['belt', 'tunnel', 'pipe', 'ptunnel', 'rail', 'pole']);
 

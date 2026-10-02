@@ -8,7 +8,7 @@ import { hexCol, rgba } from '../gl';
 import { curPhase } from '../progress';
 import { ensureFresh } from '../sim';
 import { H, W } from '../terrain';
-import { signalRed, trainPoints } from '../trains';
+import { signalRed, trainPoints, WAGON_CAP } from '../trains';
 import { nightness } from '../daynight';
 import { DX, DY, easeOutBack, hash2 } from '../util';
 import { parts, spawn, view } from '../view';
@@ -649,7 +649,7 @@ export function update3D(time: number, real: number, dt: number, labels: Label3[
       pushModel(DL, loco ? 'loco' : 'wagon', mdl(loco ? 'loco' : 'wagon', loco ? MD.locoModel : MD.wagonModel), compose(x, 0.05, y, -a), undefined, true, tr.o);
       if (!loco && tr.tot > 0) {
         const k = Object.keys(tr.cargo)[0];
-        if (k) { COL.set(ITEMS[k].c); DL.get('cargo', mdl('cargo', () => ({ geo: new THREE.BoxGeometry(1.6, 0.25, 0.55).translate(0, 0.9, 0), mats: [] })).geo, cargoMat || (cargoMat = std('#ffffff', 0.7, 0.1)), true, true).push(compose(x, 0.05, y, -a, 1, Math.min(1, tr.tot / (2000 * tr.cars.filter((c: string) => c === 'wagon').length) + 0.2), 1), COL); }
+        if (k) { COL.set(ITEMS[k].c); DL.get('cargo', mdl('cargo', () => ({ geo: new THREE.BoxGeometry(1.6, 0.25, 0.55).translate(0, 0.9, 0), mats: [] })).geo, cargoMat || (cargoMat = std('#ffffff', 0.7, 0.1)), true, true).push(compose(x, 0.05, y, -a, 1, Math.min(1, tr.tot / (WAGON_CAP * tr.cars.filter((c: string) => c === 'wagon').length) + 0.2), 1), COL); }
       }
     }
     if (close && pts[0]) labels.push({ x: pts[0][0], y: pts[0][1], z: 1.8, t: tr.name, c: '#ffd0c0' });

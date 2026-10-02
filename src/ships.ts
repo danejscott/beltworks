@@ -5,7 +5,7 @@ import { isWater, W } from './terrain';
 import { gridPath } from './trucks';
 import { addInv, borderTiles, canAfford, Ent, G, missingText, pay, pierAlong, refund } from './world';
 
-export const SHIP_CAP = 2400;
+export const SHIP_CAP = 800;
 const VMAX = 6, ACC = 2.5;
 const SAIL_UNDER = new Set(['belt', 'tunnel', 'pipe', 'ptunnel', 'rail', 'pole']);   // ships pass under bridges
 

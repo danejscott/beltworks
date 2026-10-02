@@ -107,7 +107,7 @@ After building, copy `dist/index.html` over `Play Beltworks.html` to update the 
 - **Trucks:** Truck Stations plus trucks that path over open ground. Stations have several bays; extra trucks queue nearby. Busy routes wear dirt tracks into the ground.
 - **Floors (unlocked with Logistics Mk2):** build on up to 3 floors above the ground using Foundations. Conveyor Lifts and Pipe Lifts link the floors. Change floor with PageUp/PageDown; floors above the active one fade out.
 - **Mountains:** taller, with snow caps. Railways (and Quick Route) tunnel straight through them; trucks drive around.
-- **Trains:** Quick Route lays a one-way loop between two stations. Run up to 12 trains per loop. Manual rails and schedules still work. Corners are drawn as smooth curves, track over water gets concrete bridges, and trains can be 20–30 cars long depending on map size.
+- **Trains:** Quick Route lays a one-way loop between two stations. Run up to 12 trains per loop. Manual rails and schedules still work. Corners are drawn as smooth curves, track over water gets concrete bridges, and trains can be 20–30 cars long depending on map size (120 items per wagon; trucks carry 25, ships 800).
 - **Drones:** point-to-point delivery across the map.
 - **Exploration:**
   - Nodes are revealed as you look around.

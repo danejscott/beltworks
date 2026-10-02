@@ -7,7 +7,7 @@ import { addInv, borderTiles, canAfford, Ent, entAt, G, Line, markDirty, missing
 import { TT } from './terrain';
 import { railPairsForPath, smartJunction } from './cmd';
 
-export const WAGON_CAP = 2000;
+export const WAGON_CAP = 120;
 const ACC = 5, DEC = 7;
 export const trainMax = () => 18 * (G.S.shop.express ? 1.5 : 1);
 export const wagonsOf = (t: Train) => t.cars.filter(c => c === 'wagon').length;
