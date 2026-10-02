@@ -336,7 +336,7 @@ function exec(c: Cmd): any {
       if (e.amp) { e.amp = 0; addInv('amplifier', 1); } else if ((S.inv.amplifier || 0) > 0) { S.inv.amplifier--; e.amp = 1; sfx('craft'); }
       return;
     }
-    case 'mode': { const e = ent(c.id); if (mine(e) && e.mode) { e.mode = c.m; sfx('click'); } return; }
+    case 'mode': { const e = ent(c.id); if (mine(e) && e.mode) { e.mode = c.m; markDirty(BLD[e.type].kind, e); sfx('click'); } return; }
     case 'twant': { if (!c.it || (ITEMS[c.it] && !ITEMS[c.it].fluid)) S.flags.twant = c.it || ''; sfx('click'); return; }
     case 'paint': {   // copy-settings tool: recipe, clock speed, filters and mode from another building of the same type
       const e = ent(c.id); if (!mine(e) || e.type !== c.type) return;
@@ -413,11 +413,14 @@ function exec(c: Cmd): any {
     }
     // ---- trucks & ships
     case 'buytruck': case 'buyship': {
-      const e = ent(c.id), tgt = c.to ? ent(c.to) : null;
-      if (!mine(e) || (tgt && !owns(tgt))) return;
-      const err = c.k === 'buytruck' ? buyTruck(e, tgt) : buyShip(e, tgt);
+      const e = ent(c.id);
+      // trucks can be bought with a whole route (several stops); ships with one destination
+      const ids: number[] = Array.isArray(c.to) ? c.to.slice(0, 12) : c.to ? [c.to] : [];
+      const tgts = ids.map(i => ent(i)).filter((s): s is Ent => !!s && s !== e && (owns(s) || s.type === 'trade_post'));
+      if (!mine(e) || tgts.length !== ids.length) return;
+      const err = c.k === 'buytruck' ? buyTruck(e, tgts) : buyShip(e, tgts[0] || null);
       if (err) { toast(err, 'bad'); sfx('err'); }
-      else toast(c.k === 'buytruck' ? `🚚 A truck is on its way${tgt ? ` between <b>${e.name}</b> and <b>${tgt.name}</b>` : ''}!` : `🚢 A ship is sailing${tgt ? ` between <b>${e.name}</b> and <b>${tgt.name}</b>` : ''}!`, 'good');
+      else toast(c.k === 'buytruck' ? `🚚 A truck is on its way: <b>${[e, ...tgts].map(s => s.name).join(' → ')}</b>${tgts.length ? ' → back' : ''}` : `🚢 A ship is sailing${tgts[0] ? ` between <b>${e.name}</b> and <b>${tgts[0].name}</b>` : ''}!`, 'good');
       return;
     }
     case 'vdel': {  // drop a stop from a truck's / ship's schedule

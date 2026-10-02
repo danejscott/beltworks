@@ -1018,7 +1018,7 @@ export function initUI() {
     else if (k === 'mapf') { mapFilter[a] = el.checked; drawBigMap(); }
     else if (k === 'invq') { invQuery = el.value; filterInventory(); }
     else if (k === 'vol') setVolume(a as any, +el.value / 100);
-    else extraInput(k, a, el, ev);
+    else if (extraInput(k, a, el, ev) && k === 'rtadd') inspKey = '';
   };
   document.addEventListener('input', onInput);
   document.addEventListener('change', onInput);

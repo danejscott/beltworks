@@ -248,6 +248,11 @@ export function portArrows(e: { type: string; x: number; y: number; w: number; h
     }
     return out;
   }
+  if (d.kind === 'tstation') {
+    const [ix, iy] = inPort(e);
+    if ((e as any).mode === 'unload') out.push([ix, iy, (r + 2) & 3, true]); else out.push([ix, iy, r, false]);
+    return out;
+  }
   const hasIn = PORTED.has(d.kind) && !(d.kind === 'gen' && !(d.fuels && Object.keys(d.fuels).some(f => !ITEMS[f].fluid)));
   const hasOut = OUT_KINDS.has(d.kind) || !!d.waste;
   if (hasOut) { const [fx, fy] = frontTiles(e)[0]; out.push([fx, fy, d.pier ? (r + 2) & 3 : r, true]); }

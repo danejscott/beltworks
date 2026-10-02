@@ -2,7 +2,7 @@
 import { MP, vctx } from './teams';
 import { BLD, ITEMS } from './data';
 import { H, isLand, TT, W } from './terrain';
-import { borderTiles, canAfford, Ent, G, missingText, pay, pierAlong, pierBack, refund, addInv, Truck } from './world';
+import { borderTiles, canAfford, Ent, G, missingText, pay, pierAlong, pierBack, refund, addInv, Truck, markDirty } from './world';
 
 export const TRUCK_CAP = 800;
 const VMAX = 7, ACC = 6;
@@ -34,9 +34,16 @@ function heapPop(h: number[][]) {
 const D8 = [[1, 0], [0, 1], [-1, 0], [0, -1], [1, 1], [-1, 1], [-1, -1], [1, -1]];
 /** tiles next to a station a truck can park on */
 export function dockTiles(st: Ent): number[] {
-  const tiles = BLD[st.type].pier ? pierBack(st).concat(borderTiles(st).filter(([x, y]) => pierAlong(st, x, y) <= 1)) : borderTiles(st);
   const seen = new Set<number>();
-  return tiles.map(([x, y]) => y * W + x).filter(i => { if (i < 0 || i >= W * H || seen.has(i)) return false; seen.add(i); return cost(i) >= 0 && !G.grid[i]; });
+  const ok = (tiles: number[][]) => tiles.map(([x, y]) => y * W + x).filter(i => { if (i < 0 || i >= W * H || seen.has(i)) return false; seen.add(i); return cost(i) >= 0 && !G.grid[i]; });
+  if (BLD[st.type].pier) return ok(pierBack(st).concat(borderTiles(st).filter(([x, y]) => pierAlong(st, x, y) <= 1)));
+  if (BLD[st.type].kind === 'tstation') {
+    // truck stops: a row of parking bays right in front (the belt port is at the back); the sides only if the front is walled off
+    const front = ok(borderTiles(st).filter(t => t[2] === st.rot));
+    if (front.length) return front;
+    return ok(borderTiles(st).filter(t => t[2] !== ((st.rot + 2) & 3)));
+  }
+  return ok(borderTiles(st));
 }
 export function findTruckPath(from: number, st: Ent): number[] | null {
   return gridPath(from, new Set(dockTiles(st)), cost, st.x + st.w / 2, st.y + st.h / 2);
@@ -115,7 +122,8 @@ export function tickWear(dt: number) {
 
 /** everywhere a truck can stop: truck stops, harbors and train stations (so cargo can change hands) */
 export function truckStations(): Ent[] { return G.L ? [...G.L.tstations, ...G.L.ports.filter((p: Ent) => BLD[p.type].pier), ...G.L.stations, ...(G.L.trades || [])] : []; }
-export function buyTruck(home: Ent, target: Ent | null): string | null {
+export function buyTruck(home: Ent, targets: Ent[]): string | null {
+  const target = targets[0] || null;
   const docks = dockTiles(home);
   if (!docks.length) return 'No free ground next to this station for a truck to park';
   if (!canAfford(BLD.truck.cost)) return 'Need: ' + missingText(BLD.truck.cost);
@@ -125,9 +133,10 @@ export function buyTruck(home: Ent, target: Ent | null): string | null {
   const d = docks.find(i => !standing.has(i)) ?? docks[0];
   const t: Truck = {
     id: G.nextId++, o: MP.teams ? MP.cur : 0, name: 'Truck ' + (++G.S.truckSeq), x: d % W + 0.5, y: Math.floor(d / W) + 0.5, a: 0,
-    sched: target ? [home.id, target.id] : [home.id], si: 0, state: 'idle', cargo: {}, tot: 0, path: [], pi: 0, v: 0, waitT: 0, idleT: 0, retryT: 0,
+    sched: [home.id, ...targets.map(s => s.id)], si: 0, state: 'idle', cargo: {}, tot: 0, path: [], pi: 0, v: 0, waitT: 0, idleT: 0, retryT: 0,
   };
-  if (target && home.mode === target.mode) { home.mode = 'load'; target.mode = 'unload'; }
+  // a simple there-and-back route between two stops set the same way: load at home, unload at the other end
+  if (targets.length === 1 && target && home.mode === target.mode && home.mode !== 'trade' && target.mode !== 'trade') { home.mode = 'load'; target.mode = 'unload'; markDirty(BLD[home.type].kind, home); markDirty(BLD[target.type].kind, target); }
   G.trucks.push(t);
   G.fx.sfx('place');
   return null;
@@ -211,13 +220,27 @@ export function updateTrucks(dt: number) {
         break;
       }
       case 'loading': {
+        const T: any = t;
+        if (t.waitT === 0) { T.got = 0; T.why = ''; }
         t.waitT += dt;
+        // pull into the bay: turn to face the station
+        { const nx = Math.min(Math.max(t.x, st.x), st.x + st.w), ny = Math.min(Math.max(t.y, st.y), st.y + st.h);
+          const want = Math.atan2(ny - t.y, nx - t.x); let da = want - t.a; while (da > Math.PI) da -= Math.PI * 2; while (da < -Math.PI) da += Math.PI * 2; t.a += da * Math.min(1, dt * 5); }
         const trade = st.type === 'trade_post';
+        const before = t.tot;
         const moved = trade ? tradeTransfer(t, st, dt) : transfer(t, st, dt);
+        if (t.tot !== before) T.got = (T.got || 0) + Math.abs(t.tot - before);
+        T.why = !trade && (!st.pnet || st.pnet.sat < 0.05) ? 'nopower' : '';
         t.idleT = moved ? 0 : t.idleT + dt;
-        const full = trade || st.mode === 'load' ? t.tot >= TRUCK_CAP : t.tot <= 0;
-        if (t.sched.length > 1 && ((t.waitT > 2 && (full || t.idleT > 1.5)) || t.waitT > 60)) {
-          t.si = (t.si + 1) % t.sched.length; t.state = 'idle'; t.retryT = 0; (t as any).bay = -1;
+        const loading = trade || st.mode === 'load';
+        const done = loading ? t.tot >= TRUCK_CAP : t.tot <= 0;
+        // loading: wait until full, until the supply stops for a few seconds, or a minute at most;
+        // nothing at all to load: try again on the next round. Unloading: until empty (or the stop can't take more).
+        const leave = done ? t.waitT > 1
+          : loading ? (T.got > 0 ? t.idleT > 4 || t.waitT > 60 : t.waitT > 20)
+            : t.idleT > 4 || t.waitT > 120;
+        if (t.sched.length > 1 && leave) {
+          t.si = (t.si + 1) % t.sched.length; t.state = 'idle'; t.retryT = 0; T.bay = -1;
         }
         break;
       }

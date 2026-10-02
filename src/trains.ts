@@ -249,10 +249,17 @@ export function updateTrains(dt: number) {
         break;
       }
       case 'loading': {
+        const TT: any = t;
+        if (t.waitT === 0) TT.got = 0;
         t.waitT += dt;
+        const before = t.tot;
         const moved = transfer(t, st, dt);
+        if (t.tot !== before) TT.got = (TT.got || 0) + Math.abs(t.tot - before);
         t.idleT = moved ? 0 : t.idleT + dt;
-        if ((t.waitT > 3 && t.idleT > 1.5) || t.waitT > 90) {
+        // wait while cargo keeps coming (until full); with nothing at all to load, move on after a while and try again
+        const full = st.mode === 'load' ? t.tot >= trainCap(t) : t.tot <= 0;
+        const leave = full ? t.waitT > 2 : st.mode === 'load' ? (TT.got > 0 ? t.idleT > 4 || t.waitT > 90 : t.waitT > 20) : t.idleT > 4 || t.waitT > 120;
+        if (leave) {
           t.si = (t.si + 1) % t.sched.length;
           t.state = 'idle'; t.waitT = 99;
         }

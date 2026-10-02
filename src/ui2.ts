@@ -181,7 +181,9 @@ export function extraAct(cmd: string, a: string, b: string): boolean {
     case 'analyse': run({ k: 'analyse' }); return true;
     case 'pickalt': run({ k: 'pickalt', a }); return true;
     case 'loot': if (pendingSite) { run({ k: 'loot', f: pendingSite.id }); closeModal(); } return true;
-    case 'buytruck': if (e) { const others = truckStations().filter(o => o !== e); const tgt = G.ents.get(e.truckTo) || others[0] || null; run({ k: 'buytruck', id: e.id, to: tgt ? tgt.id : 0 }); } return true;
+    case 'buytruck': if (e) { const r = truckRoute(e); if (!r.length) { toast('Add at least one more stop to the route', 'bad'); return true; } run({ k: 'buytruck', id: e.id, to: r }); } return true;
+    case 'rtdel': if (e) { const r = truckRoute(e); r.splice(+a, 1); routeDraft.set(e.id, r); } return true;
+    case 'rtup': if (e) { const r = truckRoute(e), i = +a; if (i > 0) { [r[i - 1], r[i]] = [r[i], r[i - 1]]; routeDraft.set(e.id, r); } } return true;
     case 'buyship': if (e) { const others = shipPorts().filter(o => o !== e); const tgt = G.ents.get(e.shipTo) || others[0] || null; run({ k: 'buyship', id: e.id, to: tgt ? tgt.id : 0 }); } return true;
     case 'sremove': { const s = view.inspectShip as Ship | null; if (s) { run({ k: 'rmv', v: 's', id: s.id }); view.inspectShip = null; } return true; }
     case 'sdel': { const s = view.inspectShip as Ship | null; if (s) run({ k: 'vdel', v: 's', id: s.id, i: +a }); return true; }
@@ -213,6 +215,7 @@ export function extraInput(k: string, _a: string, el: HTMLInputElement, ev: Even
   if (k === 'plitem') { pl.item = el.value; rerender(); return true; }
   if (k === 'plrate') { const v = parseFloat(el.value); if (v > 0 && ev.type === 'change') { pl.rate = v; rerender(); } else if (v > 0) pl.rate = v; return true; }
   if (k === 'truckTo' && e) { run({ k: 'set', id: e.id, f: 'truckTo', v: +el.value }); return true; }
+  if (k === 'rtadd' && e && el.value && ev.type === 'change') { const r = truckRoute(e); r.push(+el.value); routeDraft.set(e.id, r); return true; }
   if (k === 'shipTo' && e) { run({ k: 'set', id: e.id, f: 'shipTo', v: +el.value }); return true; }
   const sh = view.inspectShip as Ship | null;
   if (k === 'sname' && sh) { if (ev.type === 'change' || !online()) run({ k: 'vname', v: 's', id: sh.id, name: el.value }); return true; }
@@ -242,17 +245,33 @@ export function outpostStatic(e: Ent): string {
   h += `<div class="sm" style="margin-top:6px">Gives ${BLD.outpost.mw} MW of free power inside its area and wires to nearby poles. ${fastTravelAllowed() ? 'Press <kbd>O</kbd> to fast-travel between your HUB and Outposts.' : 'Fast travel is off in Hard mode.'}</div>`;
   return h;
 }
+/** stops a truck can be sent to: your own truck stops, train stations, harbors, and the Trade Post */
+export const myTruckStops = () => truckStations().filter(o => (o.o || 0) === MP.myTeam || o.type === 'trade_post' || !MP.teams);
+const modeIcon = (s: Ent) => s.mode === 'trade' ? '🤝' : s.mode === 'load' ? '⬆ load' : '⬇ unload';
+/** the route being put together for a new truck (per station, not saved) */
+const routeDraft = new Map<number, number[]>();
+function truckRoute(e: Ent): number[] {
+  const others = myTruckStops().filter(o => o !== e);
+  let r = (routeDraft.get(e.id) || (others[0] ? [others[0].id] : [])).filter(id => others.some(o => o.id === id));
+  if (!routeDraft.has(e.id) && e.truckTo && others.some(o => o.id === e.truckTo)) r = [e.truckTo];
+  routeDraft.set(e.id, r);
+  return r.slice();
+}
 export function tstationStatic(e: Ent): string {
   let h = `<div class="sec">Name</div><input type="text" value="${esc(e.name)}" data-input="name" maxlength="24" style="width:100%">`;
   h += `<div class="sec">Mode</div><div class="row"><button class="${e.mode === 'load' ? 'go' : ''}" data-act="mode:load">⬆ Load trucks</button><button class="${e.mode === 'unload' ? 'go' : ''}" data-act="mode:unload">⬇ Unload trucks</button></div>`;
-  const others = truckStations().filter(o => o !== e);
+  h += `<div class="sm">${e.mode === 'unload' ? 'Trucks drop their cargo here. It comes out of the <b style="color:#ffb15a">orange arrow at the back</b> — run a belt away from it.' : 'Belt items into the <b style="color:#6ec8ff">blue arrow at the back</b>; trucks pick them up here.'} Trucks park in the bays in front.</div>`;
+  const others = myTruckStops().filter(o => o !== e);
   h += '<div class="sec">🚚 Buy a truck</div>';
   if (!others.length) h += '<div class="sm">Place a second Truck Station, then buy a truck here to drive between them.</div>';
   else {
-    const sel = e.truckTo && others.some(o => o.id === e.truckTo) ? e.truckTo : others[0].id;
-    h += `<select data-input="truckTo" style="width:100%">${others.map(o => `<option value="${o.id}" ${o.id === sel ? 'selected' : ''}>to ${esc(o.name)} (${Math.round(Math.hypot(o.x - e.x, o.y - e.y))} tiles)</option>`).join('')}</select>`;
+    const r = truckRoute(e), st = (id: number) => G.ents.get(id)!;
+    h += '<div class="sm">Route (the truck visits each stop in order, then starts again):</div>';
+    h += `<div class="stop"><span class="sn">1. ${esc(e.name)} ${modeIcon(e)} <span class="dim">(here)</span></span></div>`;
+    r.forEach((id, i) => { const s = st(id); h += `<div class="stop"><span class="sn">${i + 2}. ${esc(s.name)} ${modeIcon(s)} <span class="dim">${Math.round(Math.hypot(s.x - e.x, s.y - e.y))} tiles</span></span>${i > 0 ? `<button class="mini" data-act="rtup:${i}" title="Move up">▲</button>` : ''}<button class="mini" data-act="rtdel:${i}">✕</button></div>`; });
+    h += `<select data-input="rtadd" style="width:100%;margin-top:4px"><option value="">+ Add a stop…</option>${others.map(o => `<option value="${o.id}">${esc(o.name)} (${modeIcon(o)}, ${Math.round(Math.hypot(o.x - e.x, o.y - e.y))} tiles)</option>`).join('')}</select>`;
     h += `<div class="row" style="margin-top:6px"><button class="go" data-act="buytruck">Buy truck</button><span class="sm">${costHTML(BLD.truck.cost)}</span></div>`;
-    h += `<div class="sm">Trucks carry ${TRUCK_CAP} items, drive around buildings, mountains and water, and don't need track.</div>`;
+    h += `<div class="sm">Trucks carry ${TRUCK_CAP} items, drive around buildings, mountains and water, and don't need track. You can change a truck's route later by clicking it.</div>`;
   }
   return h;
 }
@@ -281,13 +300,14 @@ export function truckStatic(t: Truck): string {
   h += `<input type="text" value="${esc(t.name)}" data-input="kname" maxlength="24" style="width:100%"><div id="idyn"></div>`;
   h += '<div class="sec">Route</div>';
   t.sched.forEach((sid, i) => { const s = G.ents.get(sid); h += `<div class="stop"><span class="sn">${i + 1}. ${s ? esc(s.name) + (s.mode === 'trade' ? ' 🤝' : s.mode === 'load' ? ' ⬆' : ' ⬇') : '?'}</span><button class="mini" data-act="kdel:${i}">✕</button></div>`; });
-  h += `<select data-input="kstop" style="width:100%;margin-top:4px"><option value="">+ Add a truck station…</option>${truckStations().map(s => `<option value="${s.id}">${esc(s.name)} (${s.mode})</option>`).join('')}</select>`;
+  h += `<select data-input="kstop" style="width:100%;margin-top:4px"><option value="">+ Add a stop…</option>${myTruckStops().map(s => `<option value="${s.id}">${esc(s.name)} (${s.mode})</option>`).join('')}</select>`;
   h += '<div class="ibtns"><button class="danger" data-act="kremove">Remove truck</button></div>';
   return h;
 }
 export function truckDyn(t: Truck): string {
   const st = G.ents.get(t.sched[t.si]);
-  let h = `<div class="row">${status(vehLed(t.state), t.state === 'nopath' ? 'No route! Is the station walled in?' : stTxt[t.state] || t.state)}</div>`;
+  const T: any = t, why = t.state === 'loading' && T.why === 'nopower' ? 'Waiting — this station has no power' : '';
+  let h = `<div class="row">${status(why ? 'nopower' : vehLed(t.state), why || (t.state === 'nopath' ? 'No route! Is the station walled in?' : t.state === 'loading' && st ? (st.mode === 'unload' ? 'Unloading' : st.mode === 'trade' ? 'Trading' : 'Loading') : stTxt[t.state] || t.state))}</div>`;
   if (st) h += `<div class="sm">Next: ${esc(st.name)} · ${fmtR(t.v)} tiles/s</div>`;
   h += `<div class="row">Cargo ${fmt(t.tot)} / ${fmt(TRUCK_CAP)}</div><div class="bar"><i style="width:${t.tot / TRUCK_CAP * 100}%"></i></div><div class="chips">`;
   for (const kk in t.cargo) h += `<span class="chip">${ic(kk, 18)}${fmt(t.cargo[kk])}</span>`;

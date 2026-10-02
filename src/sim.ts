@@ -430,7 +430,11 @@ export function acceptInto(e: Ent, item: string, dir: number, fx?: number, fy?: 
       if (have >= inCap(r, item)) return false;
       e.ib[item] = have + 1; return true;
     }
-    case 'storage': case 'station': case 'tstation': case 'port':
+    case 'tstation':
+      if (e.mode === 'unload') return false;   // an unloading truck stop sends items out of its port instead
+      if (e.tot >= d.cap) return false;
+      e.store[item] = (e.store[item] || 0) + 1; e.tot++; return true;
+    case 'storage': case 'station': case 'port':
       if (e.tot >= d.cap) return false;
       e.store[item] = (e.store[item] || 0) + 1; e.tot++; return true;
     case 'drone':
@@ -461,6 +465,12 @@ export function pushOut(e: Ent, item: string) {
     if (deliverTo(p[0], p[1], e.outDir ?? e.rot, item, e.z || 0)) { e.rr = (i + 1) % n; return true; }
   }
   return false;
+}
+/** truck stops unload through their one port at the back (onto a belt leading away); older layouts with a belt at the front still work */
+function pushOutBack(e: Ent, item: string) {
+  const ip = e.ip || (e.ip = inPort(e));
+  if (deliverTo(ip[0], ip[1], (e.rot + 2) & 3, item, e.z || 0)) return true;
+  return pushOut(e, item);
 }
 export function setRecipe(e: Ent, k: string | null) {
   if (e.recipe === k) return;
@@ -609,7 +619,7 @@ export function update(dt: number) {
     e.req = BLD[e.type].power; if (e.pnet) e.pnet.demand += e.req;
     if (e.mode === 'unload' && e.tot > 0) {
       const k = takeFromStore(e);
-      if (k && pushOut(e, k)) { e.store[k]--; e.tot--; e.kr = (e.kr || 0) + 1; if (!e.store[k]) delete e.store[k]; }
+      if (k && (e.type === 'truck_station' ? pushOutBack(e, k) : pushOut(e, k))) { e.store[k]--; e.tot--; e.kr = (e.kr || 0) + 1; if (!e.store[k]) delete e.store[k]; }
     }
   }
   // belts, downstream first

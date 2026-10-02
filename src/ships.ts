@@ -140,13 +140,19 @@ export function updateShips(dt: number) {
         break;
       }
       case 'loading': {
+        const S: any = s;
+        if (s.waitT === 0) S.got = 0;
         s.waitT += dt;
         // moored: swing round to lie alongside the pier
         if (BLD[p.type].pier) { let da = p.rot * Math.PI / 2 - s.a; while (da > Math.PI / 2) da -= Math.PI; while (da < -Math.PI / 2) da += Math.PI; s.a += da * Math.min(1, dt * 1.5); }
+        const before = s.tot;
         const moved = transfer(s, p, dt);
+        if (s.tot !== before) S.got = (S.got || 0) + Math.abs(s.tot - before);
         s.idleT = moved ? 0 : s.idleT + dt;
         const full = p.mode === 'load' ? s.tot >= SHIP_CAP : s.tot <= 0;
-        if (s.sched.length > 1 && ((s.waitT > 3 && (full || s.idleT > 2)) || s.waitT > 90)) { s.si = (s.si + 1) % s.sched.length; s.state = 'idle'; s.retryT = 0; (s as any).bay = -1; }
+        // same rule as trucks: wait while cargo keeps coming; with nothing at all to load, try again next round
+        const leave = full ? s.waitT > 2 : p.mode === 'load' ? (S.got > 0 ? s.idleT > 4 || s.waitT > 90 : s.waitT > 20) : s.idleT > 4 || s.waitT > 120;
+        if (s.sched.length > 1 && leave) { s.si = (s.si + 1) % s.sched.length; s.state = 'idle'; s.retryT = 0; (s as any).bay = -1; }
         break;
       }
     }
