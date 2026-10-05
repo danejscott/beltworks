@@ -2,7 +2,7 @@
 // Single-player applies it at once; online, the server orders everyone's commands and every copy of the
 // world applies the same list at the same tick (so all copies stay identical).
 import { BLD, Cost, HANDCRAFT, ITEMS, RECIPES } from './data';
-import { H, W } from './terrain';
+import { H, TT, W } from './terrain';
 import { DX, DY } from './util';
 import { addWagon, buildRoute, addTrainToLine, lineOf, placeTrain, removeTrain, removeWagon, canPlaceTrain } from './trains';
 import { buyTruck, removeTruck } from './trucks';
@@ -121,6 +121,11 @@ function dragLay(type: string, path: { x: number; y: number; d: number }[], z: n
       const e = at(p.x, p.y);
       if (e) { if (e.type !== type) { refund(BLD[e.type].cost); if (!canAfford(d.cost)) { pay(BLD[e.type].cost); out = true; break; } pay(d.cost); e.type = type; markDirty('pipe', e); placed++; } }
       else { if (!canAfford(d.cost)) { out = true; break; } place(type, p.x, p.y, 0, { z }); placed++; }
+    }
+    // pipes laid over water don't draw water up by themselves — say so once
+    if (placed && z === 0 && !G.S.flags.tipPipeWater && path.some(p => G.tiles[p.y * W + p.x] === TT.WATER || G.tiles[p.y * W + p.x] === TT.DEEP)) {
+      G.S.flags.tipPipeWater = 1;
+      toast('💡 Pipes only carry fluids — they do not draw water from a lake. Put a <b>Water Extractor</b> on the water, give it power, and connect your pipes to it.', 'big');
     }
   } else if (d.kind === 'rail') {
     if (z > 0) return;

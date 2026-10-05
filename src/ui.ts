@@ -374,6 +374,7 @@ function inspDyn(e: Ent): string {
     case 'pipe': case 'tank': case 'ptunnel': {
       const n = e.fnet;
       if (n) h += `<div class="bufrow">${n.fluid ? ic(n.fluid, 22) + `<b>${ITEMS[n.fluid].n}</b>` : '<span class="dim">Empty network</span>'}</div><div class="bar"><i style="width:${n.amount / n.cap * 100}%"></i></div><div class="row">${fmtR(n.amount)} / ${fmtR(n.cap)} · flow ${fmtR(n.flowEMA * 60)}/min · max ${fmtR(n.rate * 60)}/min</div><div class="sm">${n.members.length} pipe pieces</div>`;
+      if (n) h += pipeAdvice(n);
       break;
     }
     case 'storage': case 'station': case 'tstation': case 'port': {
@@ -420,6 +421,15 @@ function trainStatic(t: Train) {
   h += `<div class="sec">Wagons: ${wagonsOf(t)}</div><div class="row"><button data-act="wagon:1">+ Wagon</button><button data-act="wagon:-1" ${wagonsOf(t) ? '' : 'disabled'}>− Wagon</button><span class="sm">${costHTML(BLD.wagon.cost)}</span></div>`;
   h += `<div class="ibtns"><button class="${t.running ? '' : 'go'}" data-act="trun">${t.running ? '⏸ Stop' : '▶ Run'}</button><button class="danger" data-act="tremove">Remove train</button></div>`;
   return h;
+}
+/** why a pipe network isn't carrying anything (pipes only move fluid; something has to pump it in) */
+function pipeAdvice(n: any): string {
+  const pumps = G.L.extractors.filter((x: Ent) => x.fnets && x.fnets.includes(n));
+  const tip = (s: string) => `<div class="sm" style="color:#ffd48a;margin-top:6px">💡 ${s}</div>`;
+  if (!pumps.length && n.flowEMA < 0.01) return tip('Nothing is pumping into these pipes. Pipes only carry fluids: to get water, place a <b>Water Extractor</b> fully on a lake (oil: an <b>Oil Extractor</b> on an oil node), power it, and connect a pipe to any side of it.');
+  const unpowered = pumps.filter((x: Ent) => !x.pnet || x.pnet.sat < 0.05);
+  if (pumps.length && unpowered.length === pumps.length) return tip(`The ${BLD[unpowered[0].type].n} feeding these pipes has <b>no power</b>, so it isn't pumping. Run power poles out to it (it needs ${BLD[unpowered[0].type].power} MW). A Coal Generator can't power the extractor that feeds it its water — start it with other power first.`);
+  return '';
 }
 function trainDyn(t: Train) {
   const stTxt: Record<string, string> = { moving: 'Driving', loading: 'At station', nopath: 'No route! Check the track connects', noschedule: 'No schedule', stopped: 'Stopped', idle: 'Planning route' };
