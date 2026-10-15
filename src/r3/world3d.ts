@@ -19,7 +19,7 @@ import { B, M, Model, std } from './mat';
 import * as MD from './models';
 import { T3, tunnelInside, updateCuts } from './terrain3d';
 import { MP } from '../teams';
-import { Curve, railCurves } from '../railcurves';
+import { railChains } from '../railcurves';
 import { isDepleted } from '../deplete';
 
 // ---------------------------------------------------------------------------
@@ -295,10 +295,10 @@ function pushBelt(L: LayerLike, b: Ent, mat?: THREE.Material, prefix = '') {
     L.get(prefix + 'bsS:' + (mat ? 'g' : beltKey(b)), surfS().geo, mat || beltMats[beltKey(b)], false).push(m);
   }
 }
-function pushRail(L: LayerLike, x: number, y: number, pairs: number, mat?: THREE.Material, prefix = '', curves?: Map<number, Curve>) {
+function pushRail(L: LayerLike, x: number, y: number, pairs: number, mat?: THREE.Material, prefix = '', curves?: Map<number, unknown>) {
   const ti = y * W + x;
+  if (curves && curves.has(ti)) return;   // drawn as part of a smooth stretch of track
   if (!prefix && (G.tiles[ti] === 4 || G.tiles[ti] === 5)) pushModel(L, 'railBridge', mdl('railBridge', MD.railBridge), compose(x + 0.5, 0, y + 0.5, (pairs & 2) && !(pairs & 1) ? -HP : 0));
-  if (curves && curves.has(ti)) return;   // drawn as part of a wide curve
   for (let i = 0; i < 6; i++) {
     if (!(pairs & (1 << i))) continue;
     if (i < 2) pushModel(L, prefix + 'railS', mdl('railS', MD.railStraight), compose(x + 0.5, 0, y + 0.5, i === 0 ? 0 : -HP), mat, false);
@@ -334,6 +334,7 @@ interface VisFeat { x: number; y: number; kind: string; tier: number }
 interface Chunk { rec: Rec; anim: Ent[]; lamps: Ent[]; sig: Ent[]; feats: VisFeat[]; pops: Ent[]; popUntil: number }
 let chunks = new Map<number, Chunk>();
 const ckey = (cx: number, cy: number) => cy * 4096 + cx;
+let lastRailRev = -1;
 let fullNext = true, lastTouchN = 0, lastCutRev = -1, needAssemble = true;
 let stX = -1e9, stY = -1e9, stR = 0;
 
@@ -342,13 +343,26 @@ function recordChunks(keys: Set<number>, real: number) {
   const nc = new Map<number, Chunk>();
   for (const k of keys) { const c: Chunk = { rec: new Rec(), anim: [], lamps: [], sig: [], feats: [], pops: [], popUntil: 0 }; nc.set(k, c); chunks.set(k, c); }
   const at = (x: number, y: number) => nc.get(ckey(Math.floor(x / CH), Math.floor(y / CH)));
-  const rc = railCurves(), curveTiles = rc.byTile;
+  const rc = railChains(), curveTiles = rc.byTile;
   const lvl = view.level;
-  if (lvl === 0) for (const c of rc.corners) {
-    const ch = at(c.cx, c.cy); if (!ch) continue;
-    const qx = -(DX[c.a] + DX[c.b]), qy = -(DY[c.a] + DY[c.b]);   // from the arc's centre toward the corner
-    const k = qx > 0 && qy < 0 ? 0 : qx > 0 && qy > 0 ? 1 : qx < 0 && qy > 0 ? 2 : 3;
-    pushModel(ch.rec, 'railArc', mdl('railArc', MD.railArcBig), compose(c.ox, 0, c.oy, -k * HP), undefined, false);
+  // smooth track: each tile of a plain stretch draws the piece from its point on the curve to the next one
+  if (lvl === 0) for (const c of rc.chains) {
+    const n = c.tiles.length, P = c.P;
+    for (let j = 0; j < n; j++) {
+      const ti = c.tiles[j], ch = at(ti % W, Math.floor(ti / W)); if (!ch) continue;
+      const k = j + c.off;
+      const segs: [number, number][] = [];
+      if (j === 0 && !c.loop) segs.push([0, 1]);
+      if (c.loop) segs.push([k, (k + 1) % n]); else segs.push([k, k + 1]);
+      for (const [i0, i1] of segs) {
+        const a = P[i0], b = P[i1], dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy);
+        if (len < 1e-3) continue;
+        const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2, ang = -Math.atan2(dy, dx);
+        pushModel(ch.rec, 'railSeg', mdl('railS', MD.railStraight), compose(mx, 0, my, ang, len * 1.04, 1, 1), undefined, false);
+        const wt = G.tiles[Math.floor(my) * W + Math.floor(mx)];
+        if (wt === 4 || wt === 5) pushModel(ch.rec, 'railBridge', mdl('railBridge', MD.railBridge), compose(mx, 0, my, ang, len * 1.02, 1, 1));
+      }
+    }
   }
   for (const e of G.ents.values()) {
     const ch = at(e.x, e.y);
@@ -448,7 +462,8 @@ function rebuildStatic(real: number) {
   const q1 = performance.now(); ST.fresh += q1 - q0;
   if (G.railRev !== lastCutRev) { lastCutRev = G.railRev; const rr: number[] = []; for (const r of G.L.rails) if (G.tiles[r.y * W + r.x] === 6) rr.push(r.y * W + r.x); updateCuts(rr); }
   // what changed since last time: specific areas (just those chunks) or anything else (everything)
-  const tagged = G.rev - lastRev === G.touchN - lastTouchN;
+  const tagged = G.rev - lastRev === G.touchN - lastTouchN && G.railRev === lastRailRev;
+  lastRailRev = G.railRev;
   if (fullNext || !tagged) { chunks.clear(); fullNext = false; ST.full++; }
   else {
     const t = G.touched;

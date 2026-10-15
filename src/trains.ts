@@ -1,5 +1,5 @@
 import { MP, vctx } from './teams';
-import { onCurve } from './railcurves';
+import { railPos } from './railcurves';
 import { BLD } from './data';
 import { H, W } from './terrain';
 import { DX, DY, opp } from './util';
@@ -302,7 +302,7 @@ export function trainPoints(t: Train): number[][] {
   for (let k = 0; k < t.cells.length; k++) {
     const a = t.cells[k];
     const b = k === 0 ? (t.route.length && f > 0 ? t.route[0] : a) : t.cells[k - 1];
-    pts.push(onCurve(tx(a) + 0.5 + (tx(b) - tx(a)) * f, ty(a) + 0.5 + (ty(b) - ty(a)) * f));
+    pts.push(railPos(a, b, f));
   }
   return pts;
 }

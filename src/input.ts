@@ -71,9 +71,31 @@ export function setLevel(n: number) {
 
 // ---------------------------------------------------------------------------
 // Paths (L-shaped drags)
+/** railway drags: a straight leg plus a 45° diagonal leg (R swaps which comes first) — diagonals are laid as a
+ *  staircase of tiles and drawn as one smooth line, so track sweeps instead of turning on the spot */
+function railDragPath(sx: number, sy: number, ex: number, ey: number): { x: number; y: number; d: number }[] {
+  const dx = ex - sx, dy = ey - sy, ax = Math.abs(dx), ay = Math.abs(dy);
+  const hd = dx > 0 ? 0 : 2, vd = dy > 0 ? 1 : 3;
+  const major = ax >= ay ? hd : vd, minor = ax >= ay ? vd : hd;
+  const diag = Math.min(ax, ay), straight = Math.max(ax, ay) - diag;
+  const moves: number[] = [];
+  const diagFirst = drag!.axis === 'v';
+  if (!diagFirst) for (let i = 0; i < straight; i++) moves.push(major);
+  for (let i = 0; i < diag; i++) { if (diagFirst) moves.push(major, minor); else moves.push(minor, major); }
+  if (diagFirst) for (let i = 0; i < straight; i++) moves.push(major);
+  const pts: { x: number; y: number; d: number }[] = [];
+  let x = sx, y = sy;
+  for (let i = 0; i <= moves.length && pts.length < 400; i++) {
+    const d = i < moves.length ? moves[i] : moves[moves.length - 1];
+    pts.push({ x, y, d });
+    if (i < moves.length) { x += DX[moves[i]]; y += DY[moves[i]]; }
+  }
+  return pts;
+}
 function dragPath(): { x: number; y: number; d: number }[] {
   const m = view.mouse, { sx, sy } = drag!, ex = m.tx, ey = m.ty, dx = ex - sx, dy = ey - sy;
   if (dx === 0 && dy === 0) return [{ x: sx, y: sy, d: rot }];
+  if (tool.t && tool.t.k === 'build' && BLD[tool.t.type].kind === 'rail') return railDragPath(sx, sy, ex, ey);
   let axis = drag!.axis || (Math.abs(dx) >= Math.abs(dy) ? 'h' : 'v');
   const hd = dx > 0 ? 0 : 2, vd = dy > 0 ? 1 : 3, gx = Math.sign(dx), gy = Math.sign(dy);
   // never start by running back into the building whose output we're dragging from

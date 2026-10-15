@@ -113,7 +113,7 @@ export function updateHint() {
   else if (t.k === 'paste') h = `<b>Pasting ${esc(t.bp.name || 'copy')}</b> (${t.bp.ents.length} pieces${bpFloors(t.bp) > 1 ? ` on ${bpFloors(t.bp)} floors` : ''}${t.bp.fl?.length ? ` + ${t.bp.fl.length} foundation tiles` : ''}) · click to place · <b>R</b> rotate · cost ${costHTML(bpCost(t.bp))} · <b>Right-click</b> done`;
   else {
     const d = BLD[t.type], di = dragInfo();
-    if (di) h = `Laying <b>${di.n}</b> × ${d.n} · ${costHTML(di.cost) || 'free'} · <b>R</b> flip corner · release to build`;
+    if (di) h = `Laying <b>${di.n}</b> × ${d.n} · ${costHTML(di.cost) || 'free'} · ${d.kind === 'rail' ? '<b>R</b> diagonal first / straight first (drag at an angle for diagonal track; corners are drawn as sweeping curves)' : '<b>R</b> flip corner'} · release to build`;
     else if (d.kind === 'belt' || d.kind === 'pipe' || d.kind === 'rail') h = `<b>${d.n}</b> · click-drag to lay a line · <b>R</b> rotate · ${d.kind === 'rail' ? 'drag off an existing track to make a junction' : 'drag over old ones to upgrade'} · <b>Right-click</b> cancel`;
     else if (d.kind === 'train') h = '<b>Locomotive</b> · click a railway (needs 4 connected tiles) · <b>R</b> flip direction';
     else {
