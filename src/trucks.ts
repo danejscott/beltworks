@@ -7,7 +7,9 @@ import { borderTiles, canAfford, Ent, G, missingText, pay, pierAlong, pierBack, 
 /** a truck is a small hauler: a few dozen items a trip (trains are the bulk carriers) */
 export const TRUCK_CAP = 25;
 const VMAX = 7, ACC = 6;
-const DRIVE_OVER = new Set(['belt', 'tunnel', 'pipe', 'ptunnel', 'rail', 'pole']);
+/** what a truck may drive across: level crossings over track, and (only if there's no way round) flat belts.
+ *  Everything else — buildings, pipes, power poles, belt tunnels, foundation pillars — is solid. */
+const CROSS_COST: Record<string, number> = { rail: 1.5, belt: 8 };
 
 /** can a truck drive through this tile? returns step cost or -1 */
 function cost(i: number): number {
@@ -17,10 +19,12 @@ function cost(i: number): number {
   if (id) {
     const e = G.ents.get(id);
     if (!e) return 1;
-    const k = BLD[e.type].kind;
-    if (!DRIVE_OVER.has(k) || e.w > 1) return -1;
-    return 1.3;
+    const c = CROSS_COST[BLD[e.type].kind];
+    if (!c || e.w > 1) return -1;
+    return c;
   }
+  // the pillars holding up a raised floor
+  if (G.floorN && G.floor[i] > 1) { const x = i % W, y = (i / W) | 0; if ((x & 3) === 0 && (y & 3) === 0) return -1; }
   if (G.featGrid && G.featGrid[i]) return -1;
   return G.trees[i] ? 1.6 : 1;
 }

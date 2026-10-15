@@ -151,6 +151,11 @@ function placeOne(c: Cmd) {
     const fl = fluidsTouching([[c.x, c.y], [c.x + d.w - 1, c.y + d.h - 1], [c.x + d.w - 1, c.y], [c.x, c.y + d.h - 1]], null, z);
     if (fl.length > 1) reason = 'That would mix fluids';
   }
+  // don't build on top of a truck
+  if (!reason && z === 0 && !d.logistic) {
+    const [w, h] = c.rot & 1 ? [d.h, d.w] : [d.w, d.h];
+    if (G.trucks.some(t => t.x >= c.x && t.x < c.x + w && t.y >= c.y && t.y < c.y + h)) reason = 'A truck is in the way — wait for it to drive off';
+  }
   if (reason) {
     const old = upgradeTarget(c.type, c.x, c.y, z);
     if (old && owns(old) && !canRemove(old)) return upgradeOne(old, c.type, z);
