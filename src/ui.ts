@@ -10,7 +10,8 @@ import { BLD, CATS, Cost, HANDCRAFT, isFluid, ITEM_KEYS, ITEMS, MACHINE_NAMES, M
 import { DRONE_LOAD } from './drones';
 import { BP, bestOf, bpCost, bpFloors, captureBP, clipboard, curCat, dragInfo, selectSlot, setCat, setLevel, setTool, tool } from './input';
 import { buyShop, couponCost, curPhase, loadElevator, milestoneReady, submitMilestone, unlockName } from './progress';
-import { exportSave, importSave, loadBlueprints, saveGame, storeBlueprints } from './save';
+import { copyAllToFolder, exportSave, importSave, loadBlueprints, saveGame, storeBlueprints } from './save';
+import { chooseFolder, FS, reconnectFolder } from './filesaves';
 import { clockPow, myCraft, ensureFresh, flushNet, handTime, hist, inCap, outCap, PURITY, rate, setRecipe, stats } from './sim';
 import { BIOME_NAMES, biomeAtTiles, H, HX, HY, isWater, RES_BIOMES, TILE_NAMES, TT, W } from './terrain';
 import { addWagon, buildRoute, removeTrain, removeWagon, trainCap, wagonsOf } from './trains';
@@ -561,7 +562,7 @@ function renderModal() {
   } else if (k === 'menu') {
     t = 'Menu';
     const onl = online();
-    h = `<div class="menu">${onl ? `<p class="sm" style="margin-top:0">🌐 Online world — saved automatically. Join code: <b>${fmtCode(NET.code)}</b></p><button class="go" data-act="invite">📋 Copy invite (code + link + how to join)</button><button data-act="players">👥 Players, teams & leaderboard <span class="dim">(Y)</span></button>` : `<button data-act="save">💾 Save now <span class="dim">(auto-saves every 30s)</span></button><button data-act="export">⬇ Export save file</button><button data-act="import">⬆ Import save file</button>`}<button data-act="sound">${audio.on ? '🔊 Sound: on' : '🔇 Sound: off'}</button><div class="vols">${([['music', '🎵 Music'], ['amb', '🌲 Ambience'], ['sfx', '🔨 Effects']] as [string, string][]).map(([k, l]) => `<label>${l}<input type="range" min="0" max="100" value="${Math.round((vol as any)[k] * 100)}" data-input="vol:${k}"></label>`).join('')}</div>${onl ? '' : `<button data-act="speed">⏩ Game speed: ${S.speed}×</button><button data-act="dn">${S.dayNight !== false ? '🌙 Day/night cycle: on' : '☀️ Day/night cycle: off'}</button>`}<button data-act="open:recap">📊 Run recap & timelapse</button><button data-act="timer">⏱ Run timer: ${showTimer() ? 'shown' : 'hidden'}</button><button class="go" data-act="newgame">${onl ? '🚪 Leave the server' : '🏠 Save & return to title screen'}</button><p class="sm"><b>${esc(S.name || '')}</b> · ${S.mode || 'easy'} · ${S.size || 1024}² · played ${Math.floor(S.time / 60)} min · seed ${S.seed}</p></div>`;
+    h = `<div class="menu">${onl ? `<p class="sm" style="margin-top:0">🌐 Online world — saved automatically. Join code: <b>${fmtCode(NET.code)}</b></p><button class="go" data-act="invite">📋 Copy invite (code + link + how to join)</button><button data-act="players">👥 Players, teams & leaderboard <span class="dim">(Y)</span></button>` : `<button data-act="save">💾 Save now <span class="dim">(auto-saves every 30s)</span></button><button data-act="export">⬇ Export save file</button><button data-act="import">⬆ Import save file</button>`}<button data-act="sound">${audio.on ? '🔊 Sound: on' : '🔇 Sound: off'}</button><div class="vols">${([['music', '🎵 Music'], ['amb', '🌲 Ambience'], ['sfx', '🔨 Effects']] as [string, string][]).map(([k, l]) => `<label>${l}<input type="range" min="0" max="100" value="${Math.round((vol as any)[k] * 100)}" data-input="vol:${k}"></label>`).join('')}</div>${onl ? '' : `<button data-act="speed">⏩ Game speed: ${S.speed}×</button><button data-act="dn">${S.dayNight !== false ? '🌙 Day/night cycle: on' : '☀️ Day/night cycle: off'}</button>`}<button data-act="open:recap">📊 Run recap & timelapse</button><button data-act="timer">⏱ Run timer: ${showTimer() ? 'shown' : 'hidden'}</button>${folderBtn()}<button data-act="gfx" title="Auto lowers the 3D resolution when the game can't keep up (great for laptops and very sharp screens)">🖥 Graphics: ${gfxHook.label()}</button><button class="go" data-act="newgame">${onl ? '🚪 Leave the server' : '🏠 Save & return to title screen'}</button><p class="sm"><b>${esc(S.name || '')}</b> · ${S.mode || 'easy'} · ${S.size || 1024}² · played ${Math.floor(S.time / 60)} min · seed ${S.seed}</p></div>`;
   } else if (k === 'intro') {
     t = `Welcome to ${esc(S.name || 'your world')}`;
     const mode = S.mode || 'easy';
@@ -919,6 +920,14 @@ function renderTip() {
 // Actions
 let resetCam = () => { };
 export function setResetCamera(f: () => void) { resetCam = f; }
+/** graphics quality (set up by main) */
+export const gfxHook = { label: () => 'Auto', cycle: () => { } };
+function folderBtn() {
+  if (!FS.supported || online()) return '';
+  if (!FS.dir) return `<button data-act="folder" title="Clearing browsing data deletes worlds saved only in the browser">📁 Also save to a folder on this computer</button>`;
+  if (FS.perm !== 'granted') return `<button data-act="folder2">🔓 Reconnect save folder "${esc(FS.name)}"</button>`;
+  return `<button data-act="folder">📁 Save folder: ${esc(FS.name)} ✓ <span class="dim">(change)</span></button>`;
+}
 export function resetCamera() { resetCam(); }
 export async function saveNow() { const ok = await saveGame(); toast(ok ? '💾 Saved' : 'Save failed', ok ? 'good' : 'bad'); }
 let onNewGame: () => void = () => { };
@@ -930,6 +939,8 @@ function act(cmd: string, a: string, b: string) {
     case 'open': toggleModal(a); break;
     case 'gsel': toggleGraph(a); break;
     case 'floor': setLevel(+a); break;
+    case 'gfx': gfxHook.cycle(); break;
+    case 'folder': case 'folder2': (cmd === 'folder' ? chooseFolder() : reconnectFolder()).then(async ok => { if (ok) { await saveGame(); const n = await copyAllToFolder(); toast(`📁 Saving to folder <b>${esc(FS.name)}</b> (${n} world${n === 1 ? '' : 's'} copied)`, 'good'); } if (modalKind) renderModal(); }); break;
     case 'timer': try { localStorage.setItem('bw-timer', showTimer() ? '0' : '1'); } catch { } break;
     case 'home': closeModal(); locateHome(flyTo); break;
     case 'route': if (e) {

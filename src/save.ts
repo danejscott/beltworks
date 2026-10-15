@@ -4,6 +4,7 @@ import { view } from './view';
 import { BLD } from './data';
 import { G, place, PORTED, remove, resetWorld, State } from './world';
 import { clearTeams, MP, makeTeamState, teamFields, WORLD_KEYS } from './teams';
+import { deleteWorldFile, folderReady, listFolderWorlds, readWorldFile, writeWorldFile } from './filesaves';
 
 const KEYS = ['o', 'items', 'pair', 'isExit', 'recipe', 'ib', 'ob', 'prog', 'work', 'clock', 'shards', 'amp', 'tm', 'store', 'tot', 'mode', 'name', 'buf', 'filt', 'slot', 'famt', 'ffluid', 'fuelT', 'fbuf', 'water', 'stored', 'pairs', 'target', 'outbox', 'obTot', 'inbox', 'ibTot', 'dr', 'sunk', 'anyIn', 'sig'];
 
@@ -136,7 +137,31 @@ export function stateHash(): number {
 // --- IndexedDB storage: one record per world ('saves') plus a small summary ('meta')
 export interface WorldMeta { id: string; name: string; mode: string; size: number; tier: number; time: number; updated: number; created: number }
 export const slot = { id: null as string | null };
+// one connection kept open, so a save started as the tab closes can write straight away
+let dbP: Promise<IDBDatabase> | null = null;
 function db(): Promise<IDBDatabase> {
+  if (!dbP) { dbP = openDb(); dbP.then(d => { d.onclose = () => { dbP = null; }; d.onversionchange = () => { d.close(); dbP = null; }; }, () => { dbP = null; }); }
+  return dbP;
+}
+// ask the browser not to clear saved worlds when the disk gets full
+try { (navigator as any).storage?.persist?.(); } catch { }
+// ---- the same world open in two tabs would overwrite each other's progress: the newest tab wins, older ones stop saving
+const TAB = Math.random().toString(36).slice(2);
+let chan: BroadcastChannel | null = null;
+export const saveState = { blocked: '', lastOK: 0, failed: 0, fileOK: 0, fileFailed: 0 };
+try {
+  chan = new BroadcastChannel('beltworks-saves');
+  chan.onmessage = ev => {
+    const m = ev.data;
+    if (m && m.t === 'open' && m.tab !== TAB && m.id && m.id === slot.id) {
+      saveState.blocked = m.id;
+      G.fx.toast('⚠ This world was opened in another tab or window. This one has stopped saving so it cannot overwrite that progress — keep playing over there.', 'bad');
+    }
+  };
+} catch { }
+/** this tab is now playing world id: tell any other tab with it open to stop saving it */
+export function claimSlot(id: string) { saveState.blocked = ''; try { chan?.postMessage({ t: 'open', id, tab: TAB }); } catch { } }
+function openDb(): Promise<IDBDatabase> {
   return new Promise((res, rej) => {
     const r = indexedDB.open('beltworks', 3);
     r.onupgradeneeded = () => {
@@ -158,18 +183,31 @@ function metaNow(id: string, created?: number): WorldMeta {
 export async function saveGame() {
   if (!slot.id) return false;
   const id = slot.id;
-  const data = JSON.stringify(serialize());
+  if (saveState.blocked === id) return false;
   try {
+    const data = JSON.stringify(serialize());
     const d = await db();
     const old: WorldMeta | undefined = await req(d.transaction('meta', 'readonly').objectStore('meta').get(id));
+    const meta = metaNow(id, old?.created);
     await new Promise<void>((res, rej) => {
       const tx = d.transaction(['saves', 'meta'], 'readwrite');
       tx.objectStore('saves').put(data, id);
-      tx.objectStore('meta').put(metaNow(id, old?.created), id);
-      tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error);
+      tx.objectStore('meta').put(meta, id);
+      tx.oncomplete = () => res(); tx.onerror = () => rej(tx.error); tx.onabort = () => rej(tx.error || new Error('save aborted'));
+    });
+    saveState.lastOK = Date.now(); saveState.failed = 0;
+    // and the copy in the save folder (survives clearing the browser's data)
+    if (folderReady()) writeWorldFile(meta, data).then(() => { saveState.fileOK = Date.now(); saveState.fileFailed = 0; }, e => {
+      console.warn('save file failed', e);
+      if (saveState.fileFailed++ % 10 === 0) G.fx.toast(`⚠ Couldn't write the save file to your save folder (${String(e?.name || e).slice(0, 50)}). Your world is still saved in the browser.`, 'bad');
     });
     return true;
-  } catch (e) { console.warn('save failed', e); return false; }
+  } catch (e) {
+    console.warn('save failed', e);
+    // say so (once in a while) instead of failing quietly
+    if (saveState.failed++ % 10 === 0) G.fx.toast(`⚠ Couldn't save your world (${String((e as any)?.name || e).slice(0, 60)}). Use Menu → Export save to keep a copy.`, 'bad');
+    return false;
+  }
 }
 export async function listWorlds(): Promise<WorldMeta[]> {
   try {
@@ -185,21 +223,46 @@ export async function listWorlds(): Promise<WorldMeta[]> {
         metas = [m];
       }
     }
-    return metas.sort((a, b) => b.updated - a.updated);
+    // plus the worlds in the save folder (newest copy wins; worlds only in the folder show up too)
+    const byId = new Map(metas.map(m => [m.id, m]));
+    for (const f of await listFolderWorlds()) {
+      const have = byId.get(f.id);
+      if (!have || f.updated > have.updated) byId.set(f.id, { id: f.id, name: f.name, mode: f.mode, size: f.size, tier: f.tier, time: f.time, updated: f.updated, created: f.created, fromFile: true } as any);
+    }
+    return [...byId.values()].sort((a, b) => b.updated - a.updated);
   } catch (e) { console.warn(e); return []; }
+}
+/** copy every world kept in the browser into the save folder (when a folder is first chosen) */
+export async function copyAllToFolder(): Promise<number> {
+  if (!folderReady()) return 0;
+  let n = 0;
+  try {
+    const d = await db();
+    const metas: WorldMeta[] = await req(d.transaction('meta', 'readonly').objectStore('meta').getAll());
+    for (const m of metas) {
+      const data: string = await req(d.transaction('saves', 'readonly').objectStore('saves').get(m.id));
+      if (data) { await writeWorldFile(m, data); n++; }
+    }
+  } catch (e) { console.warn(e); }
+  return n;
 }
 export async function loadWorld(id: string): Promise<boolean> {
   try {
     const d = await db();
-    const data: string = await req(d.transaction('saves', 'readonly').objectStore('saves').get(id));
-    if (!data) return false;
-    const o = JSON.parse(data);
+    let data: string | undefined = await req(d.transaction('saves', 'readonly').objectStore('saves').get(id));
+    // the save folder's copy is newer (or the browser's copy was cleared): use the file
+    const m0: WorldMeta | undefined = await req(d.transaction('meta', 'readonly').objectStore('meta').get(id));
+    const fileMeta = (await listFolderWorlds()).find(f => f.id === id);
+    let o: any = null;
+    if (fileMeta && (!data || !m0 || fileMeta.updated > m0.updated)) o = await readWorldFile(id);
+    if (!o) { if (!data) return false; o = JSON.parse(data); }
     if (o.S && !o.S.name) {
       const m: WorldMeta = await req(d.transaction('meta', 'readonly').objectStore('meta').get(id));
       if (m) o.S.name = m.name;
     }
     deserialize(o);
     slot.id = id;
+    claimSlot(id);
     return true;
   } catch (e) { console.warn('load failed', e); return false; }
 }
@@ -208,6 +271,7 @@ export async function deleteWorld(id: string) {
     const d = await db();
     await new Promise<void>((res) => { const tx = d.transaction(['saves', 'meta', 'frames'], 'readwrite'); tx.objectStore('saves').delete(id); tx.objectStore('meta').delete(id); tx.objectStore('frames').delete(id); tx.oncomplete = () => res(); });
   } catch { }
+  await deleteWorldFile(id).catch(() => { });
 }
 // ---- timelapse frames: one small image of the factory every few minutes (at most 120, thinned evenly)
 export async function addFrame(id: string, url: string) {
@@ -234,7 +298,7 @@ export function importSave(cb: (ok: boolean) => void) {
   inp.onchange = () => {
     const f = inp.files?.[0]; if (!f) return;
     f.text().then(async t => {
-      try { deserialize(JSON.parse(t)); slot.id = newSlotId(); if (!G.S.name) G.S.name = f.name.replace(/\.json$/i, ''); await saveGame(); cb(true); }
+      try { deserialize(JSON.parse(t)); slot.id = newSlotId(); claimSlot(slot.id); if (!G.S.name) G.S.name = f.name.replace(/\.json$/i, ''); await saveGame(); cb(true); }
       catch (e) { console.error(e); cb(false); }
     });
   };

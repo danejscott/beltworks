@@ -1,6 +1,7 @@
 // Title screen: pick a saved world or create a new one (name, size, difficulty).
 import { audioInit, sfx, startMusic } from './audio';
-import { deleteWorld, importSave, listWorlds, WorldMeta } from './save';
+import { copyAllToFolder, deleteWorld, importSave, listWorlds, WorldMeta } from './save';
+import { chooseFolder, FS, reconnectFolder } from './filesaves';
 import { SIZES } from './terrain';
 import { TIER_NAMES } from './data';
 import { DIFF } from './difficulty';
@@ -49,7 +50,7 @@ export async function showTitle(h: typeof handlers) {
     <div class="tlogo">BELTWORKS</div><div class="ttag">Build it. Belt it. Automate everything.</div>
     <div class="tcols">
       <div class="tcol"><h3>Your worlds</h3><div class="wlist">${list}</div>
-        <div class="row" style="margin-top:10px"><button data-tact="import">⬆ Import a save file</button></div>${bestsHTML()}</div>
+        <div class="row" style="margin-top:10px"><button data-tact="import">⬆ Import a save file</button></div>${folderHTML()}${bestsHTML()}</div>
       <div class="tcol"><div class="ttabs"><button class="${sel.tab === 'new' ? 'sel' : ''}" data-tact="tab:new">🌱 New world</button><button class="${sel.tab === 'online' ? 'sel' : ''}" data-tact="tab:online">🌐 Play online</button></div>
       ${sel.tab === 'online' ? onlineHTML() : `
         <label class="flabel">World name</label>
@@ -105,6 +106,13 @@ function bestsHTML() {
 }
 export function hideTitle() { title.open = false; $('#title').classList.add('hidden'); }
 
+/** where worlds are kept: just this browser (wiped with browsing data) or also a folder of save files */
+function folderHTML() {
+  if (!FS.supported) return `<div class="sm dim" style="margin-top:10px">💾 Worlds are saved in this browser. Clearing browsing data deletes them — use Menu → Export save for a backup file.</div>`;
+  if (!FS.dir) return `<div class="savebox" style="margin-top:10px;padding:8px 10px;border:1px solid #f5a52466;border-radius:8px;background:#2b261633"><div class="sm">⚠ Worlds are only saved <b>inside this browser</b> — clearing browsing data deletes them.</div><button class="go" style="margin-top:6px" data-tact="folder">📁 Also save to a folder on this computer</button></div>`;
+  if (FS.perm !== 'granted') return `<div class="savebox" style="margin-top:10px;padding:8px 10px;border:1px solid #f5a52466;border-radius:8px"><div class="sm">📁 Save folder <b>${esc(FS.name)}</b> needs your OK again (the browser asks after a restart). Choose "Allow on every visit" so it won't ask again.</div><button class="go" style="margin-top:6px" data-tact="reconnect">🔓 Reconnect save folder</button></div>`;
+  return `<div class="sm" style="margin-top:10px">📁 Also saving to folder <b>${esc(FS.name)}</b> — your worlds are safe even if browser data is cleared. <button class="mini" data-tact="folder">Change…</button></div>`;
+}
 export function initTitle() {
   $('#title').addEventListener('pointerdown', async ev => {
     const a = (ev.target as HTMLElement).closest('[data-tact]') as HTMLElement | null;
@@ -112,6 +120,12 @@ export function initTitle() {
     audioInit(); startMusic();
     const [cmd, arg] = a.dataset.tact!.split(':');
     if (cmd === 'play') { sfx('click'); handlers.play(arg); }
+    else if (cmd === 'folder' || cmd === 'reconnect') {
+      ev.stopPropagation();
+      const ok = cmd === 'folder' ? await chooseFolder() : await reconnectFolder();
+      if (ok) { const n = await copyAllToFolder(); sfx('craft'); alert(`Saving to "${FS.name}". ${n ? `Copied ${n} world${n === 1 ? '' : 's'} there; ` : ''}every save now writes a file there too. Worlds in that folder show up here even after clearing browser data.`); }
+      showTitle(handlers);
+    }
     else if (cmd === 'tab') { const n = ($('#oname') as HTMLInputElement)?.value; if (n !== undefined) saveMe(n.trim(), sel.col); sel.tab = arg; sfx('click'); showTitle(handlers); }
     else if (cmd === 'col') { sel.col = arg; sfx('click'); a.parentElement!.querySelectorAll('.swatch').forEach(o => o.classList.toggle('sel', o === a)); }
     else if (cmd === 'osize' || cmd === 'omode' || cmd === 'odn') {

@@ -19,7 +19,8 @@ import { connect, disconnect, netStep, NET, NetHandlers, setStepper, ticksAvaila
 import { fmtCode } from './online';
 import * as OUI from './ui3';
 import { setDeliverFx, setOnMilestone, unlockName } from './progress';
-import { addFrame, loadWorld, newSlotId, saveGame, slot } from './save';
+import { addFrame, claimSlot, loadWorld, newSlotId, saveGame, slot } from './save';
+import { restoreFolder } from './filesaves';
 import { hideTitle, initTitle, NewWorldOpts, setInvite, showTitle, title } from './title';
 import { normCode } from './codes';
 import { ensureFresh, resetStats, update } from './sim';
@@ -43,10 +44,64 @@ const canvas = document.getElementById('c') as HTMLCanvasElement;
 const ov = document.getElementById('ov') as HTMLCanvasElement;
 const octx = ov.getContext('2d')!;
 
+// ---------------------------------------------------------------------------
+// Graphics quality. Very sharp screens (e.g. 2880x1800 laptops) ask a lot of integrated graphics, so the 3D view can
+// render at a lower resolution: Auto lowers/raises it from the measured frame rate; Balanced/Low cap it; High = full.
+type GfxMode = 'auto' | 'high' | 'balanced' | 'low';
+const GFX = { mode: 'auto' as GfxMode, budget: 2.4e6, ratio: 1, ema: 16.7, slowT: 0, fastT: 0, lastAt: 0,
+  trial: null as null | { from: number; ema: number; t: number }, capT: 0 };
+try { const m = localStorage.getItem('bw-gfx'); if (m === 'high' || m === 'balanced' || m === 'low' || m === 'auto') GFX.mode = m; } catch { }
+function gfxRatio() {
+  const full = Math.min(2, window.devicePixelRatio || 1), px = innerWidth * innerHeight;
+  const budget = GFX.mode === 'high' ? Infinity : GFX.mode === 'balanced' ? 2.1e6 : GFX.mode === 'low' ? 1.0e6 : GFX.budget;
+  return Math.max(0.5, Math.min(full, Math.sqrt(budget / px)));
+}
+function applyGfx(force = false) {
+  const r = gfxRatio();
+  if (!force && Math.abs(r - GFX.ratio) / GFX.ratio < 0.04) return;
+  GFX.ratio = r;
+  resizeCore(view.cw, view.ch, r);
+  const sz = GFX.mode === 'low' ? 1024 : 2048;
+  if (C.sun.shadow.mapSize.x !== sz) { C.sun.shadow.mapSize.set(sz, sz); C.sun.shadow.map?.dispose(); (C.sun.shadow as any).map = null; }
+}
+/** Auto mode: watch the time between frames and adjust the resolution a step at a time */
+function gfxTick(nowMs: number) {
+  const dt = GFX.lastAt ? nowMs - GFX.lastAt : 16.7; GFX.lastAt = nowMs;
+  if (GFX.mode !== 'auto' || dt > 250) return;   // (tab was hidden)
+  GFX.ema = GFX.ema * 0.95 + dt * 0.05;
+  const s = dt / 1000;
+  if (GFX.ema > 24) { GFX.slowT += s; GFX.fastT = 0; } else if (GFX.ema < 18.5) { GFX.fastT += s; GFX.slowT = 0; } else { GFX.slowT = 0; GFX.fastT = 0; }
+  const maxPx = innerWidth * innerHeight * Math.min(4, (window.devicePixelRatio || 1) ** 2);
+  const minPx = Math.max(0.6e6, innerWidth * innerHeight * 0.55);
+  if (GFX.capT > 0) GFX.capT -= s;
+  // a lower resolution is only kept if it made frames faster (a 30 fps cap, e.g. battery saver, isn't helped by it)
+  if (GFX.trial) {
+    GFX.trial.t += s;
+    if (GFX.trial.t > 3) {
+      if (GFX.ema > GFX.trial.ema * 0.92) { GFX.budget = GFX.trial.from; applyGfx(); GFX.capT = 60; }
+      GFX.trial = null; GFX.slowT = 0;
+    }
+    return;
+  }
+  if (GFX.slowT > 2 && GFX.capT <= 0 && GFX.budget > minPx) { GFX.trial = { from: GFX.budget, ema: GFX.ema, t: 0 }; GFX.budget = Math.max(minPx, GFX.budget * 0.8); GFX.slowT = 0; applyGfx(); }
+  else if (GFX.fastT > 6 && GFX.budget < maxPx) { GFX.budget = Math.min(maxPx, GFX.budget * 1.15); GFX.fastT = 0; applyGfx(); }
+}
+UI.gfxHook.label = () => {
+  const name = { auto: 'Auto', high: 'High (full resolution)', balanced: 'Balanced', low: 'Low (fastest)' }[GFX.mode];
+  return `${name} · ${Math.round(view.cw * GFX.ratio)}×${Math.round(view.ch * GFX.ratio)}`;
+};
+UI.gfxHook.cycle = () => {
+  const order: GfxMode[] = ['auto', 'high', 'balanced', 'low'];
+  GFX.mode = order[(order.indexOf(GFX.mode) + 1) % order.length];
+  try { localStorage.setItem('bw-gfx', GFX.mode); } catch { }
+  applyGfx(true);
+};
+
 function resize() {
   view.dpr = Math.min(2, window.devicePixelRatio || 1);
   view.cw = innerWidth; view.ch = innerHeight;
-  resizeCore(view.cw, view.ch, view.dpr);
+  GFX.ratio = gfxRatio();
+  resizeCore(view.cw, view.ch, GFX.ratio);
   canvas.style.width = view.cw + 'px'; canvas.style.height = view.ch + 'px';
   ov.width = Math.round(view.cw * view.dpr); ov.height = Math.round(view.ch * view.dpr);
   ov.style.width = view.cw + 'px'; ov.style.height = view.ch + 'px';
@@ -154,7 +209,7 @@ function createWorld(o: NewWorldOpts) {
     newWorld((Math.random() * 1e9) | 0, o);
     SIM.hist.s = [];
     view.cam.x = HX + 2; view.cam.y = HY + 2; view.cam.s = 30;
-    slot.id = newSlotId();
+    slot.id = newSlotId(); claimSlot(slot.id);
     await saveGame();
     return true;
   }, true, o.size > 4000 ? 'Generating an enormous world… (this takes about a minute)' : o.size > 1500 ? 'Generating a huge world… (this takes a few seconds)' : 'Generating your world…');
@@ -236,6 +291,7 @@ let lastFrameAt = 0, lastCamSig = 0, shadowTick = 0;
 const PERF = { frames: 0, ghosts: 0, scene: 0, terrain: 0, render: 0, ui: 0 };
 function frame(ms: number) {
   lastFrameAt = performance.now();
+  gfxTick(lastFrameAt);
   // an online world is loading / catching up in the background: don't draw half-built state
   if (NET.loading && !NET.ready) { last = ms / 1000; requestAnimationFrame(frame); return; }
   const now = ms / 1000;
@@ -367,9 +423,10 @@ async function boot() {
   // opened from an invite link (…/beltworks/?join=K7QM2XRP)?
   try { const j = normCode(new URLSearchParams(location.search).get('join') || ''); if (j) { setInvite(j); history.replaceState(null, '', location.pathname); } } catch { }
   load.classList.add('hidden');
-  openTitle();
+  restoreFolder().finally(() => openTitle());
   addEventListener('beforeunload', () => { if (slot.id) saveGame(); });
-  document.addEventListener('visibilitychange', () => { if (document.hidden && slot.id) saveGame(); });
+  document.addEventListener('visibilitychange', () => { if (document.hidden && slot.id && !NET.on) saveGame(); });
+  addEventListener('pagehide', () => { if (slot.id && !NET.on) saveGame(); });
   requestAnimationFrame(t => { last = t / 1000; requestAnimationFrame(frame); });
   // online worlds keep ticking while this tab is in the background (animation frames stop there)
   setInterval(() => {
