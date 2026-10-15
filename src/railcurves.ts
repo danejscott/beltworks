@@ -1,22 +1,21 @@
 // Sweeping rail curves (visual + train motion). Track is still laid on the tile grid (that's what routing, signals and
 // stations use), but every plain stretch of track — a chain of tiles with one route each, no junctions — is drawn,
-// and ridden, as one smooth line through its tiles: hard 90° corners become wide arcs, and "staircase" diagonals become
-// clean 45° lines. The ends of a chain stay pinned where it meets a junction, station or the end of the track.
+// and ridden, as one smooth line: the path through the points where the track crosses from tile to tile is made of
+// straight runs and clean 45° diagonals, and every bend is replaced by a true circular arc — as wide as fits without
+// leaving the track's own tiles or reaching over neighbouring track — sampled finely so it looks round.
 import { DX, DY } from './util';
 import { G, PAIRS } from './world';
 import { W } from './terrain';
 
-export interface RChain { tiles: number[]; P: [number, number][]; loop: boolean; off: number }
+export interface RChain { tiles: number[]; curve: [number, number][]; centers: [number, number][]; loop: boolean }
 let cacheRev = -1;
 let chains: RChain[] = [];
 let byTile = new Map<number, { c: RChain; j: number }>();
 
-/** how smooth: more passes = wider curves (each pass spreads a corner over more tiles) */
-const PASSES = 12;
-/** never let the drawn line stray further than this from its tile's centre (keeps it on its own tiles) */
-const MAX_OFF = 1.0;
-/** pinned points past each end of a stretch (keeps the curve in line with the track it joins) */
-const PAD = 3;
+/** widest bend radius (tiles) */
+const R_MAX = 9;
+/** how far (tiles) a bend may cut inside the track's path: in open ground / right beside other track */
+const CUT = 0.45, CUT_NEAR = 0.14;
 
 const bits = (p: number) => { let n = 0; for (let i = 0; i < 6; i++) if (p & (1 << i)) n++; return n; };
 function rail(i: number) {
@@ -41,6 +40,74 @@ function connects(i: number, s: number) {
   return false;
 }
 const cx = (i: number) => i % W + 0.5, cy = (i: number) => Math.floor(i / W) + 0.5;
+
+type Pt = [number, number];
+/** replace every bend of a polyline with a circular arc and sample it finely. cut(i) = how far the arc at input point
+ *  i may cut inside the corner. The ends of an open line stay exactly where they are. */
+export function filletLine(P: Pt[], loop: boolean, cut: (i: number) => number): Pt[] {
+  // drop repeated and in-line points: what's left are the real bends
+  const V: Pt[] = [], vi: number[] = [];
+  P.forEach((p, i) => { const l = V[V.length - 1]; if (!l || Math.hypot(p[0] - l[0], p[1] - l[1]) > 1e-6) { V.push(p); vi.push(i); } });
+  const keep: Pt[] = [], src: number[] = [];
+  const n0 = V.length;
+  for (let i = 0; i < n0; i++) {
+    if (!loop && (i === 0 || i === n0 - 1)) { keep.push(V[i]); src.push(vi[i]); continue; }
+    const a = V[(i - 1 + n0) % n0], b = V[i], c = V[(i + 1) % n0];
+    const cr = (b[0] - a[0]) * (c[1] - b[1]) - (b[1] - a[1]) * (c[0] - b[0]);
+    if (Math.abs(cr) > 1e-6) { keep.push(b); src.push(vi[i]); }
+  }
+  const n = keep.length;
+  if (n < 3) return loop ? [...V, V[0]] : keep;
+  const isEnd = (i: number) => !loop && (i === 0 || i === n - 1);
+  // per bend: turn angle and tangent length (how far back from the corner the arc starts)
+  const t: number[] = new Array(n).fill(0), th: number[] = new Array(n).fill(0);
+  for (let i = 0; i < n; i++) {
+    if (isEnd(i)) continue;
+    const a = keep[(i - 1 + n) % n], b = keep[i], c = keep[(i + 1) % n];
+    const ux = b[0] - a[0], uy = b[1] - a[1], vx = c[0] - b[0], vy = c[1] - b[1];
+    const cosT = (ux * vx + uy * vy) / (Math.hypot(ux, uy) * Math.hypot(vx, vy));
+    th[i] = Math.acos(Math.max(-1, Math.min(1, cosT)));
+    // the widest radius that keeps the middle of the arc within `cut` of the corner
+    const rCut = cut(src[i]) / Math.max(1e-6, 1 / Math.cos(th[i] / 2) - 1);
+    t[i] = Math.min(R_MAX, rCut) * Math.tan(th[i] / 2);
+  }
+  // neighbouring bends share the straight between them
+  for (let i = 0; i < (loop ? n : n - 1); i++) {
+    const j = (i + 1) % n, a = keep[i], b = keep[j], L = Math.hypot(b[0] - a[0], b[1] - a[1]);
+    const need = t[i] + t[j];
+    if (need > L) { const k = L / need; t[i] *= k; t[j] *= k; }
+  }
+  // sample: the arcs in small steps, straight between them
+  const out: Pt[] = [];
+  for (let i = 0; i < n; i++) {
+    const b = keep[i];
+    if (isEnd(i) || t[i] < 1e-4) { out.push(b); continue; }
+    const a = keep[(i - 1 + n) % n], c = keep[(i + 1) % n];
+    const ul = Math.hypot(b[0] - a[0], b[1] - a[1]), vl = Math.hypot(c[0] - b[0], c[1] - b[1]);
+    const u: Pt = [(b[0] - a[0]) / ul, (b[1] - a[1]) / ul], v: Pt = [(c[0] - b[0]) / vl, (c[1] - b[1]) / vl];
+    const A: Pt = [b[0] - u[0] * t[i], b[1] - u[1] * t[i]];
+    const r = t[i] / Math.tan(th[i] / 2);
+    const side = Math.sign(u[0] * v[1] - u[1] * v[0]);              // which way it turns
+    const ox = A[0] - u[1] * r * side, oy = A[1] + u[0] * r * side;   // centre of the arc
+    const a0 = Math.atan2(A[1] - oy, A[0] - ox);
+    const steps = Math.max(2, Math.ceil(th[i] * r / 0.25));
+    for (let k = 0; k <= steps; k++) { const an = a0 + side * th[i] * k / steps; out.push([ox + Math.cos(an) * r, oy + Math.sin(an) * r]); }
+  }
+  if (loop && out.length) out.push(out[0]);
+  return out;
+}
+/** nearest point of a sampled curve to p (searching from index hint onward) */
+function nearestOn(curve: Pt[], p: Pt, hint: number): [Pt, number] {
+  let best: Pt = curve[0], bi = 0, bd = 1e9;
+  const lo = Math.max(0, hint - 8), hi = Math.min(curve.length - 1, hint + 80);
+  for (let i = lo; i < hi; i++) {
+    const a = curve[i], b = curve[i + 1], vx = b[0] - a[0], vy = b[1] - a[1], L = vx * vx + vy * vy || 1;
+    let k = ((p[0] - a[0]) * vx + (p[1] - a[1]) * vy) / L; k = Math.max(0, Math.min(1, k));
+    const q: Pt = [a[0] + vx * k, a[1] + vy * k], d = (q[0] - p[0]) ** 2 + (q[1] - p[1]) ** 2;
+    if (d < bd) { bd = d; best = q; bi = i; }
+  }
+  return [best, bi];
+}
 
 function rebuild() {
   cacheRev = G.railRev;
@@ -73,48 +140,40 @@ function rebuild() {
       if (!sidesOf(nx) || seen.has(nx)) break;
       prevSide = (s + 2) & 3; t = nx;
     }
-    // the points: (pinned end) + tile centres + (pinned end)
-    const P: [number, number][] = tiles.map(i => [cx(i), cy(i)]);
-    const fixed: boolean[] = tiles.map(() => false);
-    let off = 0;
-    if (!loop) {
-      const a = tiles[0], sa = sidesOf(a)!, na = tiles.length > 1 ? tiles[1] : -1;
+    const tileSet = new Set(tiles);
+    const n = tiles.length;
+    // the path through the points where the track crosses from tile to tile (straight runs and 45° diagonals)
+    const mid = (i: number, j: number): Pt => [(cx(i) + cx(j)) / 2, (cy(i) + cy(j)) / 2];
+    let P: Pt[];
+    if (loop) P = tiles.map((tt, j) => mid(tiles[(j - 1 + n) % n], tt));
+    else {
+      const a = tiles[0], sa = sidesOf(a)!, na = n > 1 ? tiles[1] : -1;
       const outA = step(a, sa[0]) === na ? sa[1] : sa[0];
-      const b = tiles[tiles.length - 1], sb = sidesOf(b)!, nb = tiles.length > 1 ? tiles[tiles.length - 2] : -1;
-      const outB = tiles.length === 1 ? (outA === sb[0] ? sb[1] : sb[0]) : (step(b, sb[0]) === nb ? sb[1] : sb[0]);
-      P.unshift([cx(a) + DX[outA] * 0.5, cy(a) + DY[outA] * 0.5]); fixed.unshift(true);
-      P.push([cx(b) + DX[outB] * 0.5, cy(b) + DY[outB] * 0.5]); fixed.push(true);
-      // a few pinned points continuing straight past each end, so the curve leaves the end in line with the track there
-      for (let k = 1; k <= PAD; k++) {
-        P.unshift([P[0][0] + DX[outA], P[0][1] + DY[outA]]); fixed.unshift(true);
-        P.push([P[P.length - 1][0] + DX[outB], P[P.length - 1][1] + DY[outB]]); fixed.push(true);
-      }
-      off = 1 + PAD;
+      const b = tiles[n - 1], sb = sidesOf(b)!, nb = n > 1 ? tiles[n - 2] : -1;
+      const outB = n === 1 ? (outA === sb[0] ? sb[1] : sb[0]) : (step(b, sb[0]) === nb ? sb[1] : sb[0]);
+      P = [[cx(a) + DX[outA] * 0.5, cy(a) + DY[outA] * 0.5]];
+      for (let j = 0; j + 1 < n; j++) P.push(mid(tiles[j], tiles[j + 1]));
+      P.push([cx(b) + DX[outB] * 0.5, cy(b) + DY[outB] * 0.5]);
     }
-    const n = P.length;
-    if (n >= 4) {
-      const orig = P.map(p => [p[0], p[1]] as [number, number]);
-      let A = P.map(p => [p[0], p[1]] as [number, number]);
-      for (let k = 0; k < PASSES; k++) {
-        const B = A.map(p => [p[0], p[1]] as [number, number]);
-        for (let i = 0; i < n; i++) {
-          if (fixed[i]) continue;
-          // 5-point binomial blur: wide enough to see past a pinned end, so curves leave ends in line with the track
-          const at = (k: number) => A[loop ? ((k % n) + n) % n : Math.max(0, Math.min(n - 1, k))];
-          const p2 = at(i - 2), p1 = at(i - 1), n1 = at(i + 1), n2 = at(i + 2);
-          B[i][0] = (p2[0] + 4 * p1[0] + 6 * A[i][0] + 4 * n1[0] + n2[0]) / 16;
-          B[i][1] = (p2[1] + 4 * p1[1] + 6 * A[i][1] + 4 * n1[1] + n2[1]) / 16;
-        }
-        // stop at the widest curve that still stays on the track's own tiles (clamping instead would put kinks back in)
-        let worst = 0;
-        for (let i = 0; i < n; i++) if (!fixed[i]) worst = Math.max(worst, Math.hypot(B[i][0] - orig[i][0], B[i][1] - orig[i][1]));
-        if (worst > MAX_OFF) break;
-        A = B;
+    // bends beside other track get only a little room, so curves never reach over it
+    const cutAt = (k: number) => {
+      const ti = tiles[Math.max(0, Math.min(n - 1, loop ? k : k - 1))], x = ti % W, y = (ti / W) | 0;
+      for (let dy = -1; dy <= 1; dy++) for (let dx = -1; dx <= 1; dx++) {
+        const ni = (y + dy) * W + x + dx;
+        if ((dx || dy) && rail(ni) && !tileSet.has(ni)) return CUT_NEAR;
       }
-      for (let i = 0; i < n; i++) P[i] = A[i];
+      return CUT;
+    };
+    const curve = filletLine(P, loop, cutAt);
+    // where each tile's track is (for trains): the curve point nearest the middle of that tile's piece of path
+    const centers: Pt[] = [];
+    let hint = 0;
+    for (let j = 0; j < n; j++) {
+      const a = P[j], b = loop ? P[(j + 1) % n] : P[j + 1];
+      const [q, i] = nearestOn(curve, [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], hint);
+      centers.push(q); hint = i;
     }
-    if (!loop) { P.splice(0, PAD); P.splice(P.length - PAD, PAD); off = 1; }
-    const c: RChain = { tiles, P, loop, off };
+    const c: RChain = { tiles, curve, centers, loop };
     chains.push(c);
     tiles.forEach((ti, j) => byTile.set(ti, { c, j }));
   }
@@ -126,11 +185,19 @@ export function railChains() {
 /** where the (smoothed) track passes through tile i */
 export function railCenter(i: number): [number, number] {
   const h = railChains().byTile.get(i);
-  if (!h) return [cx(i), cy(i)];
-  return h.c.P[h.j + h.c.off];
+  return h ? h.c.centers[h.j] : [cx(i), cy(i)];
 }
 /** a point fraction f of the way from tile a's track to tile b's (for trains) */
 export function railPos(a: number, b: number, f: number): [number, number] {
   const A = railCenter(a), B = a === b ? A : railCenter(b);
   return [A[0] + (B[0] - A[0]) * f, A[1] + (B[1] - A[1]) * f];
+}
+/** the smooth line a planned stretch of track will have (placement preview): tile centres from start to end, and
+ *  the directions the track continues straight past each end */
+export function previewLine(pts: Pt[], dirA: number, dirB: number): Pt[] {
+  if (pts.length < 2) return pts;
+  const P: Pt[] = [[pts[0][0] + DX[dirA] * 0.5, pts[0][1] + DY[dirA] * 0.5]];
+  for (let j = 0; j + 1 < pts.length; j++) P.push([(pts[j][0] + pts[j + 1][0]) / 2, (pts[j][1] + pts[j + 1][1]) / 2]);
+  P.push([pts[pts.length - 1][0] + DX[dirB] * 0.5, pts[pts.length - 1][1] + DY[dirB] * 0.5]);
+  return filletLine(P, false, () => CUT);
 }

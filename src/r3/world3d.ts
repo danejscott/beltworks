@@ -19,7 +19,7 @@ import { B, M, Model, std } from './mat';
 import * as MD from './models';
 import { T3, tunnelInside, updateCuts } from './terrain3d';
 import { MP } from '../teams';
-import { railChains } from '../railcurves';
+import { previewLine, railChains } from '../railcurves';
 import { isDepleted } from '../deplete';
 
 // ---------------------------------------------------------------------------
@@ -366,22 +366,20 @@ function recordChunks(keys: Set<number>, real: number) {
   const at = (x: number, y: number) => nc.get(ckey(Math.floor(x / CH), Math.floor(y / CH)));
   const rc = railChains(), curveTiles = rc.byTile;
   const lvl = view.level;
-  // smooth track: each tile of a plain stretch draws the piece from its point on the curve to the next one
+  // smooth track: each stretch's curve, cut into pieces about a tile long (sleepers stay evenly spaced), each drawn in
+  // the chunk it sits in
   if (lvl === 0) for (const c of rc.chains) {
-    const n = c.tiles.length, P = c.P;
-    for (let j = 0; j < n; j++) {
-      const ti = c.tiles[j], ch = at(ti % W, Math.floor(ti / W)); if (!ch) continue;
-      const k = j + c.off;
-      const segs: [number, number][] = [];
-      if (j === 0 && !c.loop) segs.push([0, 1]);
-      if (c.loop) segs.push([k, (k + 1) % n]); else segs.push([k, k + 1]);
-      for (const [i0, i1] of segs) {
-        const a = P[i0], b = P[i1], dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy);
-        if (len < 1e-3) continue;
-        const mx = (a[0] + b[0]) / 2, my = (a[1] + b[1]) / 2, ang = -Math.atan2(dy, dx);
-        pushModel(ch.rec, 'railSeg', mdl('railS', MD.railStraight), compose(mx, 0, my, ang, len * 1.04, 1, 1), undefined, false);
+    const C = c.curve;
+    for (let i = 0; i + 1 < C.length; i++) {
+      const a = C[i], b = C[i + 1], dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy);
+      if (len < 1e-3) continue;
+      const parts = Math.max(1, Math.round(len)), ang = -Math.atan2(dy, dx), pl = len / parts;
+      for (let k = 0; k < parts; k++) {
+        const mx = a[0] + dx * (k + 0.5) / parts, my = a[1] + dy * (k + 0.5) / parts;
+        const ch = at(mx, my); if (!ch) continue;
+        pushModel(ch.rec, 'railSeg', mdl('railS', MD.railStraight), compose(mx, 0, my, ang, pl * 1.04, 1, 1), undefined, false);
         const wt = G.tiles[Math.floor(my) * W + Math.floor(mx)];
-        if (wt === 4 || wt === 5) pushModel(ch.rec, 'railBridge', mdl('railBridge', MD.railBridge), compose(mx, 0, my, ang, len * 1.02, 1, 1));
+        if (wt === 4 || wt === 5) pushModel(ch.rec, 'railBridge', mdl('railBridge', MD.railBridge), compose(mx, 0, my, ang, pl * 1.02, 1, 1));
       }
     }
   }
@@ -864,6 +862,24 @@ export function update3D(time: number, real: number, dt: number, labels: Label3[
 // ---------------------------------------------------------------------------
 function updateGhosts(real: number) {
   GL.begin();
+  ZO = 0;
+  // railway being dragged: the smooth line it will have, plus markers where it starts/snaps on
+  const rp = view.railPlan;
+  if (rp) {
+    const marker = (x: number, y: number, ok: boolean) => GL.get(ok ? 'snapOK' : 'snapBad', mdl('areaP', () => ({ geo: new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), mats: [] })).geo, ok ? ghostOK : ghostBad, false).push(compose(x + 0.5, 0.15 + Math.sin(real * 6) * 0.03, y + 0.5, 0, 1.3, 1, 1.3));
+    if (rp.hoverEnd) marker(rp.hoverEnd.x, rp.hoverEnd.y, true);
+    if (rp.pts && rp.pts.length > 1) {
+      const line = previewLine(rp.pts, rp.dirA, rp.dirB), mat = rp.ok ? ghostOK : ghostBad, pre = rp.ok ? 'gok:' : 'gbad:';
+      for (let i = 0; i + 1 < line.length; i++) {
+        const a2 = line[i], b2 = line[i + 1], dx = b2[0] - a2[0], dy = b2[1] - a2[1], len = Math.hypot(dx, dy);
+        if (len < 1e-3) continue;
+        const parts = Math.max(1, Math.round(len)), pl = len / parts;
+        for (let k = 0; k < parts; k++) pushModel(GL, pre + 'railSeg', mdl('railS', MD.railStraight), compose(a2[0] + dx * (k + 0.5) / parts, 0.02, a2[1] + dy * (k + 0.5) / parts, -Math.atan2(dy, dx), pl * 1.04, 1, 1), mat, false);
+      }
+    }
+    if (rp.snapEnd) marker(rp.snapEnd.x, rp.snapEnd.y, rp.ok);
+    for (const j of rp.junc || []) marker(j.x, j.y, rp.ok);
+  }
   ZO = view.level * LH;
   for (const gh of view.ghosts) {
     const d = BLD[gh.type];

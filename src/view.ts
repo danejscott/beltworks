@@ -6,7 +6,8 @@ export const view = {
   cam: { x: 512, y: 512, s: 30 }, // s = iso unit: a tile's diamond is 2s wide and s tall (CSS px)
   cw: 1, ch: 1, dpr: 1,
   mouse: { sx: 0, sy: 0, wx: 0, wy: 0, tx: 0, ty: 0, inCanvas: false },
-  ghosts: [] as any[],          // {type,x,y,rot,ok,recipe?,pairs?,belt?} drawn translucent
+  ghosts: [] as any[],
+  railPlan: null as any,         // the railway route being dragged (railplan.ts), or a hovered track end to start from          // {type,x,y,rot,ok,recipe?,pairs?,belt?} drawn translucent
   sel: null as null | { x0: number; y0: number; x1: number; y1: number; col: number },
   showPower: false,
   inspect: null as any,

@@ -18,6 +18,7 @@ import * as UI from './ui';
 import { online, railPairsForPath, run, tileFree as tileFreeZ } from './cmd';
 import { DX, DY } from './util';
 import { MP } from './teams';
+import { openEnd, planRail, RailPlan } from './railplan';
 
 // ---------------------------------------------------------------------------
 /** a blueprint: buildings (o.z = floor, counted up from the lowest floor copied) and foundation decks (fl: [x, y, floor]) */
@@ -132,8 +133,27 @@ function aimBeltEnd(p: { x: number; y: number; d: number }) {
 const tileFree = (x: number, y: number, kind: string) => tileFreeZ(x, y, kind, view.level);
 function pathCost(type: string, n: number): Cost { const c: Cost = {}; for (const k in BLD[type].cost) c[k] = BLD[type].cost[k] * n; return c; }
 
+/** the route being dragged, re-planned only when the pointer moves to another tile */
+let planKey = '', planCache: RailPlan | null = null;
+function currentPlan(): RailPlan | null {
+  if (!drag) return null;
+  const m = view.mouse, k = `${drag.sx},${drag.sy},${m.tx},${m.ty},${G.railRev}`;
+  if (k !== planKey) { planKey = k; planCache = drag.sx === m.tx && drag.sy === m.ty ? null : planRail(drag.sx, drag.sy, m.tx, m.ty); }
+  return planCache;
+}
 function commitDrag() {
-  const t = tool.t, d = BLD[t.type], path = dragPath();
+  const t = tool.t, d = BLD[t.type];
+  if (d.kind === 'rail' && view.level === 0) {
+    const m = view.mouse;
+    if (!(drag!.sx === m.tx && drag!.sy === m.ty)) {
+      const p = currentPlan();
+      if (p && p.ok) run({ k: 'rails', tiles: p.tiles.map(q => [q.x, q.y, q.p]), junc: p.junc.map(q => [q.x, q.y, q.p]) });
+      else if (p && p.why) { UI.toast(p.why, 'bad'); sfx('err'); }
+      drag = null; planKey = '';
+      return;
+    }
+  }
+  const path = dragPath();
   run({ k: 'drag', type: t.type, z: view.level, path: path.map(p => [p.x, p.y, p.d]) });
   if (path.length > 1 && d.kind !== 'pipe') rot = path[path.length - 1].d;
   drag = null;
@@ -287,7 +307,7 @@ export function updateGhosts() {
   const g: any[] = [];
   view.sel = null;
   const t = tool.t, m = view.mouse;
-  view.hover = null; view.powerPreview = null;
+  view.hover = null; view.powerPreview = null; view.railPlan = null;
   if (!t || t.k === 'decon' || t.k === 'paint') {
     const e = pickAt(m.wx, m.wy);
     if (e && m.inCanvas && !panning) view.hover = e;
@@ -302,7 +322,11 @@ export function updateGhosts() {
       if (d.kind === 'foundation') {
         const x0 = drag ? drag.sx : m.tx, y0 = drag ? drag.sy : m.ty;
         view.sel = { x0, y0, x1: m.tx, y1: m.ty, col: view.level ? rgba(0.85, 0.85, 0.8, 0.35) : rgba(1, 0.3, 0.3, 0.25) };
+      } else if (d.kind === 'rail' && view.level === 0 && drag && !(drag.sx === m.tx && drag.sy === m.ty)) {
+        // railway: show the planned route as a smooth line (drawn by the 3D view)
+        view.railPlan = currentPlan();
       } else if ((d.kind === 'belt' || d.kind === 'pipe' || d.kind === 'rail') && !d.dz) {
+        if (d.kind === 'rail' && !drag) { const s = openEnd(m.tx, m.ty); view.railPlan = s >= 0 ? { hoverEnd: { x: m.tx, y: m.ty, side: s } } : null; }
         const path = drag ? dragPath() : [{ x: m.tx, y: m.ty, d: rot }];
         const pairs = d.kind === 'rail' ? railPairsForPath(path) : null;
         path.forEach((p, i) => {

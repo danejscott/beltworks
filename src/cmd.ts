@@ -190,6 +190,22 @@ function upgradeOne(old: Ent, type: string, z: number) {
   return e;
 }
 
+/** lay a planned stretch of railway (see railplan.ts): all of it or nothing, so a half-built line never dead-ends */
+function layRails(c: Cmd) {
+  const d = BLD.rail;
+  if (!G.S.unlocked.has('rail')) return;
+  const tiles: number[][] = Array.isArray(c.tiles) ? c.tiles.slice(0, 600) : [], junc: number[][] = Array.isArray(c.junc) ? c.junc.slice(0, 40) : [];
+  const valid = (p: number) => p > 0 && p < 64 && (p & (p - 1)) === 0;   // exactly one route
+  for (const [x, y, p] of tiles) if (!valid(p) || entAt(x, y) || !tileFree(x, y, 'rail', 0)) { toast('Something is in the way of that track', 'bad'); sfx('err'); return; }
+  for (const [x, y, p] of junc) { const e = entAt(x, y); if (!e || e.type !== 'rail' || !mine(e) || !valid(p)) return; }
+  const need: Cost = {};
+  for (const k in d.cost) need[k] = d.cost[k] * tiles.length;
+  if (!canAfford(need)) { toast(`Not enough for ${tiles.length} rail pieces: ${missingText(need)}`, 'bad'); sfx('err'); return; }
+  for (const [x, y, p] of tiles) { pay(d.cost); const r = place('rail', x, y, 0); r.pairs = p; markDirty('rail', r); }
+  for (const [x, y, p] of junc) { const e = entAt(x, y)!; e.pairs |= p; markDirty('rail', e); }
+  if (tiles.length || junc.length) sfx('belt');
+}
+
 function foundations(x0: number, y0: number, x1: number, y1: number, z: number) {
   const d = BLD.foundation;
   if (z === 0) { toast('Foundations go on upper floors — press PageUp (or ▲ on the floor buttons) first', 'bad'); sfx('err'); return; }
@@ -297,6 +313,7 @@ function exec(c: Cmd): any {
   switch (c.k) {
     // ---- building
     case 'place': return placeOne(c);
+    case 'rails': return layRails(c);
     case 'drag': return dragLay(c.type, (c.path as number[][]).slice(0, 400).map(([x, y, d]) => ({ x, y, d })), c.z || 0);
     case 'found': return foundations(c.x0, c.y0, c.x1, c.y1, c.z);
     case 'decon': return deconRect(c.x0, c.y0, c.x1, c.y1, c.z || 0);
