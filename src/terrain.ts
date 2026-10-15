@@ -391,7 +391,9 @@ function genTerrainV3(seed: number, mode: string, v = 3, land = W): Terrain {
     for (let j = 0; j < 2; j++) for (let i = 0; i < 2; i++) nodeGrid[(y + j) * W + x + i] = id;
   };
   // better nodes further out
-  const purity = (f: number) => { const q = r(), pc = Math.max(0.02, 0.04 + 0.34 * clamp((f - 0.1) / 0.75, 0, 1) + D.pureBias); return q < pc ? 2 : q < pc + D.impure ? 0 : 1; };
+  // v8 (new worlds): resources are scarcer — fewer nodes, fewer pure ones — so expanding and choosing nodes matters
+  const SC = v >= 8 ? { count: 0.6, pure: 0.6, impure: 0.12, oilCluster: [1, 3] } : { count: 1, pure: 1, impure: 0, oilCluster: [2, 4] };
+  const purity = (f: number) => { const q = r(), pc = Math.max(0.02, (0.04 + 0.34 * clamp((f - 0.1) / 0.75, 0, 1) + D.pureBias) * SC.pure); return q < pc ? 2 : q < pc + D.impure + SC.impure ? 0 : 1; };
   const tryPlace = (res: string, dmin: number, dmax: number, p?: number, ox = cx, oy = cy, tries = 900) => {
     for (let k = 0; k < tries; k++) {
       const a = r() * Math.PI * 2, d = dmin + r() * (dmax - dmin);
@@ -412,18 +414,18 @@ function genTerrainV3(seed: number, mode: string, v = 3, land = W): Terrain {
   // everything else, spread through each resource's ring, scaled by map area and difficulty
   const area = (isl ? land * land : W * H) / (1024 * 1024);
   const counts: [string, number][] = [['iron_ore', 70], ['copper_ore', 52], ['limestone', 48], ['coal', 48], ['caterium_ore', 30], ['raw_quartz', 30], ['bauxite', 26], ['geyser', 26], ['sulfur', 30]];
-  for (const [res, n] of counts) { const [a0, a1] = RINGS[res]; for (let i = 0; i < Math.round(n * area * D.rich); i++) tryPlace(res, a0 * R, a1 * R, undefined, cx, cy, 300); }
+  for (const [res, n] of counts) { const [a0, a1] = RINGS[res]; for (let i = 0; i < Math.round(n * area * D.rich * SC.count); i++) tryPlace(res, a0 * R, a1 * R, undefined, cx, cy, 300); }
   const [o0, o1] = RINGS.crude_oil;
-  for (let i = 0; i < Math.round(10 * area * D.rich); i++) {
+  for (let i = 0; i < Math.round(10 * area * D.rich * SC.count); i++) {
     const c = tryPlace('crude_oil', o0 * R, o1 * R);
     if (!c) continue;
-    const n = 2 + Math.floor(r() * 4);
+    const n = SC.oilCluster[0] + Math.floor(r() * SC.oilCluster[1]);
     for (let k = 0; k < n; k++) tryPlace('crude_oil', 5, 14, undefined, c.x, c.y, 200);
   }
   if (v >= 4) {
     // uranium: rare, glowing, near the edges of the map
     const [u0, u1] = RINGS.uranium;
-    for (let i = 0; i < Math.max(4, Math.round(16 * area * D.rich)); i++) tryPlace('uranium', u0 * R, u1 * R, undefined, cx, cy, 300);
+    for (let i = 0; i < Math.max(4, Math.round(16 * area * D.rich * SC.count)); i++) tryPlace('uranium', u0 * R, u1 * R, undefined, cx, cy, 300);
   }
   carvePasses(tiles, cx, cy, nodes, isl ? seed : 0);
   if (v >= 7) offshoreOil(tiles, trees, nodes, nodeGrid, r);

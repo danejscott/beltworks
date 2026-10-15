@@ -11,7 +11,7 @@ import { H, W } from '../terrain';
 import { signalRed, trainPoints, WAGON_CAP } from '../trains';
 import { nightness } from '../daynight';
 import { DX, DY, easeOutBack, hash2 } from '../util';
-import { parts, spawn, view } from '../view';
+import { parts, proj, spawn, view } from '../view';
 import { Ent, entAt, frontTiles, G, inPort, LH, PORTED, railSides } from '../world';
 import { Billboards } from './bb';
 import { C, screenRay } from './core';
@@ -77,6 +77,17 @@ class Batch {
     if (this.n >= this.cap) { this.cap *= 2; this.make(this.mesh); }
     m.toArray(this.mesh.instanceMatrix.array as Float32Array, this.n * 16);
     if (this.colors && c) c.toArray(this.mesh.instanceColor!.array as Float32Array, this.n * 3);
+    this.n++;
+  }
+  /** one instance turned about the vertical axis (written straight into the buffer — much cheaper than compose) */
+  pushYaw(x: number, y: number, z: number, ry: number, s = 1, r?: number, g?: number, b?: number) {
+    if (this.n >= this.cap) { this.cap *= 2; this.make(this.mesh); }
+    const a = this.mesh.instanceMatrix.array as Float32Array, o = this.n * 16, c = Math.cos(ry) * s, sn = Math.sin(ry) * s;
+    a[o] = c; a[o + 1] = 0; a[o + 2] = -sn; a[o + 3] = 0;
+    a[o + 4] = 0; a[o + 5] = s; a[o + 6] = 0; a[o + 7] = 0;
+    a[o + 8] = sn; a[o + 9] = 0; a[o + 10] = c; a[o + 11] = 0;
+    a[o + 12] = x; a[o + 13] = y; a[o + 14] = z; a[o + 15] = 1;
+    if (this.colors && r !== undefined) { const ca = this.mesh.instanceColor!.array as Float32Array, k = this.n * 3; ca[k] = r; ca[k + 1] = g!; ca[k + 2] = b!; }
     this.n++;
   }
   /** append recorded instances (16 floats per matrix, 3 per colour) */
@@ -272,6 +283,16 @@ function pushPortArrows(L: LayerLike, e: Ent, pre: string, force = false) {
 const arrowModel = () => mdl('arrow', () => { const b = new B(); b.add(new THREE.ConeGeometry(0.16, 0.3, 3), M.orange, 0, 0.03, 0, 0, 0, -HP); return b.build(); });
 /** level-of-detail settings (tweakable from the console for testing) */
 export const LOD = { itemFar: 0.45 };
+/** optional section timers for the 3D update (BW.DR.DRP.on = true) */
+export const DRP: Record<string, number> & { on: boolean } = { on: false } as any;
+let _dp = 0;
+const dmark = (k: string) => { if (!DRP.on) return; const n = performance.now(); DRP[k] = (DRP[k] || 0) + n - _dp; _dp = n; };
+/** the visible part of the ground this frame */
+const VB = { x0: 0, y0: 0, x1: 0, y1: 0 };
+const inView = (x: number, y: number, pad = 0) => x >= VB.x0 - pad && x <= VB.x1 + pad && y >= VB.y0 - pad && y <= VB.y1 + pad;
+/** item colours as numbers (parsing a colour string per item, per frame, was slow) */
+const itemRGB = new Map<string, [number, number, number]>();
+const rgbOf = (k: string) => { let c = itemRGB.get(k); if (!c) { const t = new THREE.Color(ITEMS[k].c); itemRGB.set(k, c = [t.r, t.g, t.b]); } return c; };
 let cargoMat: THREE.Material | null = null, itemFarMat: THREE.Material | null = null;
 const beltKey = (b: Ent) => G.S.shop.gold ? 'gold' : (b.type in { belt1: 1, belt2: 1, belt3: 1, belt4: 1 } ? b.type : 'belt1');
 const surfS = () => mdl('surfS', () => ({ geo: MD.beltSurfaceStraight(), mats: [] }));
@@ -550,11 +571,13 @@ const GLOW_OR = hexCol('#ff9a3a', 0.8), SMOKE_L = rgba(0.9, 0.9, 0.92, 0.45), SM
 export interface Label3 { x: number; y: number; z: number; t: string; c: string }
 export function update3D(time: number, real: number, dt: number, labels: Label3[]) {
   leafUniform.value = real;
+  if (DRP.on) _dp = performance.now();
   // static layer
   if (real - lastStatic > 1) { lastStatic = real; const sig = fluidSig(); if (sig !== lastFluidSig) { lastFluidSig = sig; fullNext = true; needAssemble = true; } }
   const wantR = C.dist * 1.3 + 16;
   if (Math.abs(view.cam.x - stX) > stR * 0.3 || Math.abs(view.cam.y - stY) > stR * 0.3 || Math.abs(wantR - stR) > stR * 0.3) needAssemble = true;
   if (G.rev !== lastRev || needAssemble || (popping && real >= popUntil)) rebuildStatic(real);
+  dmark('static');
   // trees near the camera
   const R = Math.min(150, C.dist * 1.7 + 25);
   const ts = treeState;
@@ -562,6 +585,7 @@ export function update3D(time: number, real: number, dt: number, labels: Label3[
     rebuildTrees(view.cam.x, view.cam.y, R); ts.x = view.cam.x; ts.y = view.cam.y; ts.r = R; ts.rev = G.treeRev; ts.t = real;
     T3.uniforms.uCamT.value.set(ts.x, ts.y); T3.uniforms.uTreeR.value = R;
   }
+  dmark('trees');
   // dynamic layer
   DL.begin(); bbs.begin(); bbAdd.begin();
   for (const e of popEnts) {
@@ -574,23 +598,34 @@ export function update3D(time: number, real: number, dt: number, labels: Label3[
   ZO = 0;
   const near = C.dist < 60, close = C.dist < 30;
   const tgx = view.cam.x, tgy = view.cam.y, VR = C.dist * 1.6 + 20;
+  // what the camera actually sees on the ground (a box around the four screen corners), within the VR square
+  { let x0 = Infinity, y0 = Infinity, x1 = -Infinity, y1 = -Infinity;
+    for (const [sx, sy] of [[0, 0], [view.cw, 0], [0, view.ch], [view.cw, view.ch]]) { const [wx, wy] = proj.s2w(sx, sy); x0 = Math.min(x0, wx); x1 = Math.max(x1, wx); y0 = Math.min(y0, wy); y1 = Math.max(y1, wy); }
+    VB.x0 = Math.max(tgx - VR, (isFinite(x0) ? x0 : -1e9) - 3); VB.x1 = Math.min(tgx + VR, (isFinite(x1) ? x1 : 1e9) + 3);
+    VB.y0 = Math.max(tgy - VR, (isFinite(y0) ? y0 : -1e9) - 3); VB.y1 = Math.min(tgy + VR, (isFinite(y1) ? y1 : 1e9) + 3); }
+  dmark('pops');
+  let lightB: Batch | null = null;
   for (const e of animEnts) {
     if (!G.ents.has(e.id) || (e.z || 0) > view.level) continue;
     const t = TPL[e.type], d = BLD[e.type];
     const busy = d.kind === 'gen' ? (e.avail > 0 && e.pnet && e.pnet.load > 0) : (e.st === 'work' || e.st === 'lowpower');
-    const cx = e.x + e.w / 2, cy = e.y + e.h / 2, ry = rotOf(e);
+    const cx = e.x + e.w / 2, cy = e.y + e.h / 2;
+    if (!inView(cx, cy, e.w + 2)) continue;
+    const ry = rotOf(e);
     const far = Math.abs(cx - tgx) > VR || Math.abs(cy - tgy) > VR;
     const zoff = (e.z || 0) * LH;
+    if (!far && t.anims.length) {
     ZO = zoff;
     const base = compose(cx, 0, cy, ry);
     ZO = 0;
     const baseM = LM.copy(base);
-    if (!far) for (const a of t.anims) {
+    for (const a of t.anims) {
       AO.x = AO.y = AO.z = AO.rx = AO.ry = AO.rz = 0; AO.s = 1;
       a.fn(AO, e, time, real, !!busy);
       EU.set(AO.rx, AO.ry, AO.rz); Q.setFromEuler(EU); V.set(AO.x, AO.y, AO.z); SV.set(AO.s, AO.s, AO.s);
       const m = AM.compose(V, Q, SV).premultiply(baseM);
       DL.get('A:' + e.type + ':' + a.key + tkey(e.o), a.model.geo, tint(a.model.mats, e.o)).push(m);
+    }
     }
     const co = Math.cos(ry), si = Math.sin(ry);
     const loc = (p: number[]) => [cx + p[0] * co + p[2] * si, cy - p[0] * si + p[2] * co, p[1] + zoff];
@@ -598,7 +633,8 @@ export function update3D(time: number, real: number, dt: number, labels: Label3[
       const st = d.kind === 'gen' ? (e.st || 'idle') : e.st || 'idle';
       const [lx, ly, lz] = loc(t.light);
       const blink = (st === 'block' || st === 'nopower') && Math.sin(real * 7) < 0;
-      DL.get('light', mdl('lightS', () => ({ geo: new THREE.SphereGeometry(0.07, 8, 6), mats: [] })).geo, lightMat, false, true).push(compose(lx, lz, ly, 0, blink ? 0.3 : 1, blink ? 0.3 : 1, blink ? 0.3 : 1), stc(st));
+      const sc = stc(st);
+      (lightB || (lightB = DL.get('light', mdl('lightS', () => ({ geo: new THREE.SphereGeometry(0.07, 8, 6), mats: [] })).geo, lightMat, false, true) as Batch)).pushYaw(lx, lz, ly, 0, blink ? 0.3 : 1, sc.r, sc.g, sc.b);
       if (near && !blink) bbAdd.add(lx, ly, lz, 0.35, 0.35, SPR.glow, hexCol(ST_COL[st] || '#888888', 0.5));
     }
     if (far) continue;
@@ -623,17 +659,22 @@ export function update3D(time: number, real: number, dt: number, labels: Label3[
     if ((e.st === 'nopower' || e.st === 'lowpower') && Math.sin(real * 5) > -0.2) bbs.add(cx, cy, zoff + t.height + 0.3, 0.5, 0.5, SPR.bolt);
     if (close && d.kind === 'machine' && (e.st === 'starve' || e.st === 'idle') && Math.random() < 0.003) spawn(cx, cy, { z: zoff + t.height, vz: 0.4, vx: 0.15, life: 2.2, spr: 'zz', size: 0.35, vr: 0, rot: 0, col: rgba(1, 1, 1, 0.8) });
   }
+  dmark('anims');
   // items on belts
   // (far from the middle of the view they're simple coloured blocks: one draw call, no shadows)
   if (C.dist < 120) {
     const FR = VR * LOD.itemFar, farM = mdl('itemFar', () => ({ geo: new THREE.BoxGeometry(0.3, 0.14, 0.3).translate(0, 0.07, 0), mats: [] }));
     const farMat = itemFarMat || (itemFarMat = std('#ffffff', 0.8, 0.05));
+    const farB = DL.get('itemFar', farM.geo, farMat, false, true) as Batch;
+    const nearB = new Map<string, Batch>();
+    const batchFor = (k: string) => { let bt = nearB.get(k); if (!bt) { const im = MD.itemModel(k); nearB.set(k, bt = DL.get('item:' + k, im.geo, im.mat, close) as Batch); } return bt; };
     for (const b of G.L.belts) {
-      if (!b.items.length || Math.abs(b.x - tgx) > VR || Math.abs(b.y - tgy) > VR || (b.z || 0) > view.level || b.type.startsWith('lift')) continue;
+      if (!b.items.length || !inView(b.x, b.y, 1) || (b.z || 0) > view.level || b.type.startsWith('lift')) continue;
       const far = Math.abs(b.x - tgx) > FR || Math.abs(b.y - tgy) > FR;
-      const bz = (b.z || 0) * LH;
+      const bz = (b.z || 0) * LH + 0.23;
       const p = b.pts;
       const isT = b.type === 'tunnel', ex = isT && b.pair ? G.ents.get(b.pair) : null;
+      const straight = !isT && !(b.curve >= 0), sAng = straight ? Math.atan2(p[5] - p[1], p[4] - p[0]) : 0;
       for (const it of b.items) {
         let x: number, y: number, ang: number;
         if (isT) {
@@ -641,18 +682,21 @@ export function update3D(time: number, real: number, dt: number, labels: Label3[
           else if (ex && it.pos >= b.len - 0.3) { const t = it.pos - (b.len - 1); x = ex.x + 0.5 + DX[b.rot] * (t - 0.5); y = ex.y + 0.5 + DY[b.rot] * (t - 0.5); }
           else continue;
           ang = b.rot * HP;
+        } else if (straight) {
+          const t = it.pos > 1 ? 1 : it.pos;
+          x = p[0] + (p[4] - p[0]) * t; y = p[1] + (p[5] - p[1]) * t; ang = sAng;
         } else {
           const t = it.pos > 1 ? 1 : it.pos, u = 1 - t;
           x = u * u * p[0] + 2 * u * t * p[2] + t * t * p[4]; y = u * u * p[1] + 2 * u * t * p[3] + t * t * p[5];
           const tx = 2 * u * (p[2] - p[0]) + 2 * t * (p[4] - p[2]), ty = 2 * u * (p[3] - p[1]) + 2 * t * (p[5] - p[3]);
           ang = Math.atan2(ty, tx);
         }
-        if (far) { COL.set(ITEMS[it.it].c); DL.get('itemFar', farM.geo, farMat, false, true).push(compose(x, 0.23 + bz, y, -ang), COL); continue; }
-        const im = MD.itemModel(it.it);
-        DL.get('item:' + it.it, im.geo, im.mat, close).push(compose(x, 0.23 + bz, y, -ang));
+        if (far) { const c = rgbOf(it.it); farB.pushYaw(x, bz, y, -ang, 1, c[0], c[1], c[2]); continue; }
+        batchFor(it.it).pushYaw(x, bz, y, -ang);
       }
     }
   }
+  dmark('items');
   // trains
   for (const tr of G.trains) {
     const pts = trainPoints(tr);
@@ -812,6 +856,7 @@ export function update3D(time: number, real: number, dt: number, labels: Label3[
   bbs.end(); bbAdd.end();
   // belt texture scrolling
   for (const k in beltMats) { const sp = k === 'gold' ? 4 : BLD[k].speed!; beltMats[k].map!.offset.x = -((time * sp) % 1); }
+  dmark('rest');
   updateGhosts(real);
   updateSelection();
 }

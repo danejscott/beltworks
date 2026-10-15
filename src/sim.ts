@@ -492,8 +492,14 @@ export function myCraft(): CraftQ { const S: any = G.S; return S.cq || (S.cq = {
 export const handTime = (r: Recipe) => Math.max(0.3, r.t * 0.5 / (G.S.shop.hands ? 3 : 1));
 
 // ---------------------------------------------------------------------------
+/** optional section timers (BW.SIM.SIMP.on = true to collect) */
+export const SIMP: Record<string, number> & { on: boolean } = { on: false } as any;
+let _pt = 0;
+const pmark = (k: string) => { if (!SIMP.on) return; const n = performance.now(); SIMP[k] = (SIMP[k] || 0) + n - _pt; _pt = n; };
 export function update(dt: number) {
+  if (SIMP.on) _pt = performance.now();
   ensureFresh();
+  pmark('fresh');
   const S = G.S;
   S.time += dt;
   const sec = Math.floor(S.time);
@@ -507,7 +513,9 @@ export function update(dt: number) {
     if (sec % hist.every === 0 && stats.elapsed > 3) sampleHistory();
   }
   for (const n of G.fnets) n.budget = n.rate * dt;
+  pmark('stats');
   updatePower(dt);
+  pmark('power');
   const L = G.L;
   // team worlds: run each building in its owner's context; teams with nobody online stand still
   const T = MP.teams ? (e: { o?: number }) => { const o = e.o || 0; if (MP.paused.has(o)) return false; if (o !== MP.cur) useTeam(o); return true; } : null;
@@ -578,6 +586,7 @@ export function update(dt: number) {
     }
     if (e.ob > 0 && pushOut(e, 'wood')) e.ob--;
   }
+  pmark('miners');
   // machines
   for (const e of L.machines) { if (T && !T(e)) continue; updateMachine(e, dt); }
   // generators: fluid intake (and waste out)
@@ -588,6 +597,7 @@ export function update(dt: number) {
     if (d.water && g.water < 60) g.water += pullFluid(g, 'water', 60 - g.water);
     if (d.fuels) for (const k in d.fuels) if (isFluid(k)) { const have = g.fbuf[k] || 0; if (have < 30) g.fbuf[k] = have + pullFluid(g, k, 30 - have); }
   }
+  pmark('machines');
   // logistics
   for (const e of L.logi) {
     if (T && !T(e)) continue;
@@ -622,6 +632,7 @@ export function update(dt: number) {
       if (k && (e.type === 'truck_station' ? pushOutBack(e, k) : pushOut(e, k))) { e.store[k]--; e.tot--; e.kr = (e.kr || 0) + 1; if (!e.store[k]) delete e.store[k]; }
     }
   }
+  pmark('logi');
   // belts, downstream first
   for (const b of L.order) {
     const items = b.items;
@@ -645,11 +656,13 @@ export function update(dt: number) {
       else { it.pos = len; break; }
     }
   }
+  pmark('belts');
   updateTrains(dt);
   updateTrucks(dt);
   tickWear(dt);
   updateShips(dt);
   updateDrones(dt);
+  pmark('vehicles');
   // hand crafting (each team has its own queue)
   if (MP.teams) { for (const o of MP.teams.keys()) if (!MP.paused.has(o)) { useTeam(o); craftStep(dt); } useTeam(MP.myTeam); }
   else craftStep(dt);

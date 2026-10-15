@@ -8,6 +8,8 @@ import { deleteWorldFile, folderReady, listFolderWorlds, readWorldFile, writeWor
 
 const KEYS = ['o', 'items', 'pair', 'isExit', 'recipe', 'ib', 'ob', 'prog', 'work', 'clock', 'shards', 'amp', 'tm', 'store', 'tot', 'mode', 'name', 'buf', 'filt', 'slot', 'famt', 'ffluid', 'fuelT', 'fbuf', 'water', 'stored', 'pairs', 'target', 'outbox', 'obTot', 'inbox', 'ibTot', 'dr', 'sunk', 'anyIn', 'sig'];
 
+const treeCache = { arr: null as any, rev: -1, list: [] as number[] };
+const floorCache = { arr: null as any, rev: -1, list: [] as number[] };
 export function serialize() {
   ensureFresh();
   syncFluidMembers();
@@ -20,14 +22,24 @@ export function serialize() {
     if (o.items) o.items = e.items.map((it: any) => [it.it, Math.round(it.pos * 1000) / 1000]);
     ents.push(o);
   }
-  const floor: number[] = [];
-  if (G.floorN) for (let i = 0; i < W * H; i++) if (G.floor[i]) floor.push(i, G.floor[i]);
-  const removed: number[] = [];
-  // chopped trees: compare four tiles at a time (big maps have tens of millions of tiles)
-  const t0 = G.trees0, t1 = G.trees, n4 = (W * H) >> 2;
-  const a4 = new Uint32Array(t0.buffer, t0.byteOffset, n4), b4 = new Uint32Array(t1.buffer, t1.byteOffset, n4);
-  for (let q = 0; q < n4; q++) if (a4[q] & ~b4[q]) for (let i = q * 4; i < q * 4 + 4; i++) if (t0[i] && !t1[i]) removed.push(i);
-  for (let i = n4 * 4; i < W * H; i++) if (t0[i] && !t1[i]) removed.push(i);
+  // foundation decks and chopped trees mean scanning every tile of the map (millions on big maps), so the lists are
+  // kept between saves and only rebuilt when floors or trees actually changed (autosaves no longer stutter)
+  if (floorCache.arr !== G.floor || floorCache.rev !== (G as any).floorRev) {
+    const floor: number[] = [];
+    if (G.floorN) for (let i = 0; i < W * H; i++) if (G.floor[i]) floor.push(i, G.floor[i]);
+    floorCache.arr = G.floor; floorCache.rev = (G as any).floorRev; floorCache.list = floor;
+  }
+  const floor = floorCache.list;
+  if (treeCache.arr !== G.trees || treeCache.rev !== G.treeRev) {
+    const removed: number[] = [];
+    // chopped trees: compare four tiles at a time
+    const t0 = G.trees0, t1 = G.trees, n4 = (W * H) >> 2;
+    const a4 = new Uint32Array(t0.buffer, t0.byteOffset, n4), b4 = new Uint32Array(t1.buffer, t1.byteOffset, n4);
+    for (let q = 0; q < n4; q++) if (a4[q] & ~b4[q]) for (let i = q * 4; i < q * 4 + 4; i++) if (t0[i] && !t1[i]) removed.push(i);
+    for (let i = n4 * 4; i < W * H; i++) if (t0[i] && !t1[i]) removed.push(i);
+    treeCache.arr = G.trees; treeCache.rev = G.treeRev; treeCache.list = removed;
+  }
+  const removed = treeCache.list;
   let mp: any;
   if (MP.teams) {
     // team world: the shared world fields, then each team's own state
@@ -66,8 +78,10 @@ export function deserialize(o: any, keepTerrain = false) {
   resetWorld(S.seed, S, keepTerrain);
   for (const t of MP.teams ? MP.teams.values() : [S]) if (t.unlocked.has('ship_port')) t.unlocked.add('harbor');
   for (const i of o.removed || []) G.trees[i] = 0;
+  G.treeRev++;
   const fl = o.floor || [];
   for (let k = 0; k < fl.length; k += 2) { G.floor[fl[k]] = fl[k + 1]; for (let z = 1; z < 4; z++) if (fl[k + 1] & (1 << z)) G.floorN++; }
+  (G as any).floorRev = ((G as any).floorRev || 0) + 1;
   for (const q of o.ents) {
     const e = place(q.t, q.x, q.y, q.r, { free: true, quiet: true, id: q.i, z: q.z || 0 });
     for (const k of KEYS) if (q[k] !== undefined) e[k] = q[k];

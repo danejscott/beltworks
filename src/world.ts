@@ -334,6 +334,7 @@ export function setFloor(x: number, y: number, z: number, on: boolean) {
   const i = y * W + x, bit = 1 << z, had = !!(G.floor[i] & bit);
   if (on === had) return;
   if (on) { G.floor[i] |= bit; G.floorN++; } else { G.floor[i] &= ~bit; G.floorN--; }
+  (G as any).floorRev = ((G as any).floorRev || 0) + 1;
   G.rev++; G.touched.push(x, y, x, y); G.touchN++;
 }
 /** something changed: everything gets redrawn, or — given the area that changed — just the part of the map around it */
@@ -471,7 +472,7 @@ export function newState(seed: number, o: { name?: string; mode?: string; size?:
     seed, inv, unlocked: new Set(START_UNLOCKS), done: new Set(), maxTier: 0, elev: {}, time: 0, won: false,
     flags: {}, delivered: {}, speed: 1, points: 0, coupons: 0, couponsEarned: 0, shop: {}, stationSeq: 0, trainSeq: 0,
     name: o.name || 'New World', mode, size: o.size || 1024, regrow: [],
-    dayNight: o.dayNight !== false, genV: 7, portsV: 2, lenV: 1, depV: 1, lines: [], looted: [], alts: [], altOffer: null, ach: {}, made: {}, discN: null, discF: null, truckSeq: 0, lineSeq: 0,
+    dayNight: o.dayNight !== false, genV: 8, portsV: 2, lenV: 1, depV: 1, lines: [], looted: [], alts: [], altOffer: null, ach: {}, made: {}, discN: null, discF: null, truckSeq: 0, lineSeq: 0,
   };
   if (mode === 'creative') {
     for (const k in BLD) S.unlocked.add(k);
