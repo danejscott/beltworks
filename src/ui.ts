@@ -733,7 +733,7 @@ const HELP = `<div class="help cols"><div>
 <h3>Ratios</h3><ul><li>Miner Mk1 on a normal node = 120/min → feeds <b>2 smelters</b></li><li>Belts: Mk1 240 · Mk2 480 · Mk3 960 · Mk4 1440 /min</li><li>Click any machine for its exact rates; <kbd>P</kbd> shows totals.</li></ul>
 </div><div>
 <h3>Controls</h3><ul>
-<li><kbd>Tab</kbd> build category · <kbd>1</kbd>–<kbd>0</kbd> pick a building · <kbd>F</kbd> belt</li>
+<li><kbd>Tab</kbd> build category · <kbd>1</kbd>–<kbd>0</kbd> pick a building · <kbd>F</kbd> belt (press <kbd>F</kbd> or the belt slot again to switch belt speed: Mk4 → Mk3 → Mk2 → Mk1)</li>
 <li><kbd>R</kbd> rotate (Shift+R back). While dragging belts/rails/pipes, <kbd>R</kbd> flips the corner.</li>
 <li><kbd>Q</kbd> copy the hovered building (with recipe)</li>
 <li><kbd>X</kbd> deconstruct — click or drag a box (also clears trees)</li>

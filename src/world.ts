@@ -259,7 +259,7 @@ export function canPlace(type: string, x: number, y: number, rot: number, o: { f
       const a = pierAlong({ x, y, w, h, rot }, tx, ty);
       if (t === TT.ROCK) return 'Can\'t build on rock';
       if (a === 0 && !isLand(t)) return 'The land end (behind the arrow) must be on the shore';
-      if (a >= 3 && !isWater(t)) return 'Build it out over the water: the arrow end must reach the lake or sea';
+      if (a >= 2 && !isWater(t)) return 'Build it out over the water: everything past the first two tiles must stand in the lake or sea';
       if (G.nodeGrid[ty * W + tx]) return 'Resource node in the way';
       if (G.featGrid && G.featGrid[ty * W + tx]) return 'Something is in the way';
       continue;

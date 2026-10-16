@@ -38,9 +38,28 @@ export function setTool(t: any) {
   UI.renderHotbar(); UI.updateHint();
 }
 export function setCat(i: number) { curCat = (i + CATS.length) % CATS.length; UI.renderHotbar(); }
+/** grouped slots (belts Mk1-4, storage sizes): the tier the player picked last, else the best unlocked one */
+const tierPick: Record<string, string> = {};
 export function bestOf(entry: string | string[]) {
   if (typeof entry === 'string') return entry;
+  const p = tierPick[entry[0]];
+  if (p && G.S.unlocked.has(p)) return p;
   return entry.find(t => G.S.unlocked.has(t)) || entry[entry.length - 1];
+}
+/** pick a slot; picking a grouped slot that's already in hand steps to the next unlocked tier (Mk4 → Mk3 → … → Mk4) */
+function pickEntry(entry: string | string[]) {
+  if (typeof entry !== 'string' && tool.t && tool.t.k === 'build' && entry.includes(tool.t.type)) {
+    const un = entry.filter(t => G.S.unlocked.has(t));
+    if (un.length > 1) {
+      const next = un[(un.indexOf(tool.t.type) + 1) % un.length];
+      tierPick[entry[0]] = next;
+      sfx('click'); setTool({ k: 'build', type: next });
+      const d = BLD[next];
+      UI.toast(`${d.n}${d.speed ? ` — ${d.speed * 120} items/min` : ''} · press again for ${BLD[un[(un.indexOf(next) + 1) % un.length]].n}`, '');
+      return;
+    }
+  }
+  selectType(bestOf(entry));
 }
 export function selectType(type: string) {
   if (!G.S.unlocked.has(type)) {
@@ -56,7 +75,7 @@ export function selectType(type: string) {
 export function selectSlot(i: number) {
   const entry = CATS[curCat].types[i];
   if (!entry) return;
-  selectType(bestOf(entry));
+  pickEntry(entry);
 }
 
 /** entity on the active floor */
@@ -540,7 +559,7 @@ export function initInput(canvas: HTMLCanvasElement) {
     if (UI.modalOpen() && !['h', 'c', 'p', 'k', 'b', 'm', 'i', 'o', 'y'].includes(k)) return;
     if (k >= '0' && k <= '9') { selectSlot(k === '0' ? 9 : +k - 1); return; }
     if (k === 'tab') { ev.preventDefault(); setCat(curCat + (ev.shiftKey ? -1 : 1)); return; }
-    if (k === 'f') { selectType(bestOf(CATS.find(c => c.id === 'log')!.types[0])); return; }
+    if (k === 'f') { pickEntry(CATS.find(c => c.id === 'log')!.types[0]); return; }
     if (k === 'r') {
       if (drag) { drag.axis = drag.axis === 'v' ? 'h' : 'v'; sfx('click'); return; }
       if (tool.t && tool.t.k === 'paste') { tool.t.prot = ((tool.t.prot || 0) + (ev.shiftKey ? 3 : 1)) & 3; sfx('click'); return; }

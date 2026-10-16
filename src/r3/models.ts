@@ -435,7 +435,7 @@ export function buildTemplates(): Record<string, Template> {
     // lamp posts, and a beacon at the sea end on the big pier
     for (const [x, z] of [[x0 + 2.15, Z - 0.2], [xe - 0.25, -(Z - 0.2)]]) { b.cyl(0.04, 2.0, x, 0.4, z, M.steelDk, 6); b.box(0.28, 0.08, 0.16, x, 2.4, z, M.glowWhite); }
     if (big) { b.cyl(0.12, 0.9, xe - 0.3, 0.4, Z - 0.3, M.white, 8); b.cyl(0.13, 0.15, xe - 0.3, 0.9, Z - 0.3, M.red, 8); b.cyl(0.08, 0.14, xe - 0.3, 1.3, Z - 0.3, M.glowWhite, 8); }
-    const trolley = (cxn: number, key: string, ph0: number) => ({ key, model: one(b2 => { b2.box(0.5, 0.25, 0.5, 0, 0, 0, M.steelDk); b2.cyl(0.015, 1.9, 0, -1.9, 0, M.steelDk, 4); b2.box(1.0, 0.4, 0.5, 0, -2.3, 0, M.red); }),
+    const trolley = (cxn: number, key: string, ph0: number) => ({ key, model: one(b2 => { b2.box(0.5, 0.25, 0.5, 0, 0, 0, M.steelDk); b2.cyl(0.015, 1.25, 0, -1.25, 0, M.steelDk, 4); b2.box(1.0, 0.4, 0.5, 0, -1.65, 0, M.red); }),
       fn: (o: any, _e: any, _t: any, real: number) => { const ph = (Math.sin(real * 0.35 + ph0) + 1) / 2; o.x = cxn; o.y = 3.35; o.z = -(Z - 0.35) + ph * (Wd + 0.4); } });
     return { stat: b.build(), height: 4.0, light: [x0 + 1.55, 1.7, -(Z - 0.45)], anims: cranes.map((c, i) => trolley(c, 'trolley' + i, i * 2.1)) } as Template;
   };
@@ -691,7 +691,10 @@ export function shipModel(): Model {
   return one(b => {
     // hull: dark sides, a red waterline band, a pointed bow and a rounded stern
     b.add(new THREE.BoxGeometry(4.5, 0.8, 1.7), M.steelDk, -0.15, 0.1, 0);
-    b.add(new THREE.CylinderGeometry(0.85, 0.85, 0.8, 3, 1), M.steelDk, 2.1, 0.1, 0, 0, Math.PI / 2, 0, 1.25, 1, 1);
+    // a full, rounded bow (half a cylinder squashed lengthwise) instead of a sharp wedge
+    b.add(new THREE.CylinderGeometry(0.85, 0.85, 0.8, 16, 1, false, 0, Math.PI), M.steelDk, 2.1, 0.1, 0, 0, 0, 0, 0.7, 1, 1);
+    b.add(new THREE.CylinderGeometry(0.87, 0.87, 0.12, 16, 1, false, 0, Math.PI), M.red, 2.1, -0.16, 0, 0, 0, 0, 0.71, 1, 1);
+    b.add(new THREE.CylinderGeometry(0.89, 0.89, 0.08, 16, 1, false, 0, Math.PI), M.red, 2.1, 0.54, 0, 0, 0, 0, 0.72, 1, 1);
     b.add(new THREE.CylinderGeometry(0.85, 0.85, 0.8, 12, 1, false, 0, Math.PI), M.steelDk, -2.4, 0.1, 0, 0, Math.PI, 0, 0.45, 1, 1);
     b.box(4.5, 0.12, 1.72, -0.15, -0.22, 0, M.red);
     b.box(4.7, 0.08, 1.76, -0.05, 0.5, 0, M.red);

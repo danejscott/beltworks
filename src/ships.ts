@@ -24,8 +24,17 @@ function cost(i: number): number {
 export const shipPassable = (i: number) => cost(i) >= 0;
 /** water tiles next to a port where a ship can moor */
 export function berths(p: Ent): number[] {
-  const t = BLD[p.type].pier ? borderTiles(p).filter(([x, y]) => pierAlong(p, x, y) >= 3) : borderTiles(p);
-  return t.map(([x, y]) => y * W + x).filter(i => i >= 0 && i < G.tiles.length && cost(i) >= 0);
+  const ok = (x: number, y: number) => x >= 0 && y >= 0 && x < W && y < G.tiles.length / W && cost(y * W + x) >= 0;
+  if (!BLD[p.type].pier) return borderTiles(p).filter(([x, y]) => ok(x, y)).map(([x, y]) => y * W + x);
+  // along the pier, only where the whole hull (about 5 tiles) floats in open water with a tile to spare outside it:
+  // a ship never moors where it would sit on the beach
+  const ax = p.rot & 1 ? 0 : 1, ay = p.rot & 1 ? 1 : 0;   // along the pier
+  return borderTiles(p).filter(([x, y]) => {
+    if (pierAlong(p, x, y) < 3) return false;
+    const ox = x < p.x ? -1 : x >= p.x + p.w ? 1 : 0, oy = y < p.y ? -1 : y >= p.y + p.h ? 1 : 0;   // away from the pier
+    for (let k = -2; k <= 2; k++) for (let o = 0; o <= 1; o++) if (!ok(x + ax * k + ox * o, y + ay * k + oy * o)) return false;
+    return true;
+  }).map(([x, y]) => y * W + x);
 }
 /** berths no other ship has claimed */
 function freeBerths(p: Ent, me: Ship): number[] {
@@ -165,7 +174,7 @@ export function updateShips(dt: number) {
           const bay = (s as any).bay;
           if (bay >= 0) {
             const bx = bay % W + 0.5, by = Math.floor(bay / W) + 0.5, cx = p.x + p.w / 2, cy = p.y + p.h / 2;
-            const tx = p.rot & 1 ? bx + Math.sign(bx - cx) * 0.45 : bx, ty = p.rot & 1 ? by : by + Math.sign(by - cy) * 0.45;
+            const tx = p.rot & 1 ? bx + Math.sign(bx - cx) * 0.75 : bx, ty = p.rot & 1 ? by : by + Math.sign(by - cy) * 0.75;
             s.x += (tx - s.x) * Math.min(1, dt * 1.2); s.y += (ty - s.y) * Math.min(1, dt * 1.2);
           }
         }
