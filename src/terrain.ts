@@ -74,8 +74,8 @@ function genParams(seed: number, v: number) {
   P.hx = Math.max(130, Math.min(W - 134, off(W))); P.hy = Math.max(130, Math.min(H - 134, off(H)));
   return P;
 }
-export function genTerrain(seed: number, mode = 'easy', v = 1, land = W): Terrain {
-  if (v >= 3) return genTerrainV3(seed, mode, v, land);
+export function genTerrain(seed: number, mode = 'easy', v = 1, land = W, resMode?: string): Terrain {
+  if (v >= 3) return genTerrainV3(seed, mode, v, land, resMode);
   const tiles = new Uint8Array(W * H), trees = new Uint8Array(W * H);
   const P = genParams(seed, v);
   HX = P.hx; HY = P.hy;
@@ -225,7 +225,7 @@ function coarseField(st: number, fn: (x: number, y: number) => number) {
   };
 }
 /** v6: organic region borders (warped), soft desert drying, noisy blobs, and an island coastline */
-function genTerrainV3(seed: number, mode: string, v = 3, land = W): Terrain {
+function genTerrainV3(seed: number, mode: string, v = 3, land = W, resMode?: string): Terrain {
   const isl = v >= 6;
   const tiles = new Uint8Array(W * H), trees = new Uint8Array(W * H);
   const r = mulberry32(seed * 31 + 11);
@@ -398,7 +398,7 @@ function genTerrainV3(seed: number, mode: string, v = 3, land = W): Terrain {
     easy: { rich: 0.7, pureBias: -0.04, impure: 0.5 }, normal: { rich: 0.51, pureBias: -0.08, impure: 0.6 },
     hard: { rich: 0.33, pureBias: -0.12, impure: 0.7 }, creative: { rich: 1.2, pureBias: 0.08, impure: 0.3 },
   };
-  const RS = v >= 9 ? (RV9[mode] || RV9.normal) : { rich: D.rich * SC.count, pureBias: D.pureBias, impure: D.impure + SC.impure };
+  const RS = v >= 9 ? (RV9[resMode || mode] || RV9.normal) : { rich: D.rich * SC.count, pureBias: D.pureBias, impure: D.impure + SC.impure };
   const pureMul = v >= 9 ? 1 : SC.pure;
   const purity = (f: number) => { const q = r(), pc = Math.max(0.02, (0.04 + 0.34 * clamp((f - 0.1) / 0.75, 0, 1) + RS.pureBias) * pureMul); return q < pc ? 2 : q < pc + RS.impure ? 0 : 1; };
   const tryPlace = (res: string, dmin: number, dmax: number, p?: number, ox = cx, oy = cy, tries = 900) => {

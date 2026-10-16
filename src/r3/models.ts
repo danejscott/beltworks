@@ -351,11 +351,16 @@ export function buildTemplates(): Record<string, Template> {
     T.station = { stat: b.build(), height: 2.4, light: [1.35, 1.9, 0.2], anims: [] };
   }
   {
+    // a drone rack: three landing pads in a row under a gantry, with the control hut behind
     const b = new B();
     b.box(2.9, 0.45, 2.9, 0, 0, 0, M.grey);
-    b.torus(0.95, 0.05, 0, 0.47, 0, M.yellow);
-    b.box(0.08, 0.02, 1.2, -0.3, 0.46, 0, M.white); b.box(0.08, 0.02, 1.2, 0.3, 0.46, 0, M.white); b.box(0.6, 0.02, 0.08, 0, 0.46, 0, M.white);
-    b.box(0.7, 1.2, 0.7, 1.05, 0.45, -1.05, M.orange); b.cyl(0.04, 0.8, 1.05, 1.65, -1.05, M.steel, 6);
+    for (const px of [-1, 0, 1]) {
+      b.box(0.86, 0.06, 0.86, px, 0.45, 0.1, M.steelDk); b.torus(0.32, 0.03, px, 0.52, 0.1, M.yellow);
+      b.box(0.05, 0.02, 0.4, px - 0.1, 0.52, 0.1, M.white); b.box(0.05, 0.02, 0.4, px + 0.1, 0.52, 0.1, M.white); b.box(0.25, 0.02, 0.05, px, 0.52, 0.1, M.white);
+    }
+    for (const px of [-1.45, 1.45]) b.box(0.1, 1.6, 0.1, px, 0.45, 0.6, M.steelDk);
+    b.box(3.0, 0.1, 0.1, 0, 2.0, 0.6, M.steelDk); for (const px of [-1, 0, 1]) b.box(0.08, 0.3, 0.08, px, 1.72, 0.6, M.yellow);
+    b.box(2.6, 0.9, 0.6, 0, 0.45, -1.1, M.orange); b.box(2.64, 0.08, 0.64, 0, 1.35, -1.1, M.steelDk); b.cyl(0.04, 0.8, 1.05, 1.43, -1.1, M.steel, 6);
     T.drone_port = { stat: b.build(), height: 1.6, light: [-1.3, 0.5, 1.3], anims: [] };
   }
   // ---- Nuclear power plant: reactor dome and two cooling towers

@@ -11,9 +11,9 @@ import { me, recentServers, saveMe, serverURL, setServerURL } from './net';
 import { fmtCode, normCode, PLAYER_COLS } from './online';
 
 export const title = { open: false };
-export interface NewWorldOpts { name: string; size: number; mode: string; dayNight: boolean }
+export interface NewWorldOpts { name: string; size: number; mode: string; dayNight: boolean; res?: string }
 let handlers: { play: (id: string) => void; create: (o: NewWorldOpts) => void; imported: () => void; online: (o: { code?: string; create?: NewWorldOpts }) => void };
-let sel = { size: 'medium', mode: 'normal', dn: 'on', tab: 'new', osize: 'large', omode: 'normal', odn: 'on', col: '' };
+let sel = { size: 'medium', mode: 'normal', dn: 'on', res: 'normal', tab: 'new', osize: 'large', omode: 'normal', odn: 'on', col: '' };
 let invited = '';
 /** opened from an invite link: show the online tab with the code filled in */
 export function setInvite(code: string) { invited = code; sel.tab = 'online'; }
@@ -59,6 +59,8 @@ export async function showTitle(h: typeof handlers) {
         <div class="opts">${Object.entries(SIZES).map(([k, s]) => `<div class="opt ${sel.size === k ? 'sel' : ''}" data-tact="size:${k}"><b>${s.label}</b><span>${s.desc}</span></div>`).join('')}</div>
         <label class="flabel">Difficulty</label>
         <div class="opts two">${Object.entries(MODES).map(([k, m]) => `<div class="opt ${sel.mode === k ? 'sel' : ''}" data-tact="mode:${k}"><b>${m.icon} ${m.label} <span class="hrs">${m.hours}</span></b><span>${m.desc}</span></div>`).join('')}</div>
+        ${sel.mode === 'creative' ? `<label class="flabel">Resource layout</label>
+        <div class="opts">${[['easy', '🌱 Easy', 'Plenty of nodes, many pure ones.'], ['normal', '⚙️ Normal', 'Scarce nodes, few pure.'], ['hard', '⛏️ Hard', 'Very scarce, almost all impure.']].map(([k, l, d]) => `<div class="opt ${sel.res === k ? 'sel' : ''}" data-tact="res:${k}"><b>${l}</b><span>${d}</span></div>`).join('')}</div>` : ''}
         <label class="flabel">Day / night cycle</label>
         <div class="opts two">${[['on', '🌗 On', 'A 12-minute day. Solar power only works in daylight.'], ['off', '☀️ Off', 'Always sunny. (You can change this later in the menu.)']].map(([k, l, d]) => `<div class="opt ${sel.dn === k ? 'sel' : ''}" data-tact="dn:${k}"><b>${l}</b><span>${d}</span></div>`).join('')}</div>
         <button class="go big" data-tact="create">Create world</button>`}
@@ -150,14 +152,15 @@ export function initTitle() {
     else if (cmd === 'del') {
       ev.stopPropagation();
       if (confirm('Delete this world forever? (Export it from the in-game menu first if you want a backup.)')) { await deleteWorld(arg); showTitle(handlers); }
-    } else if (cmd === 'size' || cmd === 'mode' || cmd === 'dn') {
+    } else if (cmd === 'size' || cmd === 'mode' || cmd === 'dn' || cmd === 'res') {
       (sel as any)[cmd] = arg; sfx('click');
       a.parentElement!.querySelectorAll('.opt').forEach(o => o.classList.toggle('sel', o === a));
+      if (cmd === 'mode') { const n = ($('#wname') as HTMLInputElement)?.value; showTitle(handlers).then(() => { const i = $('#wname') as HTMLInputElement; if (i && n) i.value = n; }); }
     } else if (cmd === 'dice') { ($('#wname') as HTMLInputElement).value = randName(); sfx('click'); }
     else if (cmd === 'create') {
       const name = (($('#wname') as HTMLInputElement).value || '').trim() || randName();
       sfx('place');
-      handlers.create({ name, size: SIZES[sel.size].n, mode: sel.mode, dayNight: sel.dn === 'on' });
+      handlers.create({ name, size: SIZES[sel.size].n, mode: sel.mode, dayNight: sel.dn === 'on', res: sel.mode === 'creative' ? sel.res : undefined });
     } else if (cmd === 'import') importSave(ok => { if (ok) handlers.imported(); else alert('That is not a valid Beltworks save file.'); });
   });
 }

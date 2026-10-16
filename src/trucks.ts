@@ -26,7 +26,7 @@ function cost(i: number): number {
   // the pillars holding up a raised floor
   if (G.floorN && G.floor[i] > 1) { const x = i % W, y = (i / W) | 0; if ((x & 3) === 0 && (y & 3) === 0) return -1; }
   if (G.featGrid && G.featGrid[i]) return -1;
-  return G.trees[i] ? 1.6 : 1;
+  return G.trees[i] ? 1.1 : 1;   // (a forest slows trucks only a little: they take the shortest way through it)
 }
 export const truckPassable = (i: number) => cost(i) >= 0;
 
@@ -79,10 +79,23 @@ function parkedAt(me: Truck): Set<number> {
   return s;
 }
 /** 8-way A* over the tile grid (shared by trucks on land and ships on water) */
-export function gridPath(from: number, goals: Set<number>, cost: (i: number) => number, gx: number, gy: number, greed = 1.02, maxIter = 300000): number[] | null {
+/** shortest route over the tile grid (A*: 8 directions, never cutting corners). greed 1 = always the shortest way. */
+export function gridPath(from: number, goals: Set<number>, cost: (i: number) => number, gx: number, gy: number, greed = 1, maxIter = 400000): number[] | null {
   if (!goals.size) return null;
   if (goals.has(from)) return [];
-  const hf = (i: number) => { const dx = Math.abs(i % W - gx), dy = Math.abs(Math.floor(i / W) - gy); return (dx + dy - 0.59 * Math.min(dx, dy)) * greed; };
+  // distance estimate to the nearest goal tile (never more than the real distance, so the route found is the shortest);
+  // with many goals, to the goals' centre less the spread of the goals around it
+  const oct = (dx: number, dy: number) => { dx = Math.abs(dx); dy = Math.abs(dy); return dx + dy - 0.5858 * Math.min(dx, dy); };
+  const gl = [...goals], few = gl.length <= 24;
+  let spread = 0;
+  if (!few) for (const q of gl) spread = Math.max(spread, oct(q % W - gx, Math.floor(q / W) - gy));
+  const hf = (i: number) => {
+    const x = i % W, y = Math.floor(i / W);
+    let h: number;
+    if (few) { h = 1e9; for (const q of gl) { const d = oct(x - q % W, y - Math.floor(q / W)); if (d < h) h = d; } }
+    else h = Math.max(0, oct(x - gx, y - gy) - spread);
+    return h * greed;
+  };
   const g = new Map<number, number>(), prev = new Map<number, number>(), heap: number[][] = [];
   g.set(from, 0); prev.set(from, -1); heapPush(heap, [hf(from), from]);
   let found = -1, iter = 0;

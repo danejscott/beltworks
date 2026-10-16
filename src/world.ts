@@ -1,4 +1,4 @@
-import { applyGameLength, BLD, BDef, Cost, ITEMS, RECIPES, START_UNLOCKS } from './data';
+import { applyGameLength, BLD, BDef, Cost, DRONE_COST, ITEMS, RECIPES, START_UNLOCKS } from './data';
 import { diffOf, tierMult } from './difficulty';
 import { genTerrain, gridFor, H, HX, HY, isLand, isWater, ResNode, setWorldSize, TT, W } from './terrain';
 import { Feat, genFeatures } from './features';
@@ -302,7 +302,7 @@ export function place(type: string, x: number, y: number, rot: number, o: { free
     case 'tstation': e.store = {}; e.tot = 0; e.mode = 'load'; e.name = 'Truck Stop ' + (++G.S.stationSeq); e.rr = 0; e.req = 0; break;
     case 'outpost': e.name = 'Outpost ' + (++G.S.stationSeq); break;
     case 'port': e.store = {}; e.tot = 0; e.mode = 'load'; e.name = 'Harbor ' + (++G.S.stationSeq); e.rr = 0; e.req = 0; break;
-    case 'drone': e.target = 0; e.outbox = {}; e.obTot = 0; e.inbox = {}; e.ibTot = 0; e.rr = 0; e.req = 0; e.dr = { s: 'home', t: 0, cargo: {}, n: 0 }; e.name = 'Port ' + (++G.S.stationSeq); break;
+    case 'drone': e.target = 0; e.outbox = {}; e.obTot = 0; e.inbox = {}; e.ibTot = 0; e.rr = 0; e.req = 0; e.drs = []; e.name = 'Port ' + (++G.S.stationSeq); break;
   }
   const g = gridOf(z);
   for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) {
@@ -375,7 +375,8 @@ export function contentsOf(e: Ent): Cost {
   if (e.fbuf) for (const k in e.fbuf) add(k, e.fbuf[k]);
   if (e.outbox) for (const k in e.outbox) add(k, e.outbox[k]);
   if (e.inbox) for (const k in e.inbox) add(k, e.inbox[k]);
-  if (e.dr) for (const k in e.dr.cargo) add(k, e.dr.cargo[k]);
+  for (const dr of e.drs || (e.dr ? [e.dr] : [])) for (const k in dr.cargo) add(k, dr.cargo[k]);
+  if (e.drs) for (const _ of e.drs) for (const k in DRONE_COST) add(k, DRONE_COST[k]);
   if (e.shards) add('power_shard', e.shards);
   if (e.amp) add('amplifier', e.amp);
   return c;
@@ -465,14 +466,14 @@ export { opp, DX, DY };
 
 // ---------------------------------------------------------------------------
 export const REGROW_MEAN: Record<string, number> = { easy: 150, hard: 1200, creative: 60 };
-export function newState(seed: number, o: { name?: string; mode?: string; size?: number; dayNight?: boolean } = {}): State {
+export function newState(seed: number, o: { name?: string; mode?: string; size?: number; dayNight?: boolean; res?: string } = {}): State {
   const mode = o.mode || 'easy';
   const inv: Record<string, number> = { ...diffOf(mode).kit };
   const S: State = {
     seed, inv, unlocked: new Set(START_UNLOCKS), done: new Set(), maxTier: 0, elev: {}, time: 0, won: false,
     flags: {}, delivered: {}, speed: 1, points: 0, coupons: 0, couponsEarned: 0, shop: {}, stationSeq: 0, trainSeq: 0,
     name: o.name || 'New World', mode, size: o.size || 1024, regrow: [],
-    dayNight: o.dayNight !== false, genV: 9, portsV: 2, lenV: 1, depV: 1, lines: [], looted: [], alts: [], altOffer: null, ach: {}, made: {}, discN: null, discF: null, truckSeq: 0, lineSeq: 0,
+    dayNight: o.dayNight !== false, ...(o.res ? { resMode: o.res } : {}), genV: 9, portsV: 2, lenV: 1, depV: 1, lines: [], looted: [], alts: [], altOffer: null, ach: {}, made: {}, discN: null, discF: null, truckSeq: 0, lineSeq: 0,
   };
   if (mode === 'creative') {
     for (const k in BLD) S.unlocked.add(k);
@@ -516,8 +517,9 @@ export function resetWorld(seed: number, S?: State, keepTerrain = false) {
   setWorldSize(gridFor(S.size, S.genV || 1));
   const mode = S.mode;
   applyGameLength(tier => tierMult(mode, tier), !S.lenV);
-  const same = keepTerrain && G.tiles && terrainKey === `${seed}|${S.mode}|${S.genV}|${S.size}`;
-  const t = same ? { tiles: G.tiles, trees: G.trees0.slice(), nodes: G.nodes, nodeGrid: G.nodeGrid } : genTerrain(seed, S.mode, S.genV || 1, S.size);
+  const tkey = `${seed}|${S.mode}|${S.genV}|${S.size}|${(S as any).resMode || ''}`;
+  const same = keepTerrain && G.tiles && terrainKey === tkey;
+  const t = same ? { tiles: G.tiles, trees: G.trees0.slice(), nodes: G.nodes, nodeGrid: G.nodeGrid } : genTerrain(seed, S.mode, S.genV || 1, S.size, (S as any).resMode);
   let f: { feats: Feat[]; grid: Int32Array };
   if (same) {
     // rebuild the feature grid from the features (cheaper than keeping a second full-map copy)
@@ -525,7 +527,7 @@ export function resetWorld(seed: number, S?: State, keepTerrain = false) {
     for (const fe of G.feats) for (let j = 0; j < fe.w; j++) for (let i = 0; i < fe.w; i++) grid[(fe.y + j) * W + fe.x + i] = fe.id;
     f = { feats: G.feats, grid };
   } else f = genFeatures(seed, t.tiles, t.trees, t.nodeGrid);
-  terrainKey = `${seed}|${S.mode}|${S.genV}|${S.size}`;
+  terrainKey = tkey;
   G.feats = f.feats; G.featGrid = f.grid;
   for (const id of S.looted) { const fe = G.feats[id - 1]; if (fe) for (let j = 0; j < fe.w; j++) for (let i = 0; i < fe.w; i++) G.featGrid[(fe.y + j) * W + fe.x + i] = 0; }
   G.disc = new Uint8Array(t.nodes.length); G.fdisc = new Uint8Array(G.feats.length); G.pings = [];
@@ -541,7 +543,7 @@ export function resetWorld(seed: number, S?: State, keepTerrain = false) {
   G.rev++; G.treeRev++;
   if (S.mode === 'creative') for (const k in BLD) S.unlocked.add(k);
 }
-export function newWorld(seed: number, o: { name?: string; mode?: string; size?: number; dayNight?: boolean } = {}) {
+export function newWorld(seed: number, o: { name?: string; mode?: string; size?: number; dayNight?: boolean; res?: string } = {}) {
   clearTeams();
   resetWorld(seed, newState(seed, o));
   place('hub', HX, HY, 0, { free: true, quiet: true });

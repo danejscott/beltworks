@@ -180,6 +180,8 @@ export function rebuildPower() {
     }
     cands.sort((a, b) => a[0] - b[0]);
     for (const [, q] of cands.slice(0, 6)) { unite(p.id, q.id); if (p.id < q.id) p.wires.push(q); }
+    // long-distance towers always wire to the towers in reach, even with lots of poles closer by
+    if (p.type === 'tower') for (const [, q] of cands.slice(6)) if (q.type === 'tower') { unite(p.id, q.id); if (p.id < q.id) p.wires.push(q); }
   }
   const nets = new Map<number, any>();
   const netOf = (poleId: number) => {
@@ -401,6 +403,8 @@ export function autoRecipe(e: Ent, item: string) {
   for (const k in RECIPES) { const r = RECIPES[k]; if (r.m === m && !r.alt && r.in[item] && G.S.unlocked.has(k)) return k; }
   return null;
 }
+/** does this machine's recipe take two or more solid ingredients? */
+export const multiIn = (e: any) => { const r = e.recipe ? RECIPES[e.recipe] : null; if (!r) return false; let n = 0; for (const k in r.in) if (!isFluid(k)) n++; return n >= 2; };
 export const inCap = (r: Recipe, k: string) => isFluid(k) ? Math.max(r.in[k] * 2, 20) : Math.max(r.in[k] * (Object.keys(r.in).length > 1 ? 4 : 2), 4);
 export const outCap = (r: Recipe, k: string) => isFluid(k) ? Math.max(r.out[k] * 3, 20) : Math.max(r.out[k] * 2, 5);
 
@@ -410,6 +414,9 @@ export function acceptInto(e: Ent, item: string, dir: number, fx?: number, fy?: 
   const d = BLD[e.type], side = opp(dir);
   if (PORTED.has(d.kind) && fx !== undefined) {
     if (e.anyIn) { if (side === e.rot && d.kind !== 'sink' && d.kind !== 'gen') return false; }   // older buildings: any side but the front
+    // machines that take two or more ingredients also take belts into either side (one belt per ingredient: a full
+    // ingredient waits on its own belt instead of blocking the others)
+    else if (d.kind === 'machine' && multiIn(e)) { if (side === e.rot) return false; }
     else { const ip = e.ip || (e.ip = inPort(e)); if (fx !== ip[0] || fy !== ip[1]) return false; }
   }
   switch (d.kind) {
@@ -471,6 +478,22 @@ function pushOutBack(e: Ent, item: string) {
   const ip = e.ip || (e.ip = inPort(e));
   if (deliverTo(ip[0], ip[1], (e.rot + 2) & 3, item, e.z || 0)) return true;
   return pushOut(e, item);
+}
+/** a jammed machine input: take the first different ingredient the machine accepts from the last two tiles of belt */
+function grabFromBelt(b: Ent, head: string) {
+  const take = (list: any[], from: number) => {
+    for (let q = from; q < list.length; q++) {
+      const o = list[q];
+      if (o.it !== head && acceptInto(b.nbld, o.it, b.rot, b.srcX ?? b.x, b.srcY ?? b.y)) { list.splice(q, 1); return true; }
+    }
+    return false;
+  };
+  if (take(b.items, 1)) return;
+  // the belt tile before this one (whichever neighbour feeds into it)
+  for (let s = 0; s < 4; s++) {
+    const p = entAt(b.x + DX[s], b.y + DY[s], b.z || 0);
+    if (p && p.nb === b && p.items.length) { take(p.items, 0); return; }
+  }
 }
 export function setRecipe(e: Ent, k: string | null) {
   if (e.recipe === k) return;
@@ -653,7 +676,13 @@ export function update(dt: number) {
       const it = items[0];
       if (nb) { it.pos -= len; items.shift(); nb.items.push(it); }
       else if (b.nbld && acceptInto(b.nbld, it.it, b.rot, b.srcX ?? b.x, b.srcY ?? b.y)) items.shift();
-      else { it.pos = len; break; }
+      else {
+        it.pos = len;
+        // a machine's intake reaches along the last tile of belt: an ingredient it's already full of doesn't block
+        // a different one it still needs (otherwise a mixed belt in the wrong ratio jams for good)
+        if (b.nbld && BLD[b.nbld.type].kind === 'machine') grabFromBelt(b, it.it);
+        break;
+      }
     }
   }
   pmark('belts');

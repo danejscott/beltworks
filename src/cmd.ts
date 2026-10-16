@@ -14,6 +14,7 @@ import { asTeam, MP } from './teams';
 import { joinTeam, leaveTeam, nearRivalBase, newSeason, spawnTeam } from './online';
 import { addInv, canAfford, canPlace, canRemove, chopTree, Ent, entAt, floorBlocked, G, groundOnly, hasFloor, markDirty, missingText, nodeAt, pairBit, PAIRS, pay, place, refund, remove, rotateEnt, setFloor, upgradeTarget, creative, NL } from './world';
 import { clamp } from './util';
+import { DRONE_COST, DRONE_SLOTS, dronesOf, newDrone } from './drones';
 
 export type Cmd = { k: string; [x: string]: any };
 
@@ -146,6 +147,7 @@ function placeOne(c: Cmd) {
   const d = BLD[c.type];
   if (!d) return;
   const z = c.z || 0;
+  if (z !== 0 || d.kind === 'lift' || d.kind === 'foundation' || c.type === 'pipe_lift') return;   // floors were removed
   let reason = canPlace(c.type, c.x, c.y, c.rot, { z });
   if (!reason && (d.kind === 'ptunnel' || d.kind === 'tank')) {
     const fl = fluidsTouching([[c.x, c.y], [c.x + d.w - 1, c.y + d.h - 1], [c.x + d.w - 1, c.y], [c.x, c.y + d.h - 1]], null, z);
@@ -208,6 +210,7 @@ function layRails(c: Cmd) {
 
 function foundations(x0: number, y0: number, x1: number, y1: number, z: number) {
   const d = BLD.foundation;
+  if (BLD.foundation) return;   // floors were removed from the game
   if (z === 0) { toast('Foundations go on upper floors — press PageUp (or ▲ on the floor buttons) first', 'bad'); sfx('err'); return; }
   if (!G.S.unlocked.has('foundation')) return;
   const xa = Math.min(x0, x1), xb = Math.max(x0, x1), ya = Math.min(y0, y1), yb = Math.max(y0, y1);
@@ -250,7 +253,7 @@ function paste(bp: any, ox: number, oy: number, z0: number) {
   const zOf = (o: any) => z0 + (+o.z || 0);
   const tileOK = (o: any) => {
     const d = BLD[o.t], x = ox + o.x, y = oy + o.y, z = zOf(o);
-    if (!d || !G.S.unlocked.has(o.t) || z < 0 || z >= NL) return false;
+    if (!d || !G.S.unlocked.has(o.t) || z !== 0 || d.kind === 'lift' || o.t === 'pipe_lift') return false;   // ground floor only now
     if (z > 0 && groundOnly(o.t)) return false;
     if (d.kind === 'rail' || d.kind === 'belt' || d.kind === 'pipe') return tileFree(x, y, d.kind, z);
     return !canPlace(o.t, x, y, o.r, { free: true, z });
@@ -259,7 +262,7 @@ function paste(bp: any, ox: number, oy: number, z0: number) {
   const need: Cost = {};
   // the foundation decks first (lowest floor up), so the upper floors have something to stand on
   const fl: number[][] = Array.isArray(bp.fl) ? [...bp.fl].sort((a, b) => a[2] - b[2]) : [];
-  if (fl.length && G.S.unlocked.has('foundation')) for (const [fx, fy, fz] of fl) {
+  if (fl.length && NL < 0) for (const [fx, fy, fz] of fl) {
     const x = ox + fx, y = oy + fy, z = z0 + fz;
     if (z < 1 || z >= NL || hasFloor(x, y, z) || floorBlocked(x, y, z)) continue;
     if (!canAfford(BLD.foundation.cost)) { broke = true; for (const k in BLD.foundation.cost) need[k] = BLD.foundation.cost[k]; break; }
@@ -449,6 +452,14 @@ function exec(c: Cmd): any {
       t!.sched.push(st.id); if (t!.state === 'noschedule' || t!.state === 'nopath') { t!.state = 'idle'; t!.waitT = 99; } sfx('click'); return;
     }
     // ---- trucks & ships
+    case 'buydrone': {   // drone ports are racks of three: buy drones one at a time
+      const e = ent(c.id); if (!mine(e) || BLD[e.type].kind !== 'drone') return;
+      const drs = dronesOf(e);
+      if (drs.length >= DRONE_SLOTS) { toast('This port has all 3 drones already', 'bad'); return; }
+      if (!canAfford(DRONE_COST)) { toast(`A drone needs ${missingText(DRONE_COST)}`, 'bad'); sfx('err'); return; }
+      pay(DRONE_COST); drs.push(newDrone()); sfx('craft'); toast(`🛸 Drone ${drs.length}/${DRONE_SLOTS} ready on ${e.name}`, 'good');
+      return;
+    }
     case 'buytruck': case 'buyship': {
       const e = ent(c.id);
       // trucks can be bought with a whole route (several stops); ships with one destination

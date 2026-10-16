@@ -4,6 +4,8 @@
 // ============================================================================
 
 export type Cost = Record<string, number>;
+/** one drone for a drone port's rack */
+export const DRONE_COST: Cost = { motor: 4, alclad_sheet: 10, computer: 2 };
 
 export interface ItemDef { n: string; c: string; s: string; fluid?: boolean; val?: number }
 
@@ -235,10 +237,10 @@ export const BLD: Record<string, BDef> = {
   harvester: { n: 'Tree Harvester', w: 2, h: 2, cat: 'prod', kind: 'harvester', power: 3, cost: { iron_plate: 15, iron_rod: 10 }, col: '#6f9a3a', desc: 'Automatically chops trees within 8 tiles and outputs Wood (5 per tree). Move it when the area is cleared.' },
   smelter: { n: 'Smelter', w: 2, h: 2, cat: 'prod', kind: 'machine', machine: 'smelter', power: 4, cost: { iron_plate: 5, iron_rod: 5 }, col: '#c25a3c', desc: 'Melts ore into ingots. One input (blue arrow), one output (orange arrow).' },
   constructor: { n: 'Constructor', w: 2, h: 2, cat: 'prod', kind: 'machine', machine: 'constructor', power: 4, cost: { iron_plate: 8, iron_rod: 8 }, col: '#3a82c2', desc: 'Turns one input into a part.' },
-  assembler: { n: 'Assembler', w: 3, h: 3, cat: 'prod', kind: 'machine', machine: 'assembler', power: 15, cost: { iron_plate: 20, screw: 60, cable: 20 }, col: '#7a5cd0', desc: 'Combines two ingredients into an advanced part. Both come in through the one input port: merge the belts with a Merger.' },
+  assembler: { n: 'Assembler', w: 3, h: 3, cat: 'prod', kind: 'machine', machine: 'assembler', power: 15, cost: { iron_plate: 20, screw: 60, cable: 20 }, col: '#7a5cd0', desc: 'Combines two ingredients into an advanced part. Give each ingredient its own belt: into the back (blue arrow) or either side.' },
   foundry: { n: 'Foundry', w: 3, h: 3, cat: 'prod', kind: 'machine', machine: 'foundry', power: 16, cost: { modular_frame: 10, rotor: 10, concrete: 20 }, col: '#c23e66', desc: 'Two-input smelting: Steel and Aluminum.' },
   refinery: { n: 'Refinery', w: 4, h: 4, cat: 'prod', kind: 'machine', machine: 'refinery', power: 30, cost: { motor: 10, encased_beam: 10, steel_pipe: 30, copper_sheet: 20 }, col: '#c4913a', desc: 'Processes fluids. Pipes attach on any side; items use belts. Byproducts must go somewhere or it stops!' },
-  manufacturer: { n: 'Manufacturer', w: 4, h: 4, cat: 'prod', kind: 'machine', machine: 'manufacturer', power: 55, cost: { motor: 5, modular_frame: 20, cable: 50, plastic: 50 }, col: '#2fa596', desc: 'Combines up to four ingredients into high-tech components. Merge the ingredient belts into its single input.' },
+  manufacturer: { n: 'Manufacturer', w: 4, h: 4, cat: 'prod', kind: 'machine', machine: 'manufacturer', power: 55, cost: { motor: 5, modular_frame: 20, cable: 50, plastic: 50 }, col: '#2fa596', desc: 'Combines up to four ingredients into high-tech parts. Feed each ingredient on its own belt — into the back or either side (merge belts if you need more than three).' },
   packager: { n: 'Packager', w: 3, h: 3, cat: 'prod', kind: 'machine', machine: 'packager', power: 10, cost: { steel_beam: 20, rubber: 10, plastic: 10 }, col: '#4a8ac2', desc: 'Puts fluids into canisters (and back out). Packaged Fuel rides belts, trucks and trains, and Fuel Generators burn it. Fluids by pipe on any side.' },
   blender: { n: 'Blender', w: 4, h: 4, cat: 'prod', kind: 'machine', machine: 'blender', power: 75, cost: { motor: 20, heavy_modular_frame: 10, alu_casing: 50, computer: 10 }, col: '#3aa0a0', desc: 'Mixes fluids and items into advanced products: Cooling Systems and Turbofuel. Merge item belts into its input; fluids by pipe.' },
   particle_accelerator: { n: 'Particle Accelerator', w: 5, h: 5, cat: 'prod', kind: 'machine', machine: 'particle', power: 400, cost: { radio_control_unit: 25, cooling_system: 50, heavy_modular_frame: 20, alclad_sheet: 200 }, col: '#7a5ae0', desc: 'Makes Quantum Cores for the final Space Elevator phase. Uses a huge 400 MW while running — build serious power first!' },
@@ -312,7 +314,6 @@ export const CATS = [
   { id: 'power', n: 'Power', types: ['pole1', 'pole2', 'tower', 'biomass_burner', 'coal_gen', 'fuel_gen', 'geothermal', 'solar', 'nuclear_plant', 'battery'] },
   { id: 'fluid', n: 'Fluids', types: [['pipe2', 'pipe1'], 'ptunnel', 'tank'] },
   { id: 'trans', n: 'Transport', types: ['rail', 'station', 'locomotive', 'rail_signal', 'path_signal', 'truck_station', 'harbor', 'outpost', 'drone_port'] },
-  { id: 'struct', n: 'Floors', types: ['foundation', 'lift_up', 'lift_down', 'pipe_lift'] },
   { id: 'special', n: 'Special', types: ['elevator', 'statue', 'lamp'] },
 ] as { id: string; n: string; types: (string | string[])[] }[];
 
@@ -324,14 +325,14 @@ export const START_UNLOCKS = ['belt1', 'miner1', 'smelter', 'pole1', 'iron_ingot
 export const MILESTONES: Milestone[] = [
   { id: 't0a', tier: 0, n: 'HUB Online', req: { iron_ingot: 20 }, un: ['constructor'] },
   { id: 't0b', tier: 0, n: 'Basic Parts', req: { iron_plate: 150, iron_rod: 150 }, un: ['screw', 'concrete', 'storage', 'biomass', 'biomass_burner', 'harvester'], tip: 'Power! Biomass Burners burn Wood — click trees to chop them, or build a Tree Harvester.' },
-  { id: 't0c', tier: 0, n: 'Copper Age', req: { screw: 150, concrete: 50 }, un: ['copper_ingot', 'wire', 'cable', 'merger', 'splitter'], tip: 'Mergers combine belts. Machines that need two ingredients take both through their one blue input, so merge the ingredient belts first.' },
+  { id: 't0c', tier: 0, n: 'Copper Age', req: { screw: 150, concrete: 50 }, un: ['copper_ingot', 'wire', 'cable', 'merger', 'splitter'], tip: 'Mergers combine belts and splitters divide them. Machines that need two or more ingredients take a belt into the back AND into each side — give each ingredient its own belt so nothing jams.' },
 
   { id: 't1a', tier: 1, n: 'Part Assembly', req: { wire: 200, cable: 100, iron_plate: 200 }, un: ['assembler', 'reinforced_plate', 'rotor', 'copper_sheet'] },
-  { id: 't1b', tier: 1, n: 'Logistics Mk2', req: { reinforced_plate: 50, screw: 500 }, un: ['belt2', 'tunnel', 'sorter', 'truck_station', 'truck', 'outpost', 'foundation', 'lift_up', 'lift_down'], tip: 'Outposts give far-away regions free starter power and a fast-travel point (O). Build upward! Foundations (Floors tab, or press PageUp) let you build on up to three floors, and Conveyor Lifts move items between them. Trucks: place two Truck Stations and buy a truck in one of their panels. Belt Tunnels let belts cross each other. Blueprints (Ctrl+C / B) are always available — copy a line, paste it five times!' },
+  { id: 't1b', tier: 1, n: 'Logistics Mk2', req: { reinforced_plate: 50, screw: 500 }, un: ['belt2', 'tunnel', 'sorter', 'truck_station', 'truck', 'outpost'], tip: 'Outposts give far-away regions free starter power and a fast-travel point (O). Build upward! Foundations (Floors tab, or press PageUp) let you build on up to three floors, and Conveyor Lifts move items between them. Trucks: place two Truck Stations and buy a truck in one of their panels. Belt Tunnels let belts cross each other. Blueprints (Ctrl+C / B) are always available — copy a line, paste it five times!' },
   { id: 't1c', tier: 1, n: 'Resource Sink', req: { reinforced_plate: 50, rotor: 25, cable: 100 }, un: ['sink'], tip: 'Anything fed into a Resource Sink earns Points → Coupons → Shop (K).' },
   { id: 't2a', tier: 2, n: 'Frameworks', req: { rotor: 50, reinforced_plate: 100 }, un: ['modular_frame', 'smart_plating', 'elevator'], tip: 'The Space Elevator (Special tab) is your big goal. Belt Smart Plating into it!' },
   { id: 't2c', tier: 2, n: 'Railways', req: { reinforced_plate: 100, rotor: 40, cable: 200 }, un: ['rail', 'station', 'locomotive', 'wagon', 'tower', 'harbor', 'ship_port', 'ship', 'rail_signal', 'path_signal'], tip: 'Ship Ports on lake shores let cargo ships carry goods across water. Place two Train Stations, click one and use Quick Route: it lays the track and builds a train for you. Great for far-away resources!' },
-  { id: 't2b', tier: 2, n: 'Coal Power', req: { modular_frame: 20, cable: 300, rotor: 50 }, un: ['coal_gen', 'water_extractor', 'pipe1', 'ptunnel', 'tank', 'solar', 'pipe_lift'], tip: 'Coal Generators need Coal by belt AND Water by pipe. Place a Water Extractor on a lake. Solar Panels are free power — but only while the sun is up.' },
+  { id: 't2b', tier: 2, n: 'Coal Power', req: { modular_frame: 20, cable: 300, rotor: 50 }, un: ['coal_gen', 'water_extractor', 'pipe1', 'ptunnel', 'tank', 'solar'], tip: 'Coal Generators need Coal by belt AND Water by pipe. Place a Water Extractor on a lake. Solar Panels are free power — but only while the sun is up.' },
   { id: 'p1', tier: 2, phase: 1, n: 'Elevator Phase 1', req: { smart_plating: 50 }, unlockTiers: [3, 4] },
 
   { id: 't3a', tier: 3, n: 'Steel', req: { concrete: 500, modular_frame: 50, cable: 200 }, un: ['foundry', 'steel_ingot', 'steel_beam', 'steel_pipe', 'encased_beam', 'versatile_framework'] },

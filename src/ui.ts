@@ -7,7 +7,7 @@ import { netHud, tipForToast } from './ui3';
 import { fetchBP, fmtBPCode, shareBP } from './bpshare';
 import { audio, setVolume, sfx, setSound, vol } from './audio';
 import { BLD, CATS, Cost, HANDCRAFT, isFluid, ITEM_KEYS, ITEMS, MACHINE_NAMES, MAX_TIER, MILESTONES, RECIPES, SHOP, TIER_NAMES } from './data';
-import { DRONE_LOAD } from './drones';
+import { DRONE_COST, DRONE_LOAD, DRONE_SLOTS, dronesOf } from './drones';
 import { BP, bestOf, bpCost, bpFloors, captureBP, clipboard, curCat, dragInfo, selectSlot, setCat, setLevel, setTool, tool } from './input';
 import { buyShop, couponCost, curPhase, loadElevator, milestoneReady, submitMilestone, unlockName } from './progress';
 import { copyAllToFolder, exportSave, importSave, loadBlueprints, saveGame, storeBlueprints } from './save';
@@ -67,7 +67,7 @@ function renderInv() {
   $('#pwr').dataset.tip = 'power';
   // floor switcher
   const fh = `<div class="fl">FLOOR</div>${[0, 1, 2, 3].map(z => `<button class="${view.level === z ? 'sel' : ''}" data-act="floor:${z}" title="${z ? 'Floor ' + z : 'Ground floor'} (PageUp / PageDown)">${z || 'G'}</button>`).join('')}`;
-  const fe = $('#floors'); if (fe.dataset.h !== fh) { fe.innerHTML = fh; fe.dataset.h = fh; }
+  void fh;
   const pb = document.getElementById('plannerBtn'); if (pb) pb.style.display = plannerAllowed() ? '' : 'none';
   $('#cpn').innerHTML = `🎟 ${S.coupons} <span class="dim">(${Math.floor(S.points / couponCost() * 100)}%)</span>`;
   $('#tierlbl').textContent = `Tier ${S.maxTier} · ${TIER_NAMES[S.maxTier]}`;
@@ -326,7 +326,7 @@ function inspDyn(e: Ent): string {
         for (const k in r.out) { const have = e.ob[k] || 0, cap = outCap(r, k) * (e.amp ? 2 : 1); h += `<div class="bufrow" data-tip="item:${k}">${ic(k, 20)}<span class="bn">${ITEMS[k].n}</span><div class="bar"><i style="width:${Math.min(100, have / cap * 100)}%"></i></div><span class="num">${fmtR(have)}/${cap}</span></div><div class="sm ind">makes ${fmtR(r.out[k] * 60 / r.t * sp)}/min${isFluid(k) ? ' (via pipe)' : ''}</div>`; }
         h += `<div class="bar thick"><i style="width:${e.prog * 100}%;transition:none"></i></div>`;
         if (e.st === 'starve' && e.wrongItem && !r.in[e.wrongItem]) h += `<div class="sm neg">⚠ ${ITEMS[e.wrongItem].n} is arriving, but this machine is set to <b>${r.n}</b>. Pick a matching recipe below.</div>`;
-        if (e.st === 'starve') h += `<div class="sm warn">Tip: feed ${Object.keys(r.in).filter(k => !isFluid(k)).length ? 'items by belt into the blue input arrow' + (Object.keys(r.in).filter(k => !isFluid(k)).length > 1 ? ' (merge the ingredient belts with a Merger)' : '') : ''}${Object.keys(r.in).some(isFluid) ? ' and fluids by pipe' : ''}.</div>`;
+        if (e.st === 'starve') h += `<div class="sm warn">Tip: feed ${Object.keys(r.in).filter(k => !isFluid(k)).length ? 'items by belt into the blue input arrow' + (Object.keys(r.in).filter(k => !isFluid(k)).length > 1 ? ' (one belt per ingredient: into the back or either side)' : '') : ''}${Object.keys(r.in).some(isFluid) ? ' and fluids by pipe' : ''}.</div>`;
         if (e.st === 'block') h += `<div class="sm neg">Tip: the output${Object.keys(r.out).length > 1 ? 's (including the byproduct!)' : ''} need somewhere to go.</div>`;
       } else {
         h += '<div class="sm">Pick a recipe below — or belt an ingredient in and it chooses automatically.</div>';
@@ -397,9 +397,11 @@ function inspDyn(e: Ent): string {
     }
     case 'trade': h += tradeDyn(e); break;
     case 'drone': {
-      const dr = e.dr;
-      h += `${status(e.pnet ? (e.target ? 'work' : 'idle') : 'nopower', e.pnet ? (e.target ? (dr.s === 'home' ? 'Waiting for cargo' : dr.s === 'out' ? `Delivering ${dr.n} items` : 'Returning') : 'No destination') : undefined)}`;
+      const drs = dronesOf(e), busy = drs.filter(d => d.s !== 'home').length;
+      h += `${status(!drs.length ? 'idle' : e.pnet ? (e.target ? 'work' : 'idle') : 'nopower', !drs.length ? 'No drones yet — buy one below' : e.pnet ? (e.target ? (busy ? `${busy} of ${drs.length} drone${drs.length > 1 ? 's' : ''} flying` : 'Waiting for cargo') : 'No destination') : undefined)}`;
       h += `<div class="row">Outgoing: <b>${fmt(e.obTot)}</b> · Incoming: <b>${fmt(e.ibTot)}</b></div>`;
+      h += `<div class="sec">🛸 Drone rack (${drs.length}/${DRONE_SLOTS})</div><div class="row" style="gap:6px">${[0, 1, 2].map(i => { const d = drs[i]; return `<span class="chip" style="min-width:70px">${!d ? '<span class="dim">empty pad</span>' : d.s === 'home' ? '🛸 parked' : d.s === 'out' ? `🛸 → ${fmt(d.n)}` : '🛸 returning'}</span>`; }).join('')}</div>`;
+      if (drs.length < DRONE_SLOTS) h += `<div class="row" style="margin-top:6px"><button class="go" data-act="buydrone">Buy a drone</button><span class="sm">${costHTML(DRONE_COST)}</span></div><div class="sm">Each drone carries ${DRONE_LOAD} items a trip; more drones, more trips.</div>`;
       break;
     }
     case 'sink': h += `<div>Items sunk: <b>${fmt(e.sunk)}</b></div><div>Points: <b>${fmt(G.S.points)}</b> / ${fmt(couponCost())} for the next coupon</div><div class="bar"><i style="width:${G.S.points / couponCost() * 100}%"></i></div><div class="sm">Coupons: ${G.S.coupons} — spend them in the Shop (<kbd>K</kbd>).</div>`; break;
@@ -728,7 +730,6 @@ const HELP = `<div class="help cols"><div>
 <h3>Transport</h3><p><b>Trucks (Tier 1):</b> build two Truck Stations and buy a truck in one's panel — it drives over open ground, no track needed, and carries 25 items a trip (run several on a busy route). Train wagons hold 120 items each and ships 800. <b>Trains (Tier 2):</b> place two Train Stations, click one and use <b>Quick Route</b>: it lays a one-way loop of track around mountains and over lakes and builds a train. Add up to 12 trains per loop (<kbd>T</kbd> lists them all). You can also drag rails yourself. <b>Signals:</b> put Block Signals and Path Signals on your own tracks so many trains can share them — a train waits at a red signal until the track ahead is clear (path signals only need the tiles the train will use, which is ideal at junctions). <b>Ships (Tier 2):</b> build Ship Ports on lake or sea shores and buy cargo ships (800 items) in a port's panel — choose which ports each ship visits. <b>Drones</b> fly goods in a straight line between Drone Ports.</p><h3>Biomes & distance</h3><p>Plains around the HUB: iron, copper, limestone · Forest: coal, iron, trees · Desert: oil, quartz, caterium, sulfur, bauxite · Highlands (rocky, hilly): caterium, sulfur, bauxite, geysers. In new worlds the forest, desert and highlands are big regions in different directions, and resources sit in rings: coal a little way out, oil/quartz/caterium/sulfur further, and bauxite near the edges. Better nodes are further from the HUB. Hover the ground to see what can be found there.</p>
 <h3>Day & night</h3><p>A day lasts 12 minutes. Machines keep working at night; <b>Solar Panels</b> only make power while the sun is up. Turn the cycle off any time in the ☰ menu.</p>
 <h3>Exploring</h3><p>Nodes appear on the map once you have seen them. The <b>Scanner</b> (<kbd>N</kbd>) pings the nearest resources, <b>💎 power crystals</b> (free Power Shards) and <b>🛸 crash sites</b>. Crash sites hold <b>Hard Drives</b>: analyse them in <b>Research</b> (<kbd>U</kbd>) to pick alternate recipes.</p>
-<h3>Floors</h3><p>Build up to <b>three floors above the ground</b>. Press <kbd>PageUp</kbd>/<kbd>PageDown</kbd> (or <kbd>E</kbd>/<kbd>Z</kbd>, or the floor buttons by the minimap) to change floor — the camera rises with you and the floors above fade out. Lay <b>Foundations</b> (Floors tab, click-drag a rectangle), then build on them. <b>Conveyor Lifts</b> carry items up or down one floor; <b>Pipe Lifts</b> carry fluids. Power poles power every floor in their area. Miners, stations and other ground things stay on the ground. Middle-drag up/down (or <kbd>,</kbd> <kbd>.</kbd>) tilts the camera.</p>
 <h3>Ratios</h3><ul><li>Miner Mk1 on a normal node = 120/min → feeds <b>2 smelters</b></li><li>Belts: Mk1 240 · Mk2 480 · Mk3 960 · Mk4 1440 /min</li><li>Click any machine for its exact rates; <kbd>P</kbd> shows totals.</li></ul>
 </div><div>
 <h3>Controls</h3><ul>
@@ -739,7 +740,6 @@ const HELP = `<div class="help cols"><div>
 <li><kbd>Ctrl+C</kbd> copy an area · <kbd>Ctrl+V</kbd> paste · <kbd>B</kbd> blueprint library</li>
 <li>Drag empty ground / right-drag / <kbd>WASD</kbd> pan · wheel zoom · <kbd>G</kbd> or <kbd>Space</kbd> locate & fly to your HUB (the minimap arrow always points home)</li>
 <li>Middle-drag or <kbd>[</kbd> <kbd>]</kbd> rotate the camera · middle-drag up/down or <kbd>,</kbd> <kbd>.</kbd> tilt it · <kbd>\</kbd> resets the view (your angle is remembered per world)</li>
-<li><kbd>PageUp</kbd>/<kbd>PageDown</kbd> (or <kbd>E</kbd>/<kbd>Z</kbd>) change floor</li>
 <li><kbd>H</kbd> milestones · <kbd>C</kbd> craft · <kbd>P</kbd> stats · <kbd>K</kbd> shop · <kbd>M</kbd> map · <kbd>I</kbd> inventory (search, rates, goal needs) · <kbd>V</kbd> power areas</li>
 <li><kbd>O</kbd> fast travel between your HUB and Outposts (not in Hard) · <kbd>G</kbd> go home</li>
 <li><kbd>T</kbd> vehicles · <kbd>N</kbd> scanner · <kbd>U</kbd> research · <kbd>J</kbd> achievements · <kbd>L</kbd> planner (Easy/Creative)</li>

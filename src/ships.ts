@@ -51,8 +51,19 @@ function anchorage(p: Ent, me: Ship): number[] {
 export function shoreTiles(x: number, y: number, w: number, h: number) {
   return borderTiles({ x, y, w, h }).filter(([bx, by]) => bx >= 0 && by >= 0 && bx < W && by < W && isWater(G.tiles[by * W + bx])).length;
 }
-export function findShipPath(from: number, p: Ent) { return gridPath(from, new Set(berths(p)), cost, p.x + p.w / 2, p.y + p.h / 2, 1.3, 2000000); }
-const route = (from: number, goals: number[], p: Ent) => gridPath(from, new Set(goals), cost, p.x + p.w / 2, p.y + p.h / 2, 1.3, 2000000);
+export function findShipPath(from: number, p: Ent) { return cachedPath(from, berths(p), p); }
+// ships always take the shortest way across the water; the open water doesn't change, so routes are remembered
+const routeCache = new Map<string, number[] | null>();
+let cacheSig = '';
+function cachedPath(from: number, goals: number[], p: Ent) {
+  const sig = `${G.L ? G.L.ports.length : 0}|${G.rev >> 6}`;
+  if (sig !== cacheSig || routeCache.size > 400) { routeCache.clear(); cacheSig = sig; }
+  const k = from + '|' + p.id + '|' + goals.join(',');
+  if (!routeCache.has(k)) routeCache.set(k, gridPath(from, new Set(goals), cost, p.x + p.w / 2, p.y + p.h / 2, 1, 3000000));
+  const r = routeCache.get(k);
+  return r ? r.slice() : null;
+}
+const route = (from: number, goals: number[], p: Ent) => cachedPath(from, goals, p);
 export const shipPorts = (): Ent[] => (G.L ? G.L.ports : []);
 
 export function buyShip(home: Ent, target: Ent | null): string | null {

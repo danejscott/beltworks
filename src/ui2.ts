@@ -195,6 +195,7 @@ export function extraAct(cmd: string, a: string, b: string): boolean {
     case 'invite': copyInvite(); return true;
     case 'players': closeModal(); setTimeout(() => openPlayers(), 0); return true;
     case 'twant': run({ k: 'twant', it: a }); return true;
+    case 'buydrone': if (e) run({ k: 'buydrone', id: e.id }); return true;
     case 'tinvite': netSend({ t: 'team', op: 'invite', pid: +a }); toast('Invitation sent', 'good'); return true;
     case 'taccept': netSend({ t: 'team', op: 'accept', team: +a }); return true;
     case 'tapprove': netSend({ t: 'team', op: 'approve', pid: +a }); return true;

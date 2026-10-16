@@ -2,11 +2,11 @@ import { ensureFresh, hist, rebuildFluids, resetStats, syncFluidMembers } from '
 import { W, H } from './terrain';
 import { view } from './view';
 import { BLD } from './data';
-import { G, place, PORTED, remove, resetWorld, State } from './world';
-import { clearTeams, MP, makeTeamState, teamFields, WORLD_KEYS } from './teams';
+import { G, place, PORTED, refund, remove, resetWorld, State } from './world';
+import { clearTeams, MP, makeTeamState, teamFields, useTeam, WORLD_KEYS } from './teams';
 import { deleteWorldFile, folderReady, listFolderWorlds, readWorldFile, writeWorldFile } from './filesaves';
 
-const KEYS = ['o', 'items', 'pair', 'isExit', 'recipe', 'ib', 'ob', 'prog', 'work', 'clock', 'shards', 'amp', 'tm', 'store', 'tot', 'mode', 'name', 'buf', 'filt', 'slot', 'famt', 'ffluid', 'fuelT', 'fbuf', 'water', 'stored', 'pairs', 'target', 'outbox', 'obTot', 'inbox', 'ibTot', 'dr', 'sunk', 'anyIn', 'sig'];
+const KEYS = ['o', 'items', 'pair', 'isExit', 'recipe', 'ib', 'ob', 'prog', 'work', 'clock', 'shards', 'amp', 'tm', 'store', 'tot', 'mode', 'name', 'buf', 'filt', 'slot', 'famt', 'ffluid', 'fuelT', 'fbuf', 'water', 'stored', 'pairs', 'target', 'outbox', 'obTot', 'inbox', 'ibTot', 'dr', 'drs', 'sunk', 'anyIn', 'sig'];
 
 const treeCache = { arr: null as any, rev: -1, list: [] as number[] };
 const floorCache = { arr: null as any, rev: -1, list: [] as number[] };
@@ -79,14 +79,28 @@ export function deserialize(o: any, keepTerrain = false) {
   for (const t of MP.teams ? MP.teams.values() : [S]) if (t.unlocked.has('ship_port')) t.unlocked.add('harbor');
   for (const i of o.removed || []) G.trees[i] = 0;
   G.treeRev++;
+  // floors were removed from the game: worlds that had upper floors get their foundations' concrete back
   const fl = o.floor || [];
-  for (let k = 0; k < fl.length; k += 2) { G.floor[fl[k]] = fl[k + 1]; for (let z = 1; z < 4; z++) if (fl[k + 1] & (1 << z)) G.floorN++; }
+  let decks = 0;
+  for (let k = 0; k < fl.length; k += 2) for (let z = 1; z < 4; z++) if (fl[k + 1] & (1 << z)) decks++;
   (G as any).floorRev = ((G as any).floorRev || 0) + 1;
   for (const q of o.ents) {
     const e = place(q.t, q.x, q.y, q.r, { free: true, quiet: true, id: q.i, z: q.z || 0 });
     for (const k of KEYS) if (q[k] !== undefined) e[k] = q[k];
     if (q.items) e.items = q.items.map(([it, pos]: any) => ({ it, pos }));
   }
+  // ...and everything built on an upper floor (plus lifts) comes down: refunded with whatever it was holding
+  let upper = 0;
+  const cur0 = MP.cur;
+  for (const e of [...G.ents.values()]) {
+    if (!(e.z || 0) && BLD[e.type].kind !== 'lift' && e.type !== 'pipe_lift' && e.type !== 'foundation') continue;
+    useTeam(e.o || 0);
+    if (!remove(e, { quiet: true })) { for (const g of [G.grid, ...(G.up || [])]) if (g) for (let j = 0; j < e.h; j++) for (let i = 0; i < e.w; i++) if (g[(e.y + j) * W + e.x + i] === e.id) g[(e.y + j) * W + e.x + i] = 0; G.ents.delete(e.id); }
+    upper++;
+  }
+  if (decks) { useTeam(0); refund(BLD.foundation.cost, decks); }
+  useTeam(cur0);
+  if (upper || decks) { G.floor.fill(0); G.floorN = 0; G.dirty.power = G.dirty.fluid = G.dirty.links = true; setTimeout(() => G.fx.toast(`Floors were removed from Beltworks: ${upper} upper-floor building${upper === 1 ? '' : 's'} and ${decks} foundation${decks === 1 ? '' : 's'} were refunded to your inventory.`, ''), 1600); }
   // worlds saved before biomes existed may have miners where no node exists any more: refund them
   let orphans = 0;
   for (const e of [...G.ents.values()]) {

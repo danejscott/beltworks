@@ -269,10 +269,8 @@ export function drawWorld(time: number, real: number, labels: Label[]) {
     line(ax2, ay2, za, q1x, q1y, q1z, th, wireCol); line(q1x, q1y, q1z, mx, my, mz, th, wireCol);
     line(mx, my, mz, q2x, q2y, q2z, th, wireCol); line(q2x, q2y, q2z, bx2, by2, zb, th, wireCol);
   }
-  for (const p of G.L ? G.L.drones : []) {
-    const pos = dronePos(p);
-    if (!pos) continue;
-    const [x, y, , alt] = pos;
+  for (const p of G.L ? G.L.drones : []) for (let i = 0; i < (p.drs || []).length; i++) {
+    const [x, y, , alt] = dronePos(p, i);
     ground(x, y, 0.9, 0.9, 0, SPR.shadow, rgba(0, 0, 0, 0.35));
     billC(x, y, 1 + alt * 3, 0.9, 0.9, SPR.drone);
   }
@@ -478,7 +476,6 @@ export function drawBuilding(e: Ent, time: number, real: number, labels: Label[]
     }
     case 'drone': {
       frontMarks(e, ht);
-      if (e.dr.s === 'home') billC(cx, cy, ht + 0.3, 0.9, 0.9, SPR.drone);
       if (labels) labelAt(labels, cx, cy, ht + 1.3, e.name, 12, '#a8d8ff');
       break;
     }

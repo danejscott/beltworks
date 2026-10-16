@@ -3,10 +3,10 @@
 import * as THREE from 'three';
 import { SPR } from '../atlas';
 import { BLD, ITEMS, RECIPES } from '../data';
-import { dronePos } from '../drones';
+import { dronePos, dronesOf } from '../drones';
 import { hexCol, rgba } from '../gl';
 import { curPhase } from '../progress';
-import { ensureFresh } from '../sim';
+import { ensureFresh, multiIn } from '../sim';
 import { H, W } from '../terrain';
 import { signalRed, trainPoints, WAGON_CAP } from '../trains';
 import { nightness } from '../daynight';
@@ -265,6 +265,14 @@ export function portArrows(e: { type: string; x: number; y: number; w: number; h
     return out;
   }
   const hasIn = PORTED.has(d.kind) && !(d.kind === 'gen' && !(d.fuels && Object.keys(d.fuels).some(f => !ITEMS[f].fluid)));
+  // two-ingredient machines: an extra blue input in the middle of each side
+  if (d.kind === 'machine' && multiIn(e as any)) {
+    const lft = (r + 3) & 3, rgt = (r + 1) & 3, w = e.w, h = e.h;
+    for (const s of [lft, rgt]) {
+      const mx = s === 0 ? e.x + w : s === 2 ? e.x - 1 : e.x + ((w - 1) >> 1), my = s === 1 ? e.y + h : s === 3 ? e.y - 1 : e.y + ((h - 1) >> 1);
+      out.push([mx, my, (s + 2) & 3, false]);
+    }
+  }
   const hasOut = OUT_KINDS.has(d.kind) || !!d.waste;
   if (hasOut) { const [fx, fy] = frontTiles(e)[0]; out.push([fx, fy, d.pier ? (r + 2) & 3 : r, true]); }
   if (hasIn) { const [ix, iy] = inPort(e); out.push([ix, iy, r, false]); }
@@ -781,9 +789,11 @@ export function update3D(time: number, real: number, dt: number, labels: Label3[
   }
   // drones
   for (const p of G.L.drones) {
-    const pos = dronePos(p);
-    const [x, y, a, alt] = pos || [p.x + 1.5, p.y + 1.5, 0, 0];
-    pushModel(DL, 'drone', mdl('drone', MD.droneModel), compose(x, pos ? 1.2 + alt * 4 : 0.5, y, -a), undefined, true, p.o);
+    const n = dronesOf(p).length;
+    for (let i = 0; i < n; i++) {
+      const [x, y, a, alt] = dronePos(p, i);
+      pushModel(DL, 'drone', mdl('drone', MD.droneModel), compose(x, alt > 0 ? 1.2 + alt * 4 : 0.62, y, -a), undefined, true, p.o);
+    }
     if (p.name && near) labels.push({ x: p.x + 1.5, y: p.y + 1.5, z: 2.2, t: p.name, c: '#a8d8ff' });
   }
   for (const s of G.L.stations) if (near) labels.push({ x: s.x + 1.5, y: s.y + 1.5, z: 2.9, t: s.name + (s.mode === 'load' ? ' ⬆' : ' ⬇'), c: '#ffe08a' });

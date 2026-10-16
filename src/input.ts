@@ -62,7 +62,7 @@ export function selectSlot(i: number) {
 /** entity on the active floor */
 const at = (x: number, y: number) => entAt(x, y, view.level);
 export function setLevel(n: number) {
-  n = Math.max(0, Math.min(NL - 1, n));
+  n = 0;   // floors were removed: everything is built on the ground
   if (n === view.level) return;
   view.level = n; G.rev++; drag = null;
   if (tool.t && tool.t.k === 'build' && n > 0 && groundOnly(tool.t.type) && BLD[tool.t.type].kind !== 'foundation') setTool(null);
@@ -577,8 +577,6 @@ export function initInput(canvas: HTMLCanvasElement) {
     if (k === 'l') { if (!plannerAllowed()) { UI.toast('The Production Planner is available in Easy and Creative worlds', 'bad'); return; } return UI.toggleModal('planner'); }
     if (k === 'f1' || k === '?') { ev.preventDefault(); return UI.toggleModal('help'); }
     if (k === 'v') { view.showPower = !view.showPower; return; }
-    if (k === 'pageup' || k === 'e') { ev.preventDefault(); setLevel(view.level + 1); return; }
-    if (k === 'pagedown' || k === 'z') { ev.preventDefault(); setLevel(view.level - 1); return; }
     if (k === ',' || k === '.') { tiltCamera(k === ',' ? -0.08 : 0.08); return; }
     if (k === '\\') { UI.resetCamera(); return; }
     if (k === '[' || k === ']') { rotTarget += (k === '[' ? -1 : 1) * Math.PI / 4; return; }
