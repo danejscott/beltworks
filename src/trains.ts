@@ -3,7 +3,7 @@ import { railPos } from './railcurves';
 import { BLD } from './data';
 import { H, W } from './terrain';
 import { DX, DY, opp } from './util';
-import { addInv, borderTiles, canAfford, Ent, entAt, G, Line, markDirty, missingText, pairBit, pay, place, railAt, railExits, railSides, refund, Train } from './world';
+import { addInv, borderTiles, canAfford, Ent, entAt, G, Line, markDirty, missingText, pairBit, pay, place, platformTiles, railAt, railExits, railSides, refund, Train } from './world';
 import { TT } from './terrain';
 import { railPairsForPath, smartJunction } from './cmd';
 
@@ -116,6 +116,8 @@ export function trainAt(wx: number, wy: number): Train | null {
 // ---------------------------------------------------------------------------
 function stationGoals(st: Ent): Set<number> {
   const s = new Set<number>();
+  // stations with a platform: trains stop on the platform track only (connect your rails to its ends)
+  if (st.plat) { for (const [x, y] of platformTiles(st)) { const i = y * W + x; if (railAt(i)) s.add(i); } return s; }
   for (const [x, y] of borderTiles(st)) { const i = y * W + x; if (railAt(i)) s.add(i); }
   return s;
 }
@@ -392,6 +394,7 @@ const nb4 = (i: number) => { const x = i % W, y = Math.floor(i / W); const o: nu
  */
 export function buildRoute(a: Ent, b: Ent, withTrain: boolean): string | null {
   if (a === b) return 'Pick a different station';
+  if (a.plat && b.plat) return buildPlatformRoute(a, b, withTrain);
   railCost = 3; avoid = null;
   const out = findRailPath(a, b);
   railCost = 0.35;
@@ -421,6 +424,52 @@ export function buildRoute(a: Ent, b: Ent, withTrain: boolean): string | null {
   addPair(startN, back[back.length - 1], out[1]);
   markDirty('rail');
   const line: Line = { id: ++G.S.lineSeq, a: a.id, b: b.id, cells: loop, split: out.length };
+  G.S.lines.push(line);
+  if (a.mode === b.mode) { a.mode = 'load'; b.mode = 'unload'; }
+  if (withTrain) { const err = addTrainToLine(line, true); if (err) return 'Track built, but ' + err; }
+  return null;
+}
+/** a station's platform as tile indices (left to right) plus the tile just past each end */
+function platformOf(st: Ent) {
+  const P = platformTiles(st).map(([x, y]) => y * W + x);
+  const step = P[1] - P[0];
+  return { P, ends: [P[0] - step, P[P.length - 1] + step] };
+}
+/** Quick Route between two platform stations: one loop that runs through both platforms */
+function buildPlatformRoute(a: Ent, b: Ent, withTrain: boolean): string | null {
+  const A = platformOf(a), B = platformOf(b);
+  const okEnd = (i: number) => i >= 0 && i < W * H && routable(i) >= 0;
+  const platSet = new Set([...A.P, ...B.P]);
+  railCost = 3; avoid = new Set(platSet);
+  const out = findRailPath(a, b, A.ends.filter(okEnd), B.ends.filter(okEnd));
+  railCost = 0.35;
+  if (!out) { avoid = null; return 'No route found between the platforms (blocked by rock or buildings). Leave the ends of each platform open.'; }
+  const sA = out[0], gB = out[out.length - 1];
+  const oA = A.ends[0] === sA ? A.ends[1] : A.ends[0], oB = B.ends[0] === gB ? B.ends[1] : B.ends[0];
+  if (!okEnd(oA) || !okEnd(oB)) { avoid = null; return 'Found a way there, but the far end of a platform is blocked — the loop runs through both platforms.'; }
+  const onOut = new Set(out);
+  avoid = new Set(platSet);
+  for (const i of out) { avoid.add(i); for (const n of nb4(i)) if (!onOut.has(n)) avoid.add(n); }
+  avoid.delete(oA); avoid.delete(oB);
+  railCost = 3;
+  const back = findRailPath(b, a, [oB], [oA]);
+  railCost = 0.35; avoid = null;
+  if (!back) return 'Found a way there, but no room for the return track of a loop. Leave some space around the stations.';
+  // A's platform runs toward sA, B's away from gB
+  const PA = A.ends[1] === sA ? A.P : [...A.P].reverse();
+  const PB = B.ends[0] === gB ? B.P : [...B.P].reverse();
+  const loop = [...PA, ...out, ...PB, ...back];
+  if (new Set(loop).size !== loop.length) return 'The route crosses itself — try moving a station.';
+  const { cost } = routeCost(loop);
+  const total: Record<string, number> = { ...cost };
+  if (withTrain) for (const src of [BLD.locomotive.cost, BLD.wagon.cost]) for (const k in src) total[k] = (total[k] || 0) + src[k];
+  if (!canAfford(total)) return 'Not enough materials: ' + missingText(total);
+  layRails(loop);
+  const n = loop.length;
+  addPair(loop[0], loop[n - 1], loop[1]);
+  addPair(loop[n - 1], loop[n - 2], loop[0]);
+  markDirty('rail');
+  const line: Line = { id: ++G.S.lineSeq, a: a.id, b: b.id, cells: loop, split: PA.length + out.length };
   G.S.lines.push(line);
   if (a.mode === b.mode) { a.mode = 'load'; b.mode = 'unload'; }
   if (withTrain) { const err = addTrainToLine(line, true); if (err) return 'Track built, but ' + err; }

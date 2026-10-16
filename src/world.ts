@@ -169,7 +169,28 @@ export function pierBack(e: { x: number; y: number; w: number; h: number; rot: n
 export function pierAlong(e: { x: number; y: number; w: number; h: number; rot: number }, tx: number, ty: number) {
   return e.rot === 0 ? tx - e.x : e.rot === 2 ? e.x + e.w - 1 - tx : e.rot === 1 ? ty - e.y : e.y + e.h - 1 - ty;
 }
-const isPier = (e: any) => !!(e && e.type && BLD[e.type] && BLD[e.type].pier);
+const isPier = (e: any) => !!(e && e.type && BLD[e.type] && (BLD[e.type].pier || (BLD[e.type].kind === 'station' && e.plat)));
+/** train stations (built since platforms): the row of track along the front, from left to right as seen from behind */
+export function platformTiles(e: { x: number; y: number; w: number; h: number; rot: number }): number[][] {
+  const { x, y, w, h, rot } = e, out: number[][] = [];
+  if (rot === 0) for (let j = 0; j < h; j++) out.push([x + w, y + j]);
+  else if (rot === 2) for (let j = h - 1; j >= 0; j--) out.push([x - 1, y + j]);
+  else if (rot === 1) for (let i = w - 1; i >= 0; i--) out.push([x + i, y + h]);
+  else for (let i = 0; i < w; i++) out.push([x + i, y - 1]);
+  return out;
+}
+/** the rail pair a station's platform track uses (parallel to its front) */
+export const platformPair = (rot: number) => rot & 1 ? pairBit(0, 2) : pairBit(1, 3);
+/** lay a new station's platform track (existing track there is kept and joined) */
+export function addPlatform(e: Ent) {
+  e.plat = 1;
+  for (const [x, y] of platformTiles(e)) {
+    const r = entAt(x, y);
+    if (r && r.type === 'rail') r.pairs |= platformPair(e.rot);
+    else if (!r) { const n = place('rail', x, y, 0, { free: true, quiet: true, owner: e.o || 0 }); n.pairs = platformPair(e.rot); }
+  }
+  markDirty('rail'); markDirty('station', e);
+}
 /** the one tile in front of the building where its output comes out */
 export function frontTiles(e: { x: number; y: number; w: number; h: number; rot: number }): number[][] {
   if (isPier(e)) { const b = pierBack(e); return [b[b.length - 1]]; }   // harbors: out at the land end, right side
@@ -261,6 +282,12 @@ export function canPlace(type: string, x: number, y: number, rot: number, o: { f
   }
   if (MP.teams && d.kind !== 'hub') { const why = nearRivalBase(x, y, w, h, MP.cur); if (why) return why; }
   if (d.kind === 'elevator') { const me = MP.teams ? MP.cur : 0; for (const x of G.ents.values()) if (BLD[x.type].kind === 'elevator' && (x.o || 0) === me) return 'Only one Space Elevator'; }
+  if (d.kind === 'station' && !o.free) for (const [px, py] of platformTiles({ x, y, w, h, rot })) {
+    if (!inB(px, py)) return 'Out of bounds';
+    const id = G.grid[py * W + px], r = id && G.ents.get(id);
+    if (r && r.type !== 'rail') return 'Needs room in front for its platform track (the arrow side)';
+    if (!r && (G.nodeGrid[py * W + px] || (G.featGrid && G.featGrid[py * W + px]) || !isLand(G.tiles[py * W + px]))) return 'Needs open ground in front for its platform track (the arrow side)';
+  }
   if (d.kind === 'port' && !d.pier && shoreTiles(x, y, w, h) < 2) return 'Build it on the shore — it must touch a lake or the sea';
   if (TALL[type] && G.floorN) for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) for (let zz = z + 1; zz < NL; zz++)
     if (hasFloor(x + i, y + j, zz) && (zz - z) * LH - 0.3 < TALL[type]) return 'Too tall to fit under the foundations above';
@@ -414,6 +441,11 @@ export function remove(e: Ent, o: { quiet?: boolean } = {}): boolean {
   for (let j = 0; j < e.h; j++) for (let i = 0; i < e.w; i++) g[(e.y + j) * W + e.x + i] = 0;
   if (e.z2 !== undefined) gridOf(e.z2)[e.y * W + e.x] = 0;
   G.ents.delete(e.id);
+  if (e.plat) for (const [px, py] of platformTiles(e)) {
+    const r = entAt(px, py);
+    if (!r || r.type !== 'rail' || r.pairs !== platformPair(e.rot) || r.sig || G.trains.some(t => t.cells.includes(py * W + px))) continue;
+    G.grid[py * W + px] = 0; G.ents.delete(r.id); markDirty('rail', r);
+  }
   if (d.kind === 'station' || d.kind === 'drone' || d.kind === 'tstation' || d.kind === 'port') {
     for (const t of G.trains) t.sched = t.sched.filter(s => s !== e.id);
     for (const t of G.trucks) t.sched = t.sched.filter(s => s !== e.id);
@@ -427,7 +459,7 @@ export function remove(e: Ent, o: { quiet?: boolean } = {}): boolean {
 
 export function rotateEnt(e: Ent, dir = 1) {
   const d = BLD[e.type];
-  if (d.noRotate || d.kind === 'rail' || d.kind === 'tunnel' || d.kind === 'ptunnel') return false;
+  if (d.noRotate || d.kind === 'rail' || d.kind === 'tunnel' || d.kind === 'ptunnel' || (d.kind === 'station' && e.plat)) return false;
   if (e.w !== e.h) return false;
   e.rot = (e.rot + dir + 4) & 3; e.pop = 1;
   markDirty(d.kind, e);

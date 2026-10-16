@@ -6,7 +6,7 @@ import { G, place, PORTED, refund, remove, resetWorld, State } from './world';
 import { clearTeams, MP, makeTeamState, teamFields, useTeam, WORLD_KEYS } from './teams';
 import { deleteWorldFile, folderReady, listFolderWorlds, readWorldFile, writeWorldFile } from './filesaves';
 
-const KEYS = ['o', 'items', 'pair', 'isExit', 'recipe', 'ib', 'ob', 'prog', 'work', 'clock', 'shards', 'amp', 'tm', 'store', 'tot', 'mode', 'name', 'buf', 'filt', 'slot', 'famt', 'ffluid', 'fuelT', 'fbuf', 'water', 'stored', 'pairs', 'target', 'outbox', 'obTot', 'inbox', 'ibTot', 'dr', 'drs', 'sunk', 'anyIn', 'sig'];
+const KEYS = ['o', 'items', 'pair', 'isExit', 'recipe', 'ib', 'ob', 'prog', 'work', 'clock', 'shards', 'amp', 'tm', 'store', 'tot', 'mode', 'name', 'buf', 'filt', 'slot', 'famt', 'ffluid', 'fuelT', 'fbuf', 'water', 'stored', 'pairs', 'target', 'outbox', 'obTot', 'inbox', 'ibTot', 'dr', 'drs', 'sunk', 'anyIn', 'sig', 'plat'];
 
 const treeCache = { arr: null as any, rev: -1, list: [] as number[] };
 const floorCache = { arr: null as any, rev: -1, list: [] as number[] };

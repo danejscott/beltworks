@@ -264,7 +264,7 @@ function inspStatic(e: Ent): string {
   if (d.kind === 'station') {
     h += `<div class="sec">Name</div><input type="text" value="${esc(e.name)}" data-input="name" maxlength="24" style="width:100%">`;
     h += `<div class="sec">Mode</div><div class="row"><button class="${e.mode === 'load' ? 'go' : ''}" data-act="mode:load">⬆ Load trains</button><button class="${e.mode === 'unload' ? 'go' : ''}" data-act="mode:unload">⬇ Unload trains</button></div>`;
-    h += '<div class="sm">Trains stop on any rail tile touching the station.</div>';
+    h += e.plat ? '<div class="sm">Trains stop on the platform track (along the front). Connect your railway to either end of the platform. Belts go in and out at the back.</div>' : '<div class="sm">Trains stop on any rail tile touching the station.</div>';
     const others = stationList().filter((o: Ent) => o !== e);
     h += '<div class="sec">🚆 Quick Route</div>';
     if (!others.length) h += '<div class="sm">Place a second Train Station anywhere (even far away), then come back here to connect them automatically.</div>';

@@ -75,7 +75,7 @@ export function states(list) { const c = {}; for (const e of list) if (e) c[e.st
 // ---- ports and an automatic belt router
 const DX = [1, 0, -1, 0], DY = [0, 1, 0, -1];
 /** output port: [x, y, dir items leave in] */
-export function outP(e) { const W_ = BW().W; const [x, y] = W_.frontTiles(e)[0]; return [x, y, BW().DATA.BLD[e.type].pier ? (e.rot + 2) & 3 : e.rot]; }
+export function outP(e) { const W_ = BW().W; const [x, y] = W_.frontTiles(e)[0]; return [x, y, BW().DATA.BLD[e.type].pier || e.plat ? (e.rot + 2) & 3 : e.rot]; }
 /** main input port (back): [x, y, dir the belt must point] */
 export function inP(e) { const [x, y] = BW().W.inPort(e); return [x, y, e.rot]; }
 /** side input of a multi-ingredient machine: s = 'L' or 'R' */

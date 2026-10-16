@@ -84,7 +84,7 @@ export function rebuildLinks() {
       case 'rail': L.rails.push(e); break;
       case 'elevator': if ((e.o || 0) === MP.myTeam) L.elevator = e; break;
     }
-    if (d.kind !== 'belt' && d.kind !== 'tunnel' && d.kind !== 'rail' && d.kind !== 'lift') { e.ft = frontTiles(e); e.ip = inPort(e); if (d.pier) e.outDir = (e.rot + 2) & 3; }
+    if (d.kind !== 'belt' && d.kind !== 'tunnel' && d.kind !== 'rail' && d.kind !== 'lift') { e.ft = frontTiles(e); e.ip = inPort(e); if (d.pier || e.plat) e.outDir = (e.rot + 2) & 3; }
   }
   for (const b of L.belts) { b.nb = null; b.nbld = null; b.back = false; b.sides = 0; b.side = -1; }
   const feed = (b: Ent, dir: number) => {

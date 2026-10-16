@@ -12,7 +12,7 @@ import { signalRed, trainPoints, WAGON_CAP } from '../trains';
 import { nightness } from '../daynight';
 import { DX, DY, easeOutBack, hash2 } from '../util';
 import { parts, proj, spawn, view } from '../view';
-import { Ent, entAt, frontTiles, G, inPort, LH, PORTED, railSides } from '../world';
+import { Ent, entAt, frontTiles, G, inPort, LH, platformPair, platformTiles, PORTED, railSides } from '../world';
 import { Billboards } from './bb';
 import { C, screenRay } from './core';
 import { B, M, Model, std } from './mat';
@@ -274,7 +274,7 @@ export function portArrows(e: { type: string; x: number; y: number; w: number; h
     }
   }
   const hasOut = OUT_KINDS.has(d.kind) || !!d.waste;
-  if (hasOut) { const [fx, fy] = frontTiles(e)[0]; out.push([fx, fy, d.pier ? (r + 2) & 3 : r, true]); }
+  if (hasOut) { const [fx, fy] = frontTiles(e)[0]; out.push([fx, fy, d.pier || (e as any).plat ? (r + 2) & 3 : r, true]); }
   if (hasIn) { const [ix, iy] = inPort(e); out.push([ix, iy, r, false]); }
   return out;
 }
@@ -919,7 +919,8 @@ function updateGhosts(real: number) {
     const [w, h] = gh.rot & 1 ? [d.h, d.w] : [d.w, d.h];
     pushTemplate(GL, pre + 'T:' + gh.type, t, compose(gh.x + w / 2, 0, gh.y + h / 2, d.noRotate ? 0 : -gh.rot * HP), mat);
     if (d.kind === 'pole' || d.kind === 'hub') GL.get('garea', mdl('areaP', () => ({ geo: new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), mats: [] })).geo, areaMat, false).push(compose(gh.x + w / 2, 0.06, gh.y + h / 2, 0, w + d.area! * 2, 1, h + d.area! * 2));
-    pushPortArrows(GL, { type: gh.type, x: gh.x, y: gh.y, w, h, rot: gh.rot } as any, 'g');
+    if (d.kind === 'station') for (const [px, py] of platformTiles({ x: gh.x, y: gh.y, w, h, rot: gh.rot })) pushRail(GL, px, py, platformPair(gh.rot), mat, pre);
+    pushPortArrows(GL, { type: gh.type, x: gh.x, y: gh.y, w, h, rot: gh.rot, plat: BLD[gh.type].kind === 'station' ? 1 : 0 } as any, 'g');
   }
   ZO = 0;
   GL.end();

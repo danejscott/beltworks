@@ -12,7 +12,7 @@ import { buyShop, loadElevator, submitMilestone } from './progress';
 import { flushNet, fluidsTouching, myCraft, setRecipe } from './sim';
 import { asTeam, MP } from './teams';
 import { joinTeam, leaveTeam, nearRivalBase, newSeason, spawnTeam } from './online';
-import { addInv, canAfford, canPlace, canRemove, chopTree, Ent, entAt, floorBlocked, G, groundOnly, hasFloor, markDirty, missingText, nodeAt, pairBit, PAIRS, pay, place, refund, remove, rotateEnt, setFloor, upgradeTarget, creative, NL } from './world';
+import { addInv, addPlatform, canAfford, canPlace, canRemove, chopTree, Ent, entAt, floorBlocked, G, groundOnly, hasFloor, markDirty, missingText, nodeAt, pairBit, PAIRS, pay, place, refund, remove, rotateEnt, setFloor, upgradeTarget, creative, NL } from './world';
 import { clamp } from './util';
 import { DRONE_COST, DRONE_SLOTS, dronesOf, newDrone } from './drones';
 
@@ -165,6 +165,7 @@ function placeOne(c: Cmd) {
     return;
   }
   const e = place(c.type, c.x, c.y, c.rot, { z });
+  if (d.kind === 'station') addPlatform(e);   // its own stretch of track along the front
   if (c.recipe && d.machine && G.S.unlocked.has(c.recipe)) setRecipe(e, c.recipe);
   if (c.clock && e.clock !== undefined) e.clock = Math.min(c.clock, 1);
   if (c.filt && e.filt) e.filt = [...c.filt];
@@ -279,6 +280,7 @@ function paste(bp: any, ox: number, oy: number, z0: number) {
     if (ex && d.kind === 'pipe') { placed++; continue; }
     if (!canAfford(d.cost)) { broke = true; for (const k in d.cost) need[k] = d.cost[k]; break; }
     const e = place(o.t, x, y, o.r, { quiet: bp.ents.length > 30, z });
+    if (BLD[o.t].kind === 'station') addPlatform(e);
     if (o.pr) { e.pairs = o.pr; markDirty('rail', e); }
     if (o.rc && G.S.unlocked.has(o.rc)) setRecipe(e, o.rc);
     if (o.fl) e.filt = [...o.fl];
