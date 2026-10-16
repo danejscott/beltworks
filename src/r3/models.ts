@@ -333,21 +333,28 @@ export function buildTemplates(): Record<string, Template> {
   // ---- Transport
   {
     const b = new B();
-    // raised concrete platform with yellow safety edges on every side (tracks can run along any of them)
+    // raised concrete platform; local +x is the front, where the station's own platform track runs
     b.box(2.9, 0.34, 2.9, 0, 0, 0, M.concrete);
-    for (const z of [-1.39, 1.39]) b.box(2.9, 0.04, 0.12, 0, 0.34, z, M.yellow);
-    for (const x of [-1.39, 1.39]) b.box(0.12, 0.04, 2.9, x, 0.34, 0, M.yellow);
-    // station house with a clock
-    b.box(1.1, 1.3, 1.0, -0.8, 0.34, -0.8, M.orange); b.box(1.16, 0.1, 1.06, -0.8, 1.64, -0.8, M.steelDk);
-    b.box(0.6, 0.35, 0.02, -0.8, 0.95, -0.29, M.glass); b.box(0.02, 0.35, 0.5, -0.24, 0.95, -0.8, M.glass);
-    b.cyl(0.2, 0.05, -0.8, 1.76, -0.8, M.white, 16); b.box(0.03, 0.02, 0.14, -0.8, 1.82, -0.74, M.black);
-    // canopy over the platform on slim columns
-    for (const x of [-0.2, 1.2]) for (const z of [-1.2, 1.2]) b.box(0.1, 1.9, 0.1, x, 0.34, z, M.steelDk);
-    b.box(1.8, 0.1, 2.8, 0.5, 2.24, 0, M.greyLt); b.box(1.84, 0.05, 0.08, 0.5, 2.2, 1.4, M.orange); b.box(1.84, 0.05, 0.08, 0.5, 2.2, -1.4, M.orange);
-    // loading gantry and cargo crates waiting on the platform
-    b.box(0.08, 1.4, 0.08, 1.35, 0.34, -0.2, M.yellow); b.box(0.08, 1.4, 0.08, 1.35, 0.34, 0.6, M.yellow); b.box(0.1, 0.1, 1.0, 1.35, 1.74, 0.2, M.yellow);
-    b.box(0.45, 0.4, 0.45, 0.5, 0.34, 0.8, M.wood); b.box(0.45, 0.4, 0.45, 0.5, 0.74, 0.8, M.wood); b.box(0.45, 0.4, 0.45, 0.0, 0.34, 0.9, M.wood);
-    b.box(0.55, 0.45, 0.4, -0.9, 0.34, 0.9, M.blue);
+    b.box(0.14, 0.05, 2.9, 1.38, 0.34, 0, M.yellow); b.box(0.16, 0.02, 2.9, 1.15, 0.34, 0, M.greyLt);   // edge line + tactile strip
+    for (const z of [-1.39, 1.39]) b.box(2.9, 0.03, 0.06, 0, 0.34, z, M.steelDk);
+    // station house at the back, windows and a clock facing the platform
+    b.box(1.0, 1.4, 1.3, -0.9, 0.34, -0.72, M.orange); b.box(1.06, 0.1, 1.36, -0.9, 1.74, -0.72, M.steelDk);
+    b.box(0.02, 0.4, 0.8, -0.39, 0.9, -0.72, M.glass); b.box(0.02, 0.6, 0.35, -0.39, 0.34, -0.2, M.steelDk);
+    b.hcyl(0.17, 0.04, -0.37, 1.48, -0.72, M.white, 'x', 16); b.box(0.02, 0.12, 0.02, -0.35, 1.5, -0.72, M.black);
+    // loader at the back right: hopper that belts feed, with a chute arm reaching out over the track
+    b.box(0.9, 0.9, 1.0, -0.95, 0.34, 0.8, M.grey); b.box(0.96, 0.08, 1.06, -0.95, 1.24, 0.8, M.steelDk);
+    b.add(new THREE.CylinderGeometry(0.42, 0.18, 0.5, 4, 1), M.yellow, -0.95, 1.55, 0.8, 0, Math.PI / 4, 0);
+    b.box(0.1, 1.6, 0.1, 0.35, 0.34, 0.8, M.yellow); b.beam([-0.6, 1.75, 0.8], [1.75, 1.95, 0.8], 0.06, M.yellow);
+    b.box(0.3, 0.5, 0.3, 1.7, 1.45, 0.8, M.steelDk);
+    // canopy over the front of the platform, cantilevered toward the track
+    for (const z of [-1.15, 0, 1.15]) b.box(0.1, 1.9, 0.1, 0.25, 0.34, z, M.steelDk);
+    b.box(1.75, 0.1, 2.9, 0.85, 2.24, 0, M.greyLt); b.box(0.08, 0.06, 2.92, 1.73, 2.2, 0, M.orange);
+    // name board hanging under the canopy, benches and lamps
+    b.box(0.04, 0.26, 0.9, 0.9, 1.85, -0.4, M.white); b.box(0.05, 0.3, 0.94, 0.9, 1.83, -0.4, M.steelDk);
+    for (const z of [-0.95, 0.15]) { b.box(0.22, 0.04, 0.6, 0.6, 0.56, z, M.wood); b.box(0.04, 0.2, 0.6, 0.5, 0.56, z, M.wood); }
+    for (const z of [-1.3, 1.3]) { b.cyl(0.03, 1.5, 1.25, 0.34, z, M.steelDk, 6); b.box(0.2, 0.06, 0.14, 1.25, 1.84, z, M.glowWhite); }
+    // a few crates waiting to be loaded
+    b.box(0.4, 0.36, 0.4, -0.2, 0.34, 1.0, M.wood); b.box(0.4, 0.36, 0.4, -0.2, 0.7, 1.0, M.wood); b.box(0.45, 0.4, 0.35, -0.25, 0.34, 0.45, M.blue);
     T.station = { stat: b.build(), height: 2.4, light: [1.35, 1.9, 0.2], anims: [] };
   }
   {
@@ -386,37 +393,54 @@ export function buildTemplates(): Record<string, Template> {
     b.box(0.55, 0.45, 0.55, -0.8, 0.35, 0.8, M.blue); b.box(0.55, 0.45, 0.55, -0.8, 0.8, 0.8, M.red);
     T.ship_port = { stat: b.build(), height: 2.6, light: [-0.4, 1.3, -1.35], anims: [{ key: 'jib', model: one(b2 => { b2.box(2.3, 0.1, 0.12, 0.85, 0, 0, M.yellow); b2.cyl(0.02, 0.6, 1.8, -0.6, 0, M.steelDk, 4); b2.box(0.25, 0.12, 0.25, 1.8, -0.72, 0, M.steelDk); }), fn: (o, _e, _t, real) => { o.y = 2.66; o.z = 0.9; o.ry = Math.sin(real * 0.3) * 0.9; } }] };
   }
-  // ---- Harbor: a concrete pier (7 x 4) from the beach out over the water. Local +x = out to sea.
-  {
+  // ---- Harbor: a concrete pier from the beach out over the water (11 x 5; 7 x 4 in older worlds). Local +x = out to sea.
+  const harbor = (L: number, Wd: number, big: boolean): Template => {
     const b = new B();
-    const L = 6.9, Wd = 3.9;
-    // pillars under the sea end, the deck, and a raised quay wall along the water
-    for (let x = -1.8; x <= 3.3; x += 1.25) for (const z of [-1.7, 1.7]) b.box(0.32, 0.9, 0.32, x, -0.6, z, M.concrete);
+    const x0 = -L / 2, Z = Wd / 2, xs = x0 + 1.8, xe = L / 2;   // land end, half width, start / end of the open quay
+    // pillars under the sea end, the deck, and the quay surface
+    for (let x = x0 + 1.65; x <= xe - 0.1; x += 1.25) for (const z of [-(Z - 0.25), Z - 0.25]) b.box(0.32, 0.9, 0.32, x, -0.6, z, M.concrete);
     b.box(L, 0.4, Wd, 0, 0, 0, M.concrete);
-    b.box(L - 1.8, 0.02, Wd - 0.2, 0.9, 0.4, 0, M.grey);
-    // yellow safety lines and bollards along both sides of the pier
-    for (const z of [-1.82, 1.82]) { b.box(L - 1.9, 0.03, 0.08, 0.95, 0.4, z * 0.97, M.yellow); for (let x = -1.2; x <= 3.2; x += 1.1) b.cyl(0.09, 0.22, x, 0.4, z, M.black, 8); }
+    b.box(xe - xs, 0.02, Wd - 0.2, (xs + xe) / 2, 0.4, 0, M.grey);
+    // yellow safety lines, bollards and rubber fenders along both sides
+    for (const z of [-(Z - 0.13), Z - 0.13]) {
+      b.box(xe - xs - 0.1, 0.03, 0.08, (xs + xe) / 2 + 0.05, 0.4, z * 0.97, M.yellow);
+      for (let x = x0 + 2.25; x <= xe - 0.25; x += 1.1) b.cyl(0.09, 0.22, x, 0.4, z, M.black, 8);
+      if (big) for (let x = x0 + 2.8; x <= xe - 0.4; x += 1.4) b.hcyl(0.16, 0.14, x, 0.05, Math.sign(z) * (Z + 0.06), M.rubber, 'z', 10);
+    }
     // warehouse on the land end, with a roll-up door facing the pier
-    b.box(1.5, 1.5, 3.4, -2.6, 0.4, 0, M.orange); b.box(1.56, 0.12, 3.46, -2.6, 1.9, 0, M.steelDk);
-    b.box(0.03, 0.9, 1.3, -1.84, 0.4, 0, M.greyLt); for (let i = 0; i < 6; i++) b.box(0.04, 0.02, 1.3, -1.82, 0.5 + i * 0.14, 0, M.grey);
-    b.box(0.03, 0.3, 0.8, -1.84, 1.45, -1.1, M.glass);
+    b.box(1.5, 1.5, Wd - 0.5, x0 + 0.85, 0.4, 0, M.orange); b.box(1.56, 0.12, Wd - 0.44, x0 + 0.85, 1.9, 0, M.steelDk);
+    b.box(0.03, 0.9, 1.3, x0 + 1.61, 0.4, 0, M.greyLt); for (let i = 0; i < 6; i++) b.box(0.04, 0.02, 1.3, x0 + 1.63, 0.5 + i * 0.14, 0, M.grey);
+    b.box(0.03, 0.3, 0.8, x0 + 1.61, 1.45, -(Z - 0.85), M.glass);
+    if (big) { // harbor office with a glass control room on top
+      b.box(1.0, 1.1, 1.0, x0 + 0.85, 2.02, Z - 0.9, M.white); b.box(1.1, 0.5, 1.1, x0 + 0.85, 3.12, Z - 0.9, M.glass); b.box(1.2, 0.08, 1.2, x0 + 0.85, 3.62, Z - 0.9, M.steelDk);
+      b.cyl(0.03, 0.9, x0 + 0.85, 3.7, Z - 0.9, M.steelDk, 6); b.box(0.5, 0.04, 0.04, x0 + 0.85, 4.3, Z - 0.9, M.steelDk);
+    }
     // stacked shipping containers
     const cols = [M.red, M.blue, M.green, M.orange, M.teal, M.white];
-    for (let i = 0; i < 3; i++) for (let j = 0; j < 2; j++) for (let k = 0; k < (i + j) % 3 + 1; k++) b.box(1.05, 0.42, 0.5, -0.4 + i * 0.05, 0.42 + k * 0.43, -1.25 + j * 0.55 + i * 0, cols[(i * 2 + j + k) % cols.length]);
-    for (let j = 0; j < 2; j++) for (let k = 0; k < 2 - j; k++) b.box(1.05, 0.42, 0.5, 0.95, 0.42 + k * 0.43, 0.75 + j * 0.55, cols[(j + k + 3) % cols.length]);
-    // gantry crane: two legs on rails spanning the pier, a girder over the water
-    b.box(L - 2.2, 0.05, 0.1, 1.2, 0.4, -1.5, M.steelDk); b.box(L - 2.2, 0.05, 0.1, 1.2, 0.4, 1.5, M.steelDk);
-    for (const z of [-1.5, 1.5]) { b.box(0.22, 3.1, 0.22, 2.3, 0.45, z, M.yellow); b.beam([2.3, 0.6, z], [2.3, 2.8, z * 0.4], 0.05, M.yellow); }
-    b.box(0.35, 0.3, 4.6, 2.3, 3.5, 0.55, M.yellow);
-    b.box(0.6, 0.5, 0.6, 2.3, 3.8, -1.3, M.steelDk); b.box(0.02, 0.2, 0.35, 2.61, 3.95, -1.3, M.glass);
-    // lamp posts
-    for (const [x, z] of [[-1.3, 1.75], [3.2, -1.75]]) { b.cyl(0.04, 2.0, x, 0.4, z, M.steelDk, 6); b.box(0.28, 0.08, 0.16, x, 2.4, z, M.glowWhite); }
-    T.harbor = {
-      stat: b.build(), height: 4.0, light: [-1.9, 1.7, -1.5],
-      anims: [{ key: 'trolley', model: one(b2 => { b2.box(0.5, 0.25, 0.5, 0, 0, 0, M.steelDk); b2.cyl(0.015, 1.9, 0, -1.9, 0, M.steelDk, 4); b2.box(1.0, 0.4, 0.5, 0, -2.3, 0, M.red); }),
-        fn: (o, _e, _t, real) => { const ph = (Math.sin(real * 0.35) + 1) / 2; o.x = 2.3; o.y = 3.35; o.z = -1.6 + ph * 4.3; } }],
-    };
-  }
+    const cx0 = x0 + 3.05;
+    // container rows: [x, z, rotated, max height]; the older small pier keeps its original two stacks
+    const rows: [number, number, boolean, number][] = big
+      ? [[cx0, -(Z - 0.7), false, 3], [cx0, -(Z - 1.25), false, 2], [cx0 + 1.2, -(Z - 0.7), false, 2], [cx0 + 1.2, -(Z - 1.25), false, 3],
+         [cx0, Z - 1.2, false, 2], [cx0, Z - 0.65, false, 1], [cx0 + 2.5, 0.3, true, 3], [cx0 + 3.05, 0.3, true, 2]]
+      : [[cx0 - 0.4 + 0.4, -(Z - 0.7), false, 3], [cx0, -(Z - 1.25), false, 2], [cx0 + 1.35, Z - 1.2, false, 2], [cx0 + 1.35, Z - 0.65, false, 1]];
+    rows.forEach(([x, z, rotd, n], i) => { for (let k = 0; k < n; k++) b.box(rotd ? 0.5 : 1.05, 0.42, rotd ? 1.05 : 0.5, x, 0.42 + k * 0.43, z, cols[(i * 2 + k) % cols.length]); });
+    // gantry crane(s): legs on rails spanning the pier, a girder reaching out over the water
+    for (const z of [-(Z - 0.45), Z - 0.45]) b.box(xe - xs - 0.4, 0.05, 0.1, (xs + xe) / 2 + 0.2, 0.4, z, M.steelDk);
+    const cranes = big ? [xe - 1.15, xe - 4.2] : [xe - 1.15];
+    for (const cxn of cranes) {
+      for (const z of [-(Z - 0.45), Z - 0.45]) { b.box(0.22, 3.1, 0.22, cxn, 0.45, z, M.yellow); b.beam([cxn, 0.6, z], [cxn, 2.8, z * 0.4], 0.05, M.yellow); }
+      b.box(0.35, 0.3, Wd + 0.7, cxn, 3.5, 0.55 * Wd / 3.9, M.yellow);
+      b.box(0.6, 0.5, 0.6, cxn, 3.8, -(Z - 0.65), M.steelDk); b.box(0.02, 0.2, 0.35, cxn + 0.31, 3.95, -(Z - 0.65), M.glass);
+    }
+    // lamp posts, and a beacon at the sea end on the big pier
+    for (const [x, z] of [[x0 + 2.15, Z - 0.2], [xe - 0.25, -(Z - 0.2)]]) { b.cyl(0.04, 2.0, x, 0.4, z, M.steelDk, 6); b.box(0.28, 0.08, 0.16, x, 2.4, z, M.glowWhite); }
+    if (big) { b.cyl(0.12, 0.9, xe - 0.3, 0.4, Z - 0.3, M.white, 8); b.cyl(0.13, 0.15, xe - 0.3, 0.9, Z - 0.3, M.red, 8); b.cyl(0.08, 0.14, xe - 0.3, 1.3, Z - 0.3, M.glowWhite, 8); }
+    const trolley = (cxn: number, key: string, ph0: number) => ({ key, model: one(b2 => { b2.box(0.5, 0.25, 0.5, 0, 0, 0, M.steelDk); b2.cyl(0.015, 1.9, 0, -1.9, 0, M.steelDk, 4); b2.box(1.0, 0.4, 0.5, 0, -2.3, 0, M.red); }),
+      fn: (o: any, _e: any, _t: any, real: number) => { const ph = (Math.sin(real * 0.35 + ph0) + 1) / 2; o.x = cxn; o.y = 3.35; o.z = -(Z - 0.35) + ph * (Wd + 0.4); } });
+    return { stat: b.build(), height: 4.0, light: [x0 + 1.55, 1.7, -(Z - 0.45)], anims: cranes.map((c, i) => trolley(c, 'trolley' + i, i * 2.1)) } as Template;
+  };
+  T.harbor = harbor(10.9, 4.9, true);
+  T.harbor7 = harbor(6.9, 3.9, false);
   // ---- Outpost: a small field base with a comms mast and a beacon
   {
     const b = new B();
@@ -597,21 +621,33 @@ export function treeModelsLow(): Model[] {
 export function locoModel(): Model {
   return one(b => {
     b.box(1.85, 0.12, 0.72, 0, 0.18, 0, M.steelDk);
-    for (const x of [-0.65, -0.2, 0.25, 0.65]) for (const z of [-0.3, 0.3]) b.hcyl(0.13, 0.08, x, 0.16, z, M.black, 'z', 10);
-    b.box(1.2, 0.55, 0.64, -0.25, 0.3, 0, M.orange);
-    b.box(0.5, 0.75, 0.7, 0.62, 0.3, 0, M.orange); b.box(0.52, 0.08, 0.72, 0.62, 1.05, 0, M.steelDk);
-    b.box(0.02, 0.25, 0.5, 0.875, 0.72, 0, M.glass); b.box(0.35, 0.25, 0.02, 0.62, 0.72, 0.355, M.glass);
+    // two bogies with wheels and a fuel tank slung between them
+    for (const x of [-0.55, 0.5]) { b.box(0.62, 0.1, 0.62, x, 0.08, 0, M.black); for (const dx of [-0.2, 0.2]) for (const z of [-0.3, 0.3]) b.hcyl(0.13, 0.08, x + dx, 0.16, z, M.black, 'z', 10); }
+    b.hcyl(0.14, 0.62, 0, 0.14, 0, M.grey, 'x', 10);
+    // long hood with grilles, a roof fan and an exhaust stack
+    b.box(1.2, 0.55, 0.6, -0.25, 0.3, 0, M.orange); b.box(1.22, 0.05, 0.62, -0.25, 0.53, 0, M.yellow);
     for (let i = 0; i < 4; i++) b.box(0.18, 0.04, 0.5, -0.7 + i * 0.3, 0.86, 0, M.grey);
-    b.box(0.05, 0.1, 0.5, 0.9, 0.35, 0, M.yellow);
+    b.cyl(0.12, 0.04, -0.6, 0.88, 0, M.steelDk, 12); b.cyl(0.05, 0.16, 0.05, 0.85, 0.12, M.black, 8);
+    // cab with windows, roof and horn
+    b.box(0.5, 0.75, 0.7, 0.62, 0.3, 0, M.orange); b.box(0.52, 0.08, 0.72, 0.62, 1.05, 0, M.steelDk);
+    b.box(0.02, 0.25, 0.5, 0.875, 0.72, 0, M.glass); for (const z of [-0.355, 0.355]) b.box(0.35, 0.25, 0.02, 0.62, 0.72, z, M.glass);
+    b.cyl(0.03, 0.1, 0.5, 1.13, 0.2, M.steel, 6);
+    // walkway handrails, nose with headlights and a yellow buffer beam
+    for (const z of [-0.34, 0.34]) b.box(1.2, 0.03, 0.02, -0.25, 0.62, z, M.yellow);
+    b.box(0.05, 0.1, 0.6, 0.9, 0.3, 0, M.yellow);
+    for (const z of [-0.18, 0.18]) b.box(0.02, 0.07, 0.1, 0.89, 0.45, z, M.glowWhite);
   });
 }
 export function wagonModel(): Model {
   return one(b => {
     b.box(1.85, 0.12, 0.72, 0, 0.18, 0, M.steelDk);
-    for (const x of [-0.6, 0.6]) for (const z of [-0.3, 0.3]) b.hcyl(0.13, 0.08, x, 0.16, z, M.black, 'z', 10);
+    for (const x of [-0.6, 0.6]) { b.box(0.55, 0.1, 0.6, x, 0.08, 0, M.black); for (const dx of [-0.17, 0.17]) for (const z of [-0.3, 0.3]) b.hcyl(0.12, 0.08, x + dx, 0.15, z, M.black, 'z', 10); }
+    // ribbed freight box with a sliding door on each side and a roof walkway
     b.box(1.75, 0.5, 0.66, 0, 0.3, 0, M.greyLt);
     for (let i = 0; i < 7; i++) b.box(0.04, 0.46, 0.68, -0.78 + i * 0.26, 0.32, 0, M.grey);
-    b.box(1.77, 0.04, 0.68, 0, 0.8, 0, M.steelDk);
+    for (const z of [-0.335, 0.335]) { b.box(0.5, 0.4, 0.02, 0.05, 0.33, z, M.steelDk); b.box(0.6, 0.03, 0.03, 0.05, 0.76, z, M.black); }
+    b.box(1.77, 0.04, 0.68, 0, 0.8, 0, M.steelDk); b.box(1.6, 0.03, 0.16, 0, 0.84, 0, M.wood);
+    for (const x of [-0.94, 0.94]) b.box(0.03, 0.06, 0.12, x, 0.22, 0, M.yellow);   // couplers
   });
 }
 export function truckModel(): Model {
@@ -650,17 +686,34 @@ export function crystalModel(tier: number): Model {
     if (tier > 0) b.add(new THREE.OctahedronGeometry(0.1), m, 0.02, 0.24, -0.2, -0.5, 0, 0.1, 0.7, 1.5, 0.7);
   });
 }
-/** cargo ship: hull, containers and a bridge at the stern (bow points +x) */
+/** cargo ship (about 5.4 tiles long): hull with a raked bow, rows of containers, and the bridge at the stern (bow points +x) */
 export function shipModel(): Model {
   return one(b => {
-    b.add(new THREE.BoxGeometry(2.6, 0.5, 0.95), M.steelDk, 0, 0.1, 0);
-    b.add(new THREE.CylinderGeometry(0.48, 0.48, 0.5, 3, 1), M.steelDk, 1.3, 0.1, 0, 0, Math.PI / 2, 0, 0.9, 1, 1);
-    b.box(2.9, 0.08, 1.0, 0.05, 0.35, 0, M.red);
-    b.box(2.4, 0.06, 0.85, 0.1, 0.43, 0, M.grey);
-    for (let i = 0; i < 3; i++) for (let j = 0; j < 2; j++) b.box(0.45, 0.3, 0.38, -0.2 + i * 0.5, 0.49 + j * 0.3, 0, [M.orange, M.blue, M.green][(i + j) % 3]);
-    b.box(0.5, 0.55, 0.8, -1.0, 0.49, 0, M.white); b.box(0.52, 0.12, 0.82, -1.0, 1.04, 0, M.steelDk);
-    b.box(0.02, 0.14, 0.6, -0.74, 0.86, 0, M.glass);
-    b.cyl(0.08, 0.35, -1.15, 1.16, 0, M.orange, 8);
+    // hull: dark sides, a red waterline band, a pointed bow and a rounded stern
+    b.add(new THREE.BoxGeometry(4.5, 0.8, 1.7), M.steelDk, -0.15, 0.1, 0);
+    b.add(new THREE.CylinderGeometry(0.85, 0.85, 0.8, 3, 1), M.steelDk, 2.1, 0.1, 0, 0, Math.PI / 2, 0, 1.25, 1, 1);
+    b.add(new THREE.CylinderGeometry(0.85, 0.85, 0.8, 12, 1, false, 0, Math.PI), M.steelDk, -2.4, 0.1, 0, 0, Math.PI, 0, 0.45, 1, 1);
+    b.box(4.5, 0.12, 1.72, -0.15, -0.22, 0, M.red);
+    b.box(4.7, 0.08, 1.76, -0.05, 0.5, 0, M.red);
+    b.box(4.4, 0.05, 1.55, -0.05, 0.56, 0, M.grey);
+    // forecastle and bow mast
+    b.box(0.5, 0.18, 1.3, 2.3, 0.58, 0, M.grey); b.cyl(0.03, 0.9, 2.4, 0.76, 0, M.steelDk, 6);
+    for (const z of [-0.45, 0.45]) b.cyl(0.06, 0.12, 2.2, 0.76, z, M.black, 8);
+    // containers: 5 bays x 3 across, stacked 1-3 high
+    const cols = [M.orange, M.blue, M.green, M.red, M.teal, M.white];
+    for (let i = 0; i < 5; i++) for (let j = 0; j < 3; j++) {
+      const n = 1 + ((i * 7 + j * 3) % 3);
+      for (let k = 0; k < n; k++) b.box(0.64, 0.34, 0.46, -0.95 + i * 0.66, 0.61 + k * 0.35, -0.5 + j * 0.5, cols[(i * 3 + j + k) % cols.length]);
+    }
+    // stern superstructure: accommodation block, bridge with windows and wings, funnel, radar mast
+    b.box(0.95, 1.05, 1.4, -1.85, 0.56, 0, M.white);
+    for (let k = 0; k < 2; k++) b.box(0.02, 0.1, 1.2, -1.37, 0.8 + k * 0.35, 0, M.glass);
+    b.box(1.05, 0.38, 1.9, -1.8, 1.61, 0, M.white); b.box(0.02, 0.16, 1.7, -1.27, 1.74, 0, M.glass);
+    b.box(1.1, 0.06, 1.95, -1.8, 1.99, 0, M.steelDk);
+    b.cyl(0.17, 0.6, -2.2, 2.05, 0, M.orange, 10); b.cyl(0.175, 0.12, -2.2, 2.6, 0, M.black, 10);
+    b.cyl(0.025, 0.55, -1.75, 2.05, 0, M.steelDk, 6); b.box(0.06, 0.04, 0.5, -1.75, 2.5, 0, M.greyLt);
+    // lifeboats on davits at the sides of the superstructure
+    for (const z of [-0.78, 0.78]) b.box(0.55, 0.16, 0.2, -1.85, 1.15, z, M.orange);
   });
 }
 export function droneModel(): Model {

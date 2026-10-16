@@ -6,7 +6,7 @@ import { G, place, PORTED, refund, remove, resetWorld, State } from './world';
 import { clearTeams, MP, makeTeamState, teamFields, useTeam, WORLD_KEYS } from './teams';
 import { deleteWorldFile, folderReady, listFolderWorlds, readWorldFile, writeWorldFile } from './filesaves';
 
-const KEYS = ['o', 'items', 'pair', 'isExit', 'recipe', 'ib', 'ob', 'prog', 'work', 'clock', 'shards', 'amp', 'tm', 'store', 'tot', 'mode', 'name', 'buf', 'filt', 'slot', 'famt', 'ffluid', 'fuelT', 'fbuf', 'water', 'stored', 'pairs', 'target', 'outbox', 'obTot', 'inbox', 'ibTot', 'dr', 'drs', 'sunk', 'anyIn', 'sig', 'plat'];
+const KEYS = ['o', 'items', 'pair', 'isExit', 'recipe', 'ib', 'ob', 'prog', 'work', 'clock', 'shards', 'amp', 'tm', 'store', 'tot', 'mode', 'name', 'buf', 'filt', 'slot', 'famt', 'ffluid', 'fuelT', 'fbuf', 'water', 'stored', 'pairs', 'target', 'outbox', 'obTot', 'inbox', 'ibTot', 'dr', 'drs', 'sunk', 'anyIn', 'sig', 'plat', 'big'];
 
 const treeCache = { arr: null as any, rev: -1, list: [] as number[] };
 const floorCache = { arr: null as any, rev: -1, list: [] as number[] };
@@ -85,7 +85,9 @@ export function deserialize(o: any, keepTerrain = false) {
   for (let k = 0; k < fl.length; k += 2) for (let z = 1; z < 4; z++) if (fl[k + 1] & (1 << z)) decks++;
   (G as any).floorRev = ((G as any).floorRev || 0) + 1;
   for (const q of o.ents) {
-    const e = place(q.t, q.x, q.y, q.r, { free: true, quiet: true, id: q.i, z: q.z || 0 });
+    // harbors built before the bigger pier keep their old 7 x 4 footprint
+    const wh: [number, number] | undefined = q.t === 'harbor' && !q.big ? (q.r & 1 ? [4, 7] : [7, 4]) : undefined;
+    const e = place(q.t, q.x, q.y, q.r, { free: true, quiet: true, id: q.i, z: q.z || 0, wh });
     for (const k of KEYS) if (q[k] !== undefined) e[k] = q[k];
     if (q.items) e.items = q.items.map(([it, pos]: any) => ({ it, pos }));
   }

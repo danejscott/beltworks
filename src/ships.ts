@@ -31,19 +31,23 @@ export function berths(p: Ent): number[] {
 function freeBerths(p: Ent, me: Ship): number[] {
   const taken = new Set<number>();
   for (const o of G.ships) if (o !== me && (o as any).bay >= 0 && o.sched[o.si] === p.id) taken.add((o as any).bay);
-  // keep ships a tile apart along the pier
-  return berths(p).filter(i => !taken.has(i) && !taken.has(i - 1) && !taken.has(i + 1) && !taken.has(i - W) && !taken.has(i + W));
+  // ships are about 5 tiles long: keep moored ships a hull's length apart
+  const near = (i: number) => { for (const t of taken) if (Math.abs(t % W - i % W) + Math.abs(Math.floor(t / W) - Math.floor(i / W)) < 6) return true; return false; };
+  return berths(p).filter(i => !near(i));
 }
 /** where to wait at anchor when every berth is busy */
 function anchorage(p: Ent, me: Ship): number[] {
   const busy = new Set<number>();
   for (const o of G.ships) if (o !== me) { busy.add(Math.floor(o.y) * W + Math.floor(o.x)); if ((o as any).qspot >= 0) busy.add((o as any).qspot); }
   const out: number[] = [];
-  for (let r = 4; r <= 14 && out.length < 30; r += 2) for (let k = 0; k < 24; k++) {
+  const r0 = Math.ceil(Math.max(p.w, p.h) / 2) + 4;
+  for (let r = r0; r <= r0 + 14 && out.length < 30; r += 2) for (let k = 0; k < 24; k++) {
     const a = k / 24 * Math.PI * 2, x = Math.round(p.x + p.w / 2 + Math.cos(a) * r), y = Math.round(p.y + p.h / 2 + Math.sin(a) * r);
     if (x < 1 || y < 1 || x >= W - 1 || y >= G.tiles.length / W - 1) continue;
     const i = y * W + x;
-    if (cost(i) >= 0 && !busy.has(i) && !busy.has(i + 1) && !busy.has(i - 1) && !busy.has(i + W) && !busy.has(i - W)) out.push(i);
+    let clear = cost(i) >= 0;
+    for (const b of busy) if (clear && Math.hypot(b % W - x, Math.floor(b / W) - y) < 5) clear = false;
+    if (clear) out.push(i);
   }
   return out;
 }
@@ -155,7 +159,16 @@ export function updateShips(dt: number) {
         if (s.waitT === 0) S.got = 0;
         s.waitT += dt;
         // moored: swing round to lie alongside the pier
-        if (BLD[p.type].pier) { let da = p.rot * Math.PI / 2 - s.a; while (da > Math.PI / 2) da -= Math.PI; while (da < -Math.PI / 2) da += Math.PI; s.a += da * Math.min(1, dt * 1.5); }
+        if (BLD[p.type].pier) {
+          let da = p.rot * Math.PI / 2 - s.a; while (da > Math.PI / 2) da -= Math.PI; while (da < -Math.PI / 2) da += Math.PI; s.a += da * Math.min(1, dt * 1.5);
+          // ease off the pier so the wide hull lies alongside it instead of overlapping the quay
+          const bay = (s as any).bay;
+          if (bay >= 0) {
+            const bx = bay % W + 0.5, by = Math.floor(bay / W) + 0.5, cx = p.x + p.w / 2, cy = p.y + p.h / 2;
+            const tx = p.rot & 1 ? bx + Math.sign(bx - cx) * 0.45 : bx, ty = p.rot & 1 ? by : by + Math.sign(by - cy) * 0.45;
+            s.x += (tx - s.x) * Math.min(1, dt * 1.2); s.y += (ty - s.y) * Math.min(1, dt * 1.2);
+          }
+        }
         const before = s.tot;
         const moved = transfer(s, p, dt);
         if (s.tot !== before) S.got = (S.got || 0) + Math.abs(s.tot - before);

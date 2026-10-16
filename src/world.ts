@@ -295,11 +295,11 @@ export function canPlace(type: string, x: number, y: number, rot: number, o: { f
   return null;
 }
 
-export function place(type: string, x: number, y: number, rot: number, o: { free?: boolean; quiet?: boolean; id?: number; z?: number; owner?: number } = {}): Ent {
+export function place(type: string, x: number, y: number, rot: number, o: { free?: boolean; quiet?: boolean; id?: number; z?: number; owner?: number; wh?: [number, number] } = {}): Ent {
   const d = BLD[type];
   if (!o.free) pay(d.cost);
   if (d.noRotate) rot = 0;
-  const [w, h] = dims(type, rot);
+  const [w, h] = o.wh || dims(type, rot);   // (harbors from older worlds keep their smaller pier)
   const id = o.id ?? G.nextId++;
   if (o.id) G.nextId = Math.max(G.nextId, o.id + 1);
   const e: Ent = { id, type, x, y, rot, w, h, born: o.quiet ? -99 : G.realNow, pop: 0 };
@@ -328,7 +328,7 @@ export function place(type: string, x: number, y: number, rot: number, o: { free
     case 'trade': e.store = {}; e.tot = 0; e.mode = 'trade'; e.name = 'Trade Post'; break;
     case 'tstation': e.store = {}; e.tot = 0; e.mode = 'load'; e.name = 'Truck Stop ' + (++G.S.stationSeq); e.rr = 0; e.req = 0; break;
     case 'outpost': e.name = 'Outpost ' + (++G.S.stationSeq); break;
-    case 'port': e.store = {}; e.tot = 0; e.mode = 'load'; e.name = 'Harbor ' + (++G.S.stationSeq); e.rr = 0; e.req = 0; break;
+    case 'port': e.store = {}; e.tot = 0; e.mode = 'load'; e.name = 'Harbor ' + (++G.S.stationSeq); e.rr = 0; e.req = 0; if (d.pier && !o.wh) e.big = 1; break;
     case 'drone': e.target = 0; e.outbox = {}; e.obTot = 0; e.inbox = {}; e.ibTot = 0; e.rr = 0; e.req = 0; e.drs = []; e.name = 'Port ' + (++G.S.stationSeq); break;
   }
   const g = gridOf(z);

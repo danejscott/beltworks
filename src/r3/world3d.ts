@@ -137,6 +137,8 @@ class Layer implements LayerLike {
 
 // ---------------------------------------------------------------------------
 let TPL: Record<string, MD.Template>;
+/** template key: harbors from older worlds keep the smaller 7 x 4 pier */
+const tk = (e: Ent) => e.type === 'harbor' && !e.big ? 'harbor7' : e.type;
 const models: Record<string, Model> = Object.create(null);
 const mdl = (k: string, f: () => Model) => models[k] || (models[k] = f());
 let beltMats: Record<string, THREE.MeshStandardMaterial>;
@@ -228,7 +230,7 @@ export function visHeight(e: Ent) {
   if (d.kind === 'lift' || d.dz) return LH + 0.4;
   if (d.kind === 'rail') return 0.12;
   if (d.kind === 'pipe' || d.kind === 'ptunnel' || d.kind === 'tunnel') return 0.75;
-  return TPL[e.type] ? TPL[e.type].height : 1;
+  return TPL[tk(e)] ? TPL[tk(e)].height : 1;
 }
 
 function pushTemplate(L: LayerLike, key: string, t: MD.Template, m: THREE.Matrix4, mat?: THREE.Material, o?: number) {
@@ -408,7 +410,7 @@ function recordChunks(keys: Set<number>, real: number) {
     if (faded) {
       if (k === 'belt' || k === 'tunnel') pushBelt(L, e, fadeMat, 'F');
       else if (k === 'pipe') pushModel(L, 'Fpipe', mdl('pipeHub', MD.pipeHub), compose(e.x + 0.5, 0, e.y + 0.5, 0), fadeMat);
-      else if (TPL[e.type]) pushTemplate(L, 'F:' + e.type, TPL[e.type], compose(e.x + e.w / 2, 0, e.y + e.h / 2, rotOf(e)), fadeMat);
+      else if (TPL[tk(e)]) pushTemplate(L, 'F:' + tk(e), TPL[tk(e)], compose(e.x + e.w / 2, 0, e.y + e.h / 2, rotOf(e)), fadeMat);
       continue;
     }
     if (k === 'belt' || k === 'tunnel') { pushBelt(L, e); continue; }
@@ -429,11 +431,11 @@ function recordChunks(keys: Set<number>, real: number) {
       continue;
     }
     if (k === 'ptunnel') { pushModel(L, 'ptun', mdl('ptun', MD.ptunnelModel), compose(e.x + 0.5, 0, e.y + 0.5, -(e.isExit ? e.rot + 2 : e.rot) * HP)); continue; }
-    const t = TPL[e.type];
+    const t = TPL[tk(e)];
     if (!t) continue;
     // just placed: plays its pop-in animation in the dynamic layer, then this chunk is re-recorded
     if (real - e.born < 0.45) { ch.pops.push(e); ch.popUntil = Math.max(ch.popUntil, e.born + 0.45); continue; }
-    pushTemplate(L, 'T:' + e.type, t, compose(e.x + e.w / 2, 0, e.y + e.h / 2, rotOf(e)), undefined, e.o);
+    pushTemplate(L, 'T:' + tk(e), t, compose(e.x + e.w / 2, 0, e.y + e.h / 2, rotOf(e)), undefined, e.o);
     if (t.anims.length || t.light || t.smoke || t.glow) ch.anim.push(e);
     if (e.type === 'lamp') ch.lamps.push(e);
     pushPortArrows(L, e, '');
@@ -596,10 +598,10 @@ export function update3D(time: number, real: number, dt: number, labels: Label3[
   DL.begin(); bbs.begin(); bbAdd.begin();
   for (const e of popEnts) {
     if (!G.ents.has(e.id)) continue;
-    const t = TPL[e.type]; if (!t) continue;
+    const t = TPL[tk(e)]; if (!t) continue;
     ZO = (e.z || 0) * LH;
     const sy = Math.max(0.02, easeOutBack(Math.min(1, Math.max(0, (real - e.born) / 0.45))));
-    pushTemplate(DL, 'T:' + e.type, t, compose(e.x + e.w / 2, 0, e.y + e.h / 2, rotOf(e), 1, sy, 1), undefined, e.o);
+    pushTemplate(DL, 'T:' + tk(e), t, compose(e.x + e.w / 2, 0, e.y + e.h / 2, rotOf(e), 1, sy, 1), undefined, e.o);
   }
   ZO = 0;
   const near = C.dist < 60, close = C.dist < 30;
@@ -613,7 +615,7 @@ export function update3D(time: number, real: number, dt: number, labels: Label3[
   let lightB: Batch | null = null;
   for (const e of animEnts) {
     if (!G.ents.has(e.id) || (e.z || 0) > view.level) continue;
-    const t = TPL[e.type], d = BLD[e.type];
+    const t = TPL[tk(e)], d = BLD[e.type];
     const busy = d.kind === 'gen' ? (e.avail > 0 && e.pnet && e.pnet.load > 0) : (e.st === 'work' || e.st === 'lowpower');
     const cx = e.x + e.w / 2, cy = e.y + e.h / 2;
     if (!inView(cx, cy, e.w + 2)) continue;
@@ -733,8 +735,8 @@ export function update3D(time: number, real: number, dt: number, labels: Label3[
     if (Math.abs(sp.x - tgx) > VR * 1.5 || Math.abs(sp.y - tgy) > VR * 1.5) continue;
     const bob = Math.sin(real * 1.3 + sp.id % 7) * 0.04;
     pushModel(DL, 'ship', mdl('ship', MD.shipModel), compose(sp.x, -0.32 + bob, sp.y, -sp.a), undefined, true, sp.o);
-    if (sp.v > 0.5 && near && Math.random() < 0.3) spawn(sp.x - Math.cos(sp.a) * 1.4, sp.y - Math.sin(sp.a) * 1.4, { z: -0.1, vz: 0.2, life: 1.2, spr: 'glow', size: 0.35, col: rgba(0.9, 0.95, 1, 0.5), grow: 0.8, vr: 0 });
-    if (close) labels.push({ x: sp.x, y: sp.y, z: 1.6, t: sp.name, c: '#bfe0ff' });
+    if (sp.v > 0.5 && near && Math.random() < 0.3) spawn(sp.x - Math.cos(sp.a) * 2.8, sp.y - Math.sin(sp.a) * 2.8, { z: -0.1, vz: 0.2, life: 1.6, spr: 'glow', size: 0.6, col: rgba(0.9, 0.95, 1, 0.5), grow: 0.8, vr: 0 });
+    if (close) labels.push({ x: sp.x, y: sp.y, z: 3.0, t: sp.name, c: '#bfe0ff' });
   }
   // rail signals: a post beside the track with a red or green lamp
   for (const r of sigRails) {
@@ -775,7 +777,7 @@ export function update3D(time: number, real: number, dt: number, labels: Label3[
       if (Math.abs(cx - tgx) > VR || Math.abs(cy - tgy) > VR) continue;
       const on = e.st === 'work' || BLD[e.type].kind === 'hub' || BLD[e.type].kind === 'station' || BLD[e.type].kind === 'tstation';
       const size = Math.max(e.w, e.h) * 1.1;
-      bbAdd.add(cx, cy, (e.z || 0) * LH + TPL[e.type].height * 0.55, size, size, SPR.glow, hexCol('#ffc070', night * (on ? 0.32 : 0.12)));
+      bbAdd.add(cx, cy, (e.z || 0) * LH + TPL[tk(e)].height * 0.55, size, size, SPR.glow, hexCol('#ffc070', night * (on ? 0.32 : 0.12)));
     }
     for (const e of lampEnts) {
       if (Math.abs(e.x - tgx) > VR || Math.abs(e.y - tgy) > VR) continue;
@@ -783,7 +785,7 @@ export function update3D(time: number, real: number, dt: number, labels: Label3[
       bbAdd.add(e.x + 0.6, e.y + 0.5, lz + 1.6, 1.4, 1.4, SPR.glow, hexCol('#fff2c0', night * 0.9));
       bbAdd.add(e.x + 0.5, e.y + 0.5, lz + 0.15, 7, 7, SPR.glow, hexCol('#ffe6a0', night * 0.45));
     }
-    for (const sp of G.ships) bbAdd.add(sp.x - Math.cos(sp.a) * 1.0, sp.y - Math.sin(sp.a) * 1.0, 1.2, 1.2, 1.2, SPR.glow, hexCol('#fff0c0', night * 0.7));
+    for (const sp of G.ships) bbAdd.add(sp.x - Math.cos(sp.a) * 1.8, sp.y - Math.sin(sp.a) * 1.8, 2.2, 1.2, 1.2, SPR.glow, hexCol('#fff0c0', night * 0.7));
     for (const tk of G.trucks) if (tk.v > 0.1) bbAdd.add(tk.x + Math.cos(tk.a) * 0.9, tk.y + Math.sin(tk.a) * 0.9, 0.35, 1.4, 1.4, SPR.glow, hexCol('#fff0c0', night * 0.7));
     for (const tr of G.trains) { const p0 = trainPoints(tr)[0]; if (p0) bbAdd.add(p0[0], p0[1], 0.6, 1.8, 1.8, SPR.glow, hexCol('#fff0c0', night * 0.8)); }
   }
