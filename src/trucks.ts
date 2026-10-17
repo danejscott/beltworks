@@ -20,7 +20,7 @@ function cost(i: number): number {
     const e = G.ents.get(id);
     if (!e) return 1;
     const c = CROSS_COST[BLD[e.type].kind];
-    if (!c || e.w > 1) return -1;
+    if (!c || (e.w > 1 && BLD[e.type].kind !== 'rail')) return -1;   // (track is 2 wide: trucks still cross it)
     return c;
   }
   // the pillars holding up a raised floor

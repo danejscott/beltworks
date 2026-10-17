@@ -1,12 +1,13 @@
 import { ensureFresh, hist, rebuildFluids, resetStats, syncFluidMembers } from './sim';
-import { W, H } from './terrain';
+import { W, H, TT } from './terrain';
 import { view } from './view';
 import { BLD } from './data';
 import { G, place, PORTED, refund, remove, resetWorld, State } from './world';
 import { clearTeams, MP, makeTeamState, teamFields, useTeam, WORLD_KEYS } from './teams';
+import { convertOldRails } from './railconvert';
 import { deleteWorldFile, folderReady, listFolderWorlds, readWorldFile, writeWorldFile } from './filesaves';
 
-const KEYS = ['o', 'items', 'pair', 'isExit', 'recipe', 'ib', 'ob', 'prog', 'work', 'clock', 'shards', 'amp', 'tm', 'store', 'tot', 'mode', 'name', 'buf', 'filt', 'slot', 'famt', 'ffluid', 'fuelT', 'fbuf', 'water', 'stored', 'pairs', 'target', 'outbox', 'obTot', 'inbox', 'ibTot', 'dr', 'drs', 'sunk', 'anyIn', 'sig', 'plat', 'big'];
+const KEYS = ['o', 'items', 'pair', 'isExit', 'recipe', 'ib', 'ob', 'prog', 'work', 'clock', 'shards', 'amp', 'tm', 'store', 'tot', 'mode', 'name', 'buf', 'filt', 'slot', 'famt', 'ffluid', 'fuelT', 'fbuf', 'water', 'stored', 'pairs', 'target', 'outbox', 'obTot', 'inbox', 'ibTot', 'dr', 'drs', 'sunk', 'anyIn', 'sig', 'plat', 'big', 'sv2'];
 
 const treeCache = { arr: null as any, rev: -1, list: [] as number[] };
 const floorCache = { arr: null as any, rev: -1, list: [] as number[] };
@@ -53,11 +54,12 @@ export function serialize() {
   return {
     v: 2, mp,
     S: plain,
-    ents, removed, floor, hist: hist.s, nextId: G.nextId,
+    ents, removed, floor, hist: hist.s, nextId: G.nextId, railV: 2,
     trains: G.trains.map(t => ({ ...t })),
     ships: G.ships.map((t: any) => ({ ...t, path: [], pi: 0, bay: -1, qspot: -1, toQueue: 0, state: t.state === 'moving' || t.state === 'queued' ? 'idle' : t.state })),
     trucks: G.trucks.map(t => ({ ...t, path: [], pi: 0, bay: -1, qspot: -1, toQueue: 0, state: t.state === 'moving' || t.state === 'queued' ? 'idle' : t.state })),
     wear: [...G.wear],
+    slabs: [...G.slabs],
     cam: { ...view.cam },
   };
 }
@@ -76,7 +78,9 @@ export function deserialize(o: any, keepTerrain = false) {
     S = MP.teams.get(first)!; MP.cur = first;
   } else clearTeams();
   resetWorld(S.seed, S, keepTerrain);
-  for (const t of MP.teams ? MP.teams.values() : [S]) if (t.unlocked.has('ship_port')) t.unlocked.add('harbor');
+  for (const t of MP.teams ? MP.teams.values() : [S]) { if (t.unlocked.has('ship_port')) t.unlocked.add('harbor'); if (t.unlocked.has('harbor')) t.unlocked.add('slab'); }
+  G.slabs = new Map();
+  for (const [i, t] of o.slabs || []) { G.slabs.set(i, t); G.tiles[i] = TT.DIRT; }
   for (const i of o.removed || []) G.trees[i] = 0;
   G.treeRev++;
   // floors were removed from the game: worlds that had upper floors get their foundations' concrete back
@@ -84,9 +88,14 @@ export function deserialize(o: any, keepTerrain = false) {
   let decks = 0;
   for (let k = 0; k < fl.length; k += 2) for (let z = 1; z < 4; z++) if (fl[k + 1] & (1 << z)) decks++;
   (G as any).floorRev = ((G as any).floorRev || 0) + 1;
+  // worlds from before 2-wide railways: their track is rebuilt once everything else is in place (see railconvert.ts)
+  const oldRails: any[] | null = o.railV !== 2 ? o.ents.filter((q: any) => q.t === 'rail') : null;
   for (const q of o.ents) {
-    // harbors built before the bigger pier keep their old 7 x 4 footprint
-    const wh: [number, number] | undefined = q.t === 'harbor' && !q.big ? (q.r & 1 ? [4, 7] : [7, 4]) : undefined;
+    if (oldRails && q.t === 'rail') continue;
+    // harbors built before the bigger pier keep their old 7 x 4 footprint, stations from before 2-wide track their 3 x 3
+    let wh: [number, number] | undefined = q.t === 'harbor' && !q.big ? (q.r & 1 ? [4, 7] : [7, 4]) : undefined;
+    if (q.t === 'station' && !q.sv2) { wh = [3, 3]; delete q.plat; }
+    if (q.t === 'elevator' && !q.big) wh = [5, 5];   // (elevators are 9 x 9 now)
     const e = place(q.t, q.x, q.y, q.r, { free: true, quiet: true, id: q.i, z: q.z || 0, wh });
     for (const k of KEYS) if (q[k] !== undefined) e[k] = q[k];
     if (q.items) e.items = q.items.map(([it, pos]: any) => ({ it, pos }));
@@ -123,6 +132,15 @@ export function deserialize(o: any, keepTerrain = false) {
   G.trucks = (o.trucks || []).map((t: any) => ({ ...t, retryT: 0 }));
   G.wear = new Map(o.wear || []);
   G.ships = (o.ships || []).map((t: any) => ({ ...t, retryT: 0 }));
+  if (oldRails && (oldRails.length || G.trains.length)) {
+    const r = convertOldRails(oldRails);
+    const bits = [`${r.pieces} pieces of 2-wide track`];
+    if (r.lost) bits.push(`${r.lost} old track tiles didn't fit (refunded)`);
+    if (r.trainsLost) bits.push(`${r.trainsLost} train${r.trainsLost > 1 ? 's' : ''} had no room and went back to your inventory`);
+    if (r.rebuilt) bits.push(`${r.rebuilt} Quick Route loop${r.rebuilt > 1 ? 's were' : ' was'} rebuilt 2-wide (free)`);
+    if (r.linesLost) bits.push(`${r.linesLost} Quick Route loop${r.linesLost > 1 ? 's' : ''} couldn't be rebuilt — use Quick Route again`);
+    setTimeout(() => G.fx.toast(`🚂 Railways are 2 tiles wide now — your track was rebuilt: ${bits.join(' · ')}.`, ''), 2200);
+  }
   if (o.cam) Object.assign(view.cam, o.cam);
   G.dirty = { links: true, power: true, fluid: true };
   G.fnets = []; G.pnets = [];

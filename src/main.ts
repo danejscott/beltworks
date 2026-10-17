@@ -10,7 +10,7 @@ import * as EX from './explore';
 import * as PL from './planner';
 import * as TER from './terrain';
 import * as DATA from './data';
-import { buildTerrain, T3, terrainTick, terrainTileChanged, setWear } from './r3/terrain3d';
+import { buildTerrain, T3, terrainTick, terrainSlabChanged, terrainTileChanged, setWear } from './r3/terrain3d';
 import { icon3D, init3D, Label3, reset3D, update3D } from './r3/world3d';
 import { hexCol, rgba } from './gl';
 import { chopFx, initInput, mineFx, pasteFx, setTool, tickInput, updateGhosts } from './input';
@@ -120,6 +120,7 @@ function setupFx() {
     else if (k === 'mined') mineFx(o);
   };
   G.fx.tile = (x, y) => terrainTileChanged(x, y);
+  G.fx.slab = (i) => terrainSlabChanged(i);
   G.fx.wear = (i, v) => setWear(i, v);
   G.fx.placed = (e: Ent) => {
     const s = Math.max(e.w, e.h);
@@ -153,7 +154,15 @@ function setupFx() {
       const cols = ['#f5a524', '#4cc38a', '#4ea1ff', '#ef5b5b', '#c77dff', '#ffffff'].map(c => hexCol(c));
       for (let i = 0; i < (m.phase ? 180 : 90); i++) { const a = Math.random() * Math.PI * 2, v = 2 + Math.random() * 8; spawn(src.x + src.w / 2, src.y + src.h / 2, { vx: Math.cos(a) * v, vy: Math.sin(a) * v, z: 1.5, vz: 5 + Math.random() * 6, life: 1.6 + Math.random(), col: cols[i % cols.length], size: 0.14, grav: 9 }); }
     }
-    if (m.win) { if (slot.id) addFrame(slot.id, UI.snapshotOverlay()); setTimeout(() => UI.openModal('win'), 1500); }
+    if (m.phase) W_.markDirty('elevator');   // the elevator grows a stage
+    if (m.win) {
+      // the launch: look at the elevator, let the capsule ride up and the fireworks go, then the victory screen
+      const el = G.L.elevator;
+      if (el) { view.cam.x = el.x + el.w / 2; view.cam.y = el.y + el.h / 2 + 6; view.cam.s = Math.min(view.cam.s, 9); }
+      DR.startLaunch();
+      if (slot.id) addFrame(slot.id, UI.snapshotOverlay());
+      setTimeout(() => UI.openModal('win'), 16000);
+    }
     UI.renderHotbar();
     saveGame();
   });

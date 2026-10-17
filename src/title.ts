@@ -11,9 +11,9 @@ import { me, recentServers, saveMe, serverURL, setServerURL } from './net';
 import { fmtCode, normCode, PLAYER_COLS } from './online';
 
 export const title = { open: false };
-export interface NewWorldOpts { name: string; size: number; mode: string; dayNight: boolean; res?: string }
+export interface NewWorldOpts { name: string; size: number; mode: string; dayNight: boolean; res?: string; col?: string }
 let handlers: { play: (id: string) => void; create: (o: NewWorldOpts) => void; imported: () => void; online: (o: { code?: string; create?: NewWorldOpts }) => void };
-let sel = { size: 'medium', mode: 'normal', dn: 'on', res: 'normal', tab: 'new', osize: 'large', omode: 'normal', odn: 'on', col: '' };
+let sel = { size: 'medium', mode: 'normal', dn: 'on', res: 'normal', tab: 'new', osize: 'large', omode: 'normal', odn: 'on', col: '', wcol: '#f39c12' };
 let invited = '';
 /** opened from an invite link: show the online tab with the code filled in */
 export function setInvite(code: string) { invited = code; sel.tab = 'online'; }
@@ -61,6 +61,10 @@ export async function showTitle(h: typeof handlers) {
         <div class="opts two">${Object.entries(MODES).map(([k, m]) => `<div class="opt ${sel.mode === k ? 'sel' : ''}" data-tact="mode:${k}"><b>${m.icon} ${m.label} <span class="hrs">${m.hours}</span></b><span>${m.desc}</span></div>`).join('')}</div>
         ${sel.mode === 'creative' ? `<label class="flabel">Resource layout</label>
         <div class="opts">${[['easy', '🌱 Easy', 'Plenty of nodes, many pure ones.'], ['normal', '⚙️ Normal', 'Scarce nodes, few pure.'], ['hard', '⛏️ Hard', 'Very scarce, almost all impure.']].map(([k, l, d]) => `<div class="opt ${sel.res === k ? 'sel' : ''}" data-tact="res:${k}"><b>${l}</b><span>${d}</span></div>`).join('')}</div>` : ''}
+        <label class="flabel">Your colour <span class="dim">(vehicles and building trim — pick one, or mix your own)</span></label>
+        <div class="swatches" style="align-items:center">${['#f39c12', ...PLAYER_COLS].map(c => `<span class="swatch ${c === sel.wcol ? 'sel' : ''}" data-tact="wcol:${c}" style="background:${c}"></span>`).join('')}
+          <label class="swatch mix" title="Mix your own colour" style="background:conic-gradient(red,yellow,lime,cyan,blue,magenta,red);position:relative;overflow:hidden"><input id="wcolor" type="color" value="${sel.wcol}" style="opacity:0;position:absolute;inset:0;width:100%;height:100%;cursor:pointer;border:0;padding:0"></label>
+          <span id="wcolshow" style="display:inline-block;width:46px;height:22px;border-radius:6px;margin-left:6px;border:1px solid #ffffff44;background:${sel.wcol}"></span></div>
         <label class="flabel">Day / night cycle</label>
         <div class="opts two">${[['on', '🌗 On', 'A 12-minute day. Solar power only works in daylight.'], ['off', '☀️ Off', 'Always sunny. (You can change this later in the menu.)']].map(([k, l, d]) => `<div class="opt ${sel.dn === k ? 'sel' : ''}" data-tact="dn:${k}"><b>${l}</b><span>${d}</span></div>`).join('')}</div>
         <button class="go big" data-tact="create">Create world</button>`}
@@ -116,6 +120,14 @@ function folderHTML() {
   return `<div class="sm" style="margin-top:10px">📁 Also saving to folder <b>${esc(FS.name)}</b> — your worlds are safe even if browser data is cleared. <button class="mini" data-tact="folder">Change…</button></div>`;
 }
 export function initTitle() {
+  // the colour mixer (a native colour picker under the rainbow swatch)
+  $('#title').addEventListener('input', ev => {
+    const t = ev.target as HTMLInputElement;
+    if (t.id !== 'wcolor') return;
+    sel.wcol = t.value;
+    const sh = $('#wcolshow') as HTMLElement; if (sh) sh.style.background = t.value;
+    t.closest('.swatches')?.querySelectorAll('.swatch').forEach(o => o.classList.toggle('sel', o.classList.contains('mix')));
+  });
   $('#title').addEventListener('pointerdown', async ev => {
     const a = (ev.target as HTMLElement).closest('[data-tact]') as HTMLElement | null;
     if (!a) return;
@@ -129,6 +141,7 @@ export function initTitle() {
       showTitle(handlers);
     }
     else if (cmd === 'tab') { const n = ($('#oname') as HTMLInputElement)?.value; if (n !== undefined) saveMe(n.trim(), sel.col); sel.tab = arg; sfx('click'); showTitle(handlers); }
+    else if (cmd === 'wcol') { sel.wcol = arg; sfx('click'); a.parentElement!.querySelectorAll('.swatch').forEach(o => o.classList.toggle('sel', o === a)); const sh = $('#wcolshow') as HTMLElement; if (sh) sh.style.background = arg; const ci = $('#wcolor') as HTMLInputElement; if (ci) ci.value = arg; }
     else if (cmd === 'col') { sel.col = arg; sfx('click'); a.parentElement!.querySelectorAll('.swatch').forEach(o => o.classList.toggle('sel', o === a)); }
     else if (cmd === 'osize' || cmd === 'omode' || cmd === 'odn') {
       (sel as any)[cmd] = arg; sfx('click');
@@ -160,7 +173,7 @@ export function initTitle() {
     else if (cmd === 'create') {
       const name = (($('#wname') as HTMLInputElement).value || '').trim() || randName();
       sfx('place');
-      handlers.create({ name, size: SIZES[sel.size].n, mode: sel.mode, dayNight: sel.dn === 'on', res: sel.mode === 'creative' ? sel.res : undefined });
+      handlers.create({ name, size: SIZES[sel.size].n, mode: sel.mode, dayNight: sel.dn === 'on', res: sel.mode === 'creative' ? sel.res : undefined, col: sel.wcol });
     } else if (cmd === 'import') importSave(ok => { if (ok) handlers.imported(); else alert('That is not a valid Beltworks save file.'); });
   });
 }

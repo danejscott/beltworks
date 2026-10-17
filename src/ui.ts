@@ -118,7 +118,7 @@ export function updateHint() {
     else if (d.kind === 'rail') h = '<b>Railway</b> · drag from a <b>track end</b> (green marker) to extend it, or from open ground · drop near another end to <b>join</b> it (snaps) · start or end on a straight piece to make a <b>junction</b> · curves are worked out for you';
     else if (di) h = `Laying <b>${di.n}</b> × ${d.n} · ${costHTML(di.cost) || 'free'} · <b>R</b> flip corner · release to build`;
     else if (d.kind === 'belt' || d.kind === 'pipe' || d.kind === 'rail') h = `<b>${d.n}</b> · click-drag to lay a line · <b>R</b> rotate · ${d.kind === 'rail' ? 'drag off an existing track to make a junction' : 'drag over old ones to upgrade'} · <b>Right-click</b> cancel`;
-    else if (d.kind === 'train') h = '<b>Locomotive</b> · click a railway (needs 4 connected tiles) · <b>R</b> flip direction';
+    else if (d.kind === 'train') h = '<b>Locomotive</b> · click a railway (needs 4 connected pieces of track) · <b>R</b> flip direction';
     else {
       const gh = view.ghosts[0];
       h = `<b>${d.n}</b>${t.recipe ? ' (' + RECIPES[t.recipe].n + ')' : ''} · <b>R</b> rotate (orange = output) · drag for a row · <b>Right-click</b> cancel`;
@@ -441,7 +441,7 @@ function trainDyn(t: Train) {
   const stTxt: Record<string, string> = { moving: 'Driving', loading: 'At station', nopath: 'No route! Check the track connects', noschedule: 'No schedule', stopped: 'Stopped', idle: 'Planning route' };
   const st = G.ents.get(t.sched[t.si]);
   let h = `<div class="row">${status(t.state === 'nopath' ? 'block' : (t as any).sigWait ? 'starve' : t.state === 'moving' || t.state === 'loading' ? 'work' : 'idle', (t as any).sigWait ? 'Waiting at a red signal' : (t as any).queued && t.state === 'moving' ? 'Waiting in line for the station' : stTxt[t.state] || t.state)}</div>`;
-  if (st) h += `<div class="sm">Next: ${esc(st.name)} · ${fmtR(t.v)} tiles/s</div>`;
+  if (st) h += `<div class="sm">Next: ${esc(st.name)} · ${fmtR(t.v * 2)} tiles/s</div>`;
   h += `<div class="row">Cargo ${fmt(t.tot)} / ${fmt(trainCap(t))}</div><div class="bar"><i style="width:${trainCap(t) ? t.tot / trainCap(t) * 100 : 0}%"></i></div><div class="chips">`;
   for (const k in t.cargo) h += `<span class="chip">${ic(k, 18)}${fmt(t.cargo[k])}</span>`;
   return h + '</div>';
@@ -904,6 +904,7 @@ function renderTip() {
     } else if (m.tx >= 0 && m.ty >= 0 && m.tx < W && m.ty < H) {
       const i = m.ty * W + m.tx;
       if (G.trees[i]) h = '<b>Tree</b><div class="sm">Click or drag to chop (+5 Wood). Chopped trees grow back over time. Building here clears it automatically.</div>';
+      else if (G.slabs.has(i)) h = `<b>Concrete Slab</b><div class="sm">Solid ground poured over the water: build here, trucks drive here. Deconstruct an empty rectangle to remove slabs.</div>`;
       else if (isWater(G.tiles[i])) h = `<b>${TILE_NAMES[G.tiles[i]]}</b><div class="sm">Water Extractors, belts, pipes, rails and poles can go here.</div>`;
       else if (G.tiles[i] === TT.ROCK) h = '<b>Mountain</b><div class="sm">Only railways can go here — they tunnel straight through. Trucks drive around.</div>';
       else { const b = biomeAtTiles(G.tiles, m.tx, m.ty); h = `<b>${BIOME_NAMES[b]}</b><div class="sm">Resources found here: ${Object.keys(RES_BIOMES).filter(r => RES_BIOMES[r].includes(b)).map(r => r === 'geyser' ? 'Geysers' : ITEMS[r].n).join(', ') || 'none'}</div>`; }

@@ -216,31 +216,57 @@ export function buildTemplates(): Record<string, Template> {
       anims: [{ key: 'saw', model: one(b2 => { b2.cyl(0.38, 0.04, 0, -0.02, 0, M.steel, 20); for (let i = 0; i < 12; i++) { const a = i / 12 * TAU; b2.add(new THREE.ConeGeometry(0.05, 0.1, 4), M.steel, Math.cos(a) * 0.4, 0, Math.sin(a) * 0.4, 0, 0, -Math.PI / 2 + 0); } }), fn: (o, _e, t, _r, busy) => { o.x = 0.75; o.y = 1.05; o.ry = busy ? t * 14 : 0; } }],
     };
   }
-  // ---- Water extractor
+  // ---- Water extractor: a floating pump platform — pontoons, a grated deck, the pump house, an intake pipe dropping into
+  // the water behind a strainer cage, and the outlet riser with its valve
   {
     const b = new B();
-    b.box(1.9, 0.3, 1.9, 0, -0.15, 0, M.greyLt);
-    for (const s of [-0.9, 0.9]) b.box(1.9, 0.08, 0.1, 0, 0.15, s, M.yellow);
-    b.box(1.0, 0.95, 1.0, -0.2, 0.15, -0.2, M.blue); b.box(1.05, 0.1, 1.05, -0.2, 1.1, -0.2, M.steelDk);
-    b.cyl(0.18, 1.4, 0.55, -0.4, 0.55, M.steel, 12);
-    b.hcyl(0.12, 0.8, 0.55, 0.55, -0.2, M.steel, 'x');
+    for (const z of [-0.62, 0.62]) { b.hcyl(0.26, 1.85, 0, -0.12, z, M.yellow, 'x', 14); b.hcyl(0.27, 0.12, -0.85, -0.12, z, M.steelDk, 'x', 14); b.hcyl(0.27, 0.12, 0.85, -0.12, z, M.steelDk, 'x', 14); }
+    b.box(1.95, 0.08, 1.75, 0, 0.12, 0, M.steelDk);
+    for (let k = 0; k < 9; k++) b.box(0.04, 0.01, 1.7, -0.88 + k * 0.22, 0.2, 0, M.grey);   // deck grating
+    // railings round the deck
+    for (const z of [-0.86, 0.86]) { b.box(1.9, 0.03, 0.03, 0, 0.62, z, M.yellow); for (let x = -0.9; x <= 0.91; x += 0.45) b.box(0.03, 0.42, 0.03, x, 0.2, z, M.yellow); }
+    // pump house with a door, vents and a roof
+    b.box(0.95, 0.85, 0.8, -0.42, 0.2, -0.3, M.blue); b.box(1.0, 0.08, 0.86, -0.42, 1.05, -0.3, M.steelDk);
+    b.box(0.3, 0.55, 0.01, -0.3, 0.2, 0.105, M.steelDk); for (let k = 0; k < 3; k++) b.box(0.25, 0.04, 0.01, -0.72, 0.6 + k * 0.1, 0.105, M.grey);
+    // intake: a fat pipe from the pump down into the water, a strainer cage at its foot
+    b.hcyl(0.14, 0.5, 0.25, 0.55, -0.3, M.steel, 'x', 12);
+    b.cyl(0.14, 1.3, 0.55, -0.9, -0.3, M.steel, 12);
+    b.cyl(0.22, 0.35, 0.55, -1.1, -0.3, M.steelDk, 10);
+    // outlet riser with a valve wheel and a flange (where the pipe connects)
+    b.cyl(0.12, 0.75, 0.55, 0.2, 0.42, M.steel, 12); b.hcyl(0.12, 0.45, 0.78, 0.82, 0.42, M.steel, 'x', 12);
+    b.torus(0.12, 0.02, 0.55, 0.78, 0.42, M.red, 0); b.hcyl(0.17, 0.05, 0.98, 0.82, 0.42, M.steelDk, 'x', 14);
+    // motor on top of the pump house
+    b.hcyl(0.16, 0.42, -0.42, 1.28, -0.3, M.greyLt, 'z', 14);
     T.water_extractor = {
-      stat: b.build(), height: 1.6, light: [-0.6, 1.25, 0.25],
-      anims: [{ key: 'pump', model: one(b2 => { b2.cyl(0.12, 0.6, 0, 0, 0, M.steelDk, 10); b2.cyl(0.2, 0.12, 0, 0.6, 0, M.steel, 12); }), fn: (o, _e, t, real, busy) => { o.x = 0.55; o.z = 0.55; o.y = 1.0 + (busy ? Math.sin(t * 3) * 0.15 : Math.sin(real * 0.7) * 0.02); } }],
+      stat: b.build(), height: 1.6, light: [-0.42, 1.3, 0.12],
+      anims: [{ key: 'fly', model: one(b2 => { b2.hcyl(0.26, 0.06, 0, 0, 0, M.steelDk, 'z', 16); b2.box(0.5, 0.06, 0.07, 0, -0.03, 0, M.red); }),
+        fn: (o, _e, t, real, busy) => { o.x = -0.42; o.y = 1.28; o.z = 0.0; o.rz = busy ? t * 6 : real * 0.2; } }],
     };
   }
-  // ---- Oil extractor (derrick + pumpjack)
+  // ---- Oil extractor: a pumpjack — skid, samson post, the walking beam with its horse head over the wellhead, the
+  // crank with counterweights, motor and gearbox, and a small stock tank
   {
     const b = new B(); pad(b, 2);
-    for (const sx of [-0.75, 0.75]) for (const sz of [-0.75, 0.75]) b.beam([sx, 0.14, sz], [sx * 0.2, 3.0, sz * 0.2], 0.08, M.steelDk);
-    for (const h of [0.9, 1.7, 2.4]) { const k = 1 - (h - 0.14) / 2.86 * 0.8; for (const s of [-1, 1]) { b.beam([-0.75 * k, h, s * 0.75 * k], [0.75 * k, h, s * 0.75 * k], 0.05, M.steelDk); b.beam([s * 0.75 * k, h, -0.75 * k], [s * 0.75 * k, h, 0.75 * k], 0.05, M.steelDk); } }
-    b.box(0.5, 0.3, 0.5, 0, 3.0, 0, M.purple);
-    b.box(0.7, 0.5, 0.5, -0.4, 0.14, 0.45, M.purple);
-    b.box(0.12, 0.9, 0.12, 0.35, 0.14, -0.45, M.steelDk);
-    b.cyl(0.12, 0.6, 0.8, 0.14, 0, M.steel, 10);
+    b.box(1.8, 0.12, 0.7, 0, 0.14, 0, M.steelDk);                                   // skid
+    for (const z of [-0.22, 0.22]) b.beam([-0.2, 0.26, z], [0.05, 1.55, 0], 0.07, M.purple);   // samson post (A-frame)
+    b.beam([0.35, 0.26, 0], [0.05, 1.55, 0], 0.07, M.purple);
+    b.box(0.5, 0.4, 0.4, -0.72, 0.26, 0, M.purple); b.box(0.3, 0.26, 0.3, -0.72, 0.66, 0, M.steelDk);   // gearbox
+    b.hcyl(0.15, 0.4, -0.72, 0.42, -0.42, M.greyLt, 'z', 12);                          // motor
+    // wellhead: casing, valve tree and a flow line to the tank
+    b.cyl(0.13, 0.35, 0.82, 0.14, 0, M.steelDk, 10); b.cyl(0.07, 0.4, 0.82, 0.49, 0, M.steel, 8);
+    b.torus(0.09, 0.02, 0.82, 0.62, 0, M.red, 0); b.hcyl(0.05, 0.4, 0.82, 0.4, 0.25, M.steel, 'z', 8);
+    b.cyl(0.32, 0.75, 0.55, 0.14, 0.72, M.greyLt, 16); b.cyl(0.33, 0.05, 0.55, 0.89, 0.72, M.steelDk, 16);   // stock tank
+    for (const z of [-0.36, 0.36]) b.box(1.6, 0.03, 0.03, 0.05, 0.55, z * 1.9, M.yellow);   // guard rails
     T.oil_extractor = {
-      stat: b.build(), height: 3.3, light: [-0.4, 0.75, 0.75],
-      anims: [{ key: 'jack', model: one(b2 => { b2.box(1.4, 0.12, 0.14, 0.1, -0.06, 0, M.purple); b2.box(0.2, 0.35, 0.18, 0.75, -0.2, 0, M.red); b2.box(0.25, 0.25, 0.25, -0.55, -0.15, 0, M.steelDk); }), fn: (o, _e, t, real, busy) => { o.x = 0.35; o.y = 1.1; o.z = -0.45; o.rz = busy ? Math.sin(t * 2.2) * 0.35 : Math.sin(real * 0.4) * 0.03; } }],
+      stat: b.build(), height: 2.0, light: [-0.72, 0.95, 0.3],
+      anims: [
+        // walking beam rocking on the samson post: horse head (+x) over the wellhead, the tail toward the crank
+        { key: 'beam', model: one(b2 => { b2.box(1.75, 0.12, 0.14, 0.0, -0.06, 0, M.purple); b2.box(0.16, 0.42, 0.18, 0.86, -0.3, 0, M.red); b2.cyl(0.015, 0.75, 0.86, -1.05, 0, M.steelDk, 4); b2.box(0.2, 0.2, 0.22, -0.82, -0.12, 0, M.steelDk); }),
+          fn: (o, _e, t, real, busy) => { o.x = 0.05; o.y = 1.62; o.z = 0; o.rz = busy ? Math.sin(t * 2.2) * 0.32 : Math.sin(real * 0.4) * 0.02; } },
+        // crank arms with counterweights turning on the gearbox
+        { key: 'crank', model: one(b2 => { for (const z of [-0.24, 0.24]) { b2.box(0.55, 0.08, 0.05, 0.12, -0.04, z, M.steelDk); b2.box(0.28, 0.34, 0.06, 0.32, -0.17, z, M.red); } }),
+          fn: (o, _e, t, real, busy) => { o.x = -0.72; o.y = 0.79; o.z = 0; o.rz = busy ? t * 2.2 : real * 0.05; } },
+      ],
     };
   }
   // ---- Storage
@@ -331,32 +357,42 @@ export function buildTemplates(): Record<string, Template> {
     T.battery = { stat: b.build(), height: 1.5, light: [0.8, 0.5, 0.8], anims: [] };
   }
   // ---- Transport
-  {
-    const b = new B();
-    // raised concrete platform; local +x is the front, where the station's own platform track runs
-    b.box(2.9, 0.34, 2.9, 0, 0, 0, M.concrete);
-    b.box(0.14, 0.05, 2.9, 1.38, 0.34, 0, M.yellow); b.box(0.16, 0.02, 2.9, 1.15, 0.34, 0, M.greyLt);   // edge line + tactile strip
-    for (const z of [-1.39, 1.39]) b.box(2.9, 0.03, 0.06, 0, 0.34, z, M.steelDk);
-    // station house at the back, windows and a clock facing the platform
-    b.box(1.0, 1.4, 1.3, -0.9, 0.34, -0.72, M.orange); b.box(1.06, 0.1, 1.36, -0.9, 1.74, -0.72, M.steelDk);
-    b.box(0.02, 0.4, 0.8, -0.39, 0.9, -0.72, M.glass); b.box(0.02, 0.6, 0.35, -0.39, 0.34, -0.2, M.steelDk);
-    b.hcyl(0.17, 0.04, -0.37, 1.48, -0.72, M.white, 'x', 16); b.box(0.02, 0.12, 0.02, -0.35, 1.5, -0.72, M.black);
-    // loader at the back right: hopper that belts feed, with a chute arm reaching out over the track
-    b.box(0.9, 0.9, 1.0, -0.95, 0.34, 0.8, M.grey); b.box(0.96, 0.08, 1.06, -0.95, 1.24, 0.8, M.steelDk);
-    b.add(new THREE.CylinderGeometry(0.42, 0.18, 0.5, 4, 1), M.yellow, -0.95, 1.55, 0.8, 0, Math.PI / 4, 0);
-    b.box(0.1, 1.6, 0.1, 0.35, 0.34, 0.8, M.yellow); b.beam([-0.6, 1.75, 0.8], [1.75, 1.95, 0.8], 0.06, M.yellow);
-    b.box(0.3, 0.5, 0.3, 1.7, 1.45, 0.8, M.steelDk);
-    // canopy over the front of the platform, cantilevered toward the track
-    for (const z of [-1.15, 0, 1.15]) b.box(0.1, 1.9, 0.1, 0.25, 0.34, z, M.steelDk);
-    b.box(1.75, 0.1, 2.9, 0.85, 2.24, 0, M.greyLt); b.box(0.08, 0.06, 2.92, 1.73, 2.2, 0, M.orange);
-    // name board hanging under the canopy, benches and lamps
-    b.box(0.04, 0.26, 0.9, 0.9, 1.85, -0.4, M.white); b.box(0.05, 0.3, 0.94, 0.9, 1.83, -0.4, M.steelDk);
-    for (const z of [-0.95, 0.15]) { b.box(0.22, 0.04, 0.6, 0.6, 0.56, z, M.wood); b.box(0.04, 0.2, 0.6, 0.5, 0.56, z, M.wood); }
-    for (const z of [-1.3, 1.3]) { b.cyl(0.03, 1.5, 1.25, 0.34, z, M.steelDk, 6); b.box(0.2, 0.06, 0.14, 1.25, 1.84, z, M.glowWhite); }
-    // a few crates waiting to be loaded
-    b.box(0.4, 0.36, 0.4, -0.2, 0.34, 1.0, M.wood); b.box(0.4, 0.36, 0.4, -0.2, 0.7, 1.0, M.wood); b.box(0.45, 0.4, 0.35, -0.25, 0.34, 0.45, M.blue);
-    T.station = { stat: b.build(), height: 2.4, light: [1.35, 1.9, 0.2], anims: [] };
-  }
+  // train station: Lz = its length along the platform (23.9 for today's 3 x 24 stations; 2.9 for the 3 x 3 ones of older
+  // worlds). Local +x is the front, where its 2-wide platform track runs (track centre 2.5 from the station's centre).
+  const station = (Lz: number): Template => {
+    const b = new B(), Zh = Lz / 2, long = Lz > 6;
+    b.box(2.9, 0.34, Lz, 0, 0, 0, M.concrete);
+    b.box(0.14, 0.05, Lz, 1.38, 0.34, 0, M.yellow); b.box(0.16, 0.02, Lz, 1.15, 0.34, 0, M.greyLt);   // edge line + tactile strip
+    for (const z of [-(Zh - 0.06), Zh - 0.06]) b.box(2.9, 0.03, 0.06, 0, 0.34, z, M.steelDk);
+    // station house at one end of the back, windows and a clock facing the platform
+    const hz = -(Zh - (long ? 1.3 : 0.73)), hl = long ? 2.4 : 1.3;
+    b.box(1.0, 1.4, hl, -0.9, 0.34, hz, M.orange); b.box(1.06, 0.1, hl + 0.06, -0.9, 1.74, hz, M.steelDk);
+    b.box(0.02, 0.4, hl - 0.5, -0.39, 0.9, hz, M.glass); b.box(0.02, 0.6, 0.35, -0.39, 0.34, hz + hl / 2 - 0.13, M.steelDk);
+    b.hcyl(0.17, 0.04, -0.37, 1.48, hz, M.white, 'x', 16); b.box(0.02, 0.12, 0.02, -0.35, 1.5, hz, M.black);
+    if (long) { b.box(0.7, 0.5, 0.7, -0.9, 1.84, hz, M.orange); b.box(0.75, 0.06, 0.75, -0.9, 2.34, hz, M.steelDk); for (const s2 of [-1, 1]) b.box(0.02, 0.25, 0.4, -0.9 + s2 * 0.36, 1.95, hz, M.glass); }
+    // loaders along the back: hoppers the belts feed, each with a chute arm reaching over the middle of the track
+    const loaders = long ? [-Zh + 5.5, -Zh + 11.5, -Zh + 17.5] : [Zh - 0.65];
+    for (const lz of loaders) {
+      b.box(0.9, 0.9, 1.0, -0.95, 0.34, lz, M.grey); b.box(0.96, 0.08, 1.06, -0.95, 1.24, lz, M.steelDk);
+      b.add(new THREE.CylinderGeometry(0.42, 0.18, 0.5, 4, 1), M.yellow, -0.95, 1.55, lz, 0, Math.PI / 4, 0);
+      b.box(0.1, 1.6, 0.1, 0.35, 0.34, lz, M.yellow); b.beam([-0.6, 1.75, lz], [2.55, 2.05, lz], 0.06, M.yellow);
+      b.box(0.32, 0.5, 0.32, 2.5, 1.55, lz, M.steelDk);
+    }
+    // a long canopy over the platform, on columns every few tiles, cantilevered out over the track
+    const cols = Math.max(2, Math.round(Lz / 3.5) + 1);
+    for (let c = 0; c < cols; c++) b.box(0.1, 1.9, 0.1, 0.25, 0.34, -(Zh - 0.3) + c * (Lz - 0.6) / (cols - 1), M.steelDk);
+    b.box(2.6, 0.1, Lz, 1.2, 2.24, 0, M.greyLt); b.box(0.08, 0.06, Lz + 0.02, 2.48, 2.2, 0, M.orange);
+    if (long) for (let k = 0; k < Math.floor(Lz / 2); k++) b.box(2.5, 0.03, 0.06, 1.2, 2.34, -Zh + 1 + k * 2, M.steelDk);   // roof ribs
+    // name boards, benches, lamps and crates along the platform
+    const every = (step: number, fn: (z: number) => void) => { for (let z = -Zh + step / 2; z < Zh; z += step) fn(z); };
+    every(long ? 8 : Lz, z => { b.box(0.04, 0.26, 0.9, 0.9, 1.85, z, M.white); b.box(0.05, 0.3, 0.94, 0.9, 1.83, z, M.steelDk); });
+    every(long ? 4 : Lz / 2, z => { b.box(0.22, 0.04, 0.6, 0.6, 0.56, z + 0.8, M.wood); b.box(0.04, 0.2, 0.6, 0.5, 0.56, z + 0.8, M.wood); });
+    every(long ? 4 : Lz, z => { b.cyl(0.03, 1.5, 1.25, 0.34, z, M.steelDk, 6); b.box(0.2, 0.06, 0.14, 1.25, 1.84, z, M.glowWhite); });
+    every(long ? 6 : Lz, z => { b.box(0.4, 0.36, 0.4, -0.2, 0.34, z + 1.6, M.wood); b.box(0.4, 0.36, 0.4, -0.2, 0.7, z + 1.6, M.wood); b.box(0.45, 0.4, 0.35, -0.25, 0.34, z + 2.2, M.blue); });
+    return { stat: b.build(), height: 2.4, light: [1.35, 1.9, 0.2], anims: [] };
+  };
+  T.station = station(23.9);
+  T.station3 = station(2.9);
   {
     // a drone rack: three landing pads in a row under a gantry, with the control hut behind
     const b = new B();
@@ -398,7 +434,7 @@ export function buildTemplates(): Record<string, Template> {
     const b = new B();
     const x0 = -L / 2, Z = Wd / 2, xs = x0 + 1.8, xe = L / 2;   // land end, half width, start / end of the open quay
     // pillars under the sea end, the deck, and the quay surface
-    for (let x = x0 + 1.65; x <= xe - 0.1; x += 1.25) for (const z of [-(Z - 0.25), Z - 0.25]) b.box(0.32, 0.9, 0.32, x, -0.6, z, M.concrete);
+    for (let x = big ? x0 + 0.35 : x0 + 1.65; x <= xe - 0.1; x += 1.25) for (const z of [-(Z - 0.25), Z - 0.25]) b.box(0.32, 1.4, 0.32, x, -1.1, z, M.concrete);
     b.box(L, 0.4, Wd, 0, 0, 0, M.concrete);
     b.box(xe - xs, 0.02, Wd - 0.2, (xs + xe) / 2, 0.4, 0, M.grey);
     // yellow safety lines, bollards and rubber fenders along both sides
@@ -515,19 +551,80 @@ export function buildTemplates(): Record<string, Template> {
       anims: [{ key: 'dish', model: one(b2 => { b2.cyl(0.05, 0.4, 0, 0, 0, M.steelDk, 6); b2.add(new THREE.SphereGeometry(0.55, 16, 6, 0, TAU, 0, 0.9), M.white, 0, 0.9, 0, Math.PI * 0.35); b2.beam([0, 0.55, 0], [0.25, 1.05, 0], 0.03, M.steelDk); }), fn: (o, _e, _t, real) => { o.x = -1.3; o.y = 2.14; o.z = -1.3; o.ry = real * 0.6; } }],
     };
   }
-  // ---- Space Elevator
-  {
+  // ---- Space Elevator: 9 x 9, built up in stages as the phases are completed (0 = just founded … 4 = finished, with
+  // its tether glowing up into the sky). Elevators from older worlds (5 x 5) use the same models scaled down.
+  const elevator = (stage: number): Template => {
     const b = new B();
-    b.box(4.9, 0.6, 4.9, 0, 0, 0, M.concrete);
-    b.box(4.9, 0.05, 0.15, 0, 0.6, 2.38, M.yellow); b.box(0.15, 0.05, 4.9, 2.38, 0.6, 0, M.yellow);
-    b.cyl(1.9, 0.8, 0, 0.6, 0, M.steelDk, 32);
-    b.cyl(1.0, 10, 0, 1.4, 0, M.white, 24, 0.6);
-    for (let h = 2; h < 11; h += 1.5) b.torus(1.0 - (h - 1.4) / 10 * 0.4 + 0.08, 0.08, 0, h, 0, M.orange);
-    for (const sx of [-1.6, 1.6]) for (const sz of [-1.6, 1.6]) b.beam([sx, 1.4, sz], [sx * 0.3, 8, sz * 0.3], 0.14, M.steel);
-    b.cone(0.62, 1.2, 0, 11.4, 0, M.greyLt, 24);
-    T.elevator = { stat: b.build(), height: 12.6, light: [0, 12.7, 0], anims: [{ key: 'ering', model: one(b2 => b2.torus(1.9, 0.07, 0, 0, 0, M.glowBlue)), fn: (o, _e, _t, real) => { o.y = 1.6 + (real * 0.8) % 9; o.s = 1 - ((real * 0.8) % 9) / 9 * 0.55; } }] };
+    // octagonal foundation with hazard edging and four loading docks
+    b.add(new THREE.CylinderGeometry(4.35, 4.45, 0.6, 8), M.concrete, 0, 0.3, 0, 0, Math.PI / 8, 0);
+    b.add(new THREE.CylinderGeometry(4.36, 4.36, 0.04, 8), M.yellow, 0, 0.61, 0, 0, Math.PI / 8, 0, 1, 1, 1);
+    b.add(new THREE.CylinderGeometry(4.1, 4.1, 0.05, 8), M.grey, 0, 0.62, 0, 0, Math.PI / 8, 0);
+    for (let k = 0; k < 4; k++) {
+      const a = k * Math.PI / 2, cx = Math.cos(a) * 3.55, cz = Math.sin(a) * 3.55;
+      b.box(1.3, 1.0, 1.3, cx, 0.6, cz, M.orange, -a); b.box(1.36, 0.1, 1.36, cx, 1.6, cz, M.steelDk, -a);
+      b.box(0.02, 0.7, 0.8, cx + Math.cos(a) * 0.66, 0.6, cz + Math.sin(a) * 0.66, M.greyLt, -a);
+    }
+    // the core's foundation ring
+    b.cyl(2.1, 1.0, 0, 0.6, 0, M.steelDk, 32); b.torus(2.12, 0.08, 0, 1.55, 0, M.orange);
+    const top = [3.6, 13, 22, 32, 32][stage];
+    // the core tower, tapering, with orange bands
+    b.cyl(1.35, top - 1.6, 0, 1.6, 0, M.white, 28, stage >= 3 ? 0.85 : stage === 2 ? 1.0 : stage === 1 ? 1.15 : 1.3);
+    for (let h = 2.6; h < top - 0.4; h += 1.6) { const r = 1.35 - (h - 1.6) / Math.max(1, top - 1.6) * (1.35 - (stage >= 3 ? 0.85 : stage === 2 ? 1.0 : 1.15)); b.torus(r + 0.06, 0.07, 0, h, 0, M.orange); }
+    if (stage >= 1) {
+      // four buttresses from the corners of the base up the tower, with cross bracing
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) {
+        b.beam([sx * 3.0, 0.6, sz * 3.0], [sx * 0.95, 10, sz * 0.95], 0.18, M.steel);
+        for (const hh of [3, 6]) { const f = (hh - 0.6) / 9.4; b.beam([sx * (3.0 - 2.05 * f), hh, sz * (3.0 - 2.05 * f)], [sx * (3.0 - 2.05 * f), hh, -sz * (3.0 - 2.05 * f)], 0.07, M.steelDk); }
+      }
+    }
+    if (stage >= 2) {
+      // the station ring: a hab ring on spokes with solar panels and lights
+      b.torus(3.3, 0.32, 0, 15, 0, M.greyLt); b.torus(3.3, 0.34, 0, 15, 0, M.steelDk, Math.PI / 2 + 0.0001);
+      for (let k = 0; k < 6; k++) { const a = k * Math.PI / 3; b.beam([Math.cos(a) * 1.05, 15, Math.sin(a) * 1.05], [Math.cos(a) * 3.0, 15, Math.sin(a) * 3.0], 0.09, M.steel); }
+      for (let k = 0; k < 12; k++) { const a = k * Math.PI / 6 + 0.26; b.box(0.9, 0.04, 0.5, Math.cos(a) * 3.3, 15.36, Math.sin(a) * 3.3, M.blue, -a); b.box(0.06, 0.06, 0.06, Math.cos(a) * 3.62, 15.05, Math.sin(a) * 3.62, M.glowWhite); }
+    }
+    if (stage >= 3) {
+      // a lattice top, the upper ring, and the tether rising into the sky
+      for (let k = 0; k < 4; k++) { const a = k * Math.PI / 2 + Math.PI / 4; b.beam([Math.cos(a) * 0.85, 26, Math.sin(a) * 0.85], [Math.cos(a) * 0.35, 33, Math.sin(a) * 0.35], 0.09, M.steel); }
+      b.torus(2.2, 0.18, 0, 27, 0, M.greyLt);
+      for (let k = 0; k < 4; k++) { const a = k * Math.PI / 2; b.beam([Math.cos(a) * 0.9, 27, Math.sin(a) * 0.9], [Math.cos(a) * 2.0, 27, Math.sin(a) * 2.0], 0.07, M.steel); }
+      b.cyl(0.5, 0.6, 0, 33, 0, M.steelDk, 16);
+      b.cyl(0.11, 90, 0, 33.6, 0, stage >= 4 ? M.glowBlue : M.steel, 8);
+    }
+    if (stage >= 4) {
+      // finished: the launch platform on top, beacons, and the base lit up
+      b.cyl(1.4, 0.25, 0, 32.4, 0, M.greyLt, 24); b.torus(1.42, 0.06, 0, 32.65, 0, M.glowBlue);
+      for (let k = 0; k < 8; k++) { const a = k * Math.PI / 4; b.box(0.12, 0.12, 0.12, Math.cos(a) * 4.0, 0.66, Math.sin(a) * 4.0, M.glowWhite); }
+      b.torus(2.25, 0.05, 0, 27.2, 0, M.glowWhite);
+    }
+    if (stage <= 2) {
+      // still under construction: scaffolding round the top of the tower, and a tower crane
+      const sh = top - 0.2;
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) b.beam([sx * 1.7, Math.max(0.6, sh - 4), sz * 1.7], [sx * 1.7, sh + 0.6, sz * 1.7], 0.05, M.yellow);
+      for (let hh = Math.max(1.2, sh - 3.4); hh <= sh + 0.6; hh += 1.0) for (const [ax, az, bx, bz] of [[-1.7, -1.7, 1.7, -1.7], [1.7, -1.7, 1.7, 1.7], [1.7, 1.7, -1.7, 1.7], [-1.7, 1.7, -1.7, -1.7]]) b.beam([ax, hh, az], [bx, hh, bz], 0.035, M.yellow);
+    }
+    if (stage <= 3) {
+      const ch = top + 3;
+      b.box(0.36, ch, 0.36, 3.4, 0.6, -3.4, M.yellow);
+      for (let hh = 1.2; hh < ch; hh += 0.9) b.beam([3.22, hh, -3.22], [3.58, hh + 0.45, -3.58], 0.025, M.steelDk);
+      b.box(7.5, 0.3, 0.3, 1.2, ch + 0.6, -3.4, M.yellow); b.box(0.9, 0.6, 0.6, -1.9, ch + 0.3, -3.4, M.concrete);
+      b.box(0.5, 0.45, 0.45, 3.4, ch + 0.9, -3.4, M.steelDk); b.cyl(0.012, 3.5, 4.6, ch - 2.9, -3.4, M.steelDk, 4);
+    }
+    const anims: any[] = [{ key: 'ering', model: one(b2 => b2.torus(1.5, 0.08, 0, 0, 0, M.glowBlue)), fn: (o: any, _e: any, _t: any, real: number) => { const span = Math.max(1, top - 3); o.y = 1.8 + (real * 1.2) % span; o.s = 1 - ((real * 1.2) % span) / span * 0.4; } }];
+    if (stage >= 4) anims.push({ key: 'climber', model: one(b2 => { b2.cyl(0.45, 1.1, 0, -0.55, 0, M.white, 12); b2.torus(0.48, 0.06, 0, 0, 0, M.glowBlue); b2.cone(0.45, 0.5, 0, 0.55, 0, M.greyLt, 12); }),
+      fn: (o: any, _e: any, _t: any, real: number) => { o.y = 34 + (real * 7) % 85; } });
+    return { stat: b.build(), height: Math.min(top + 2, 36), light: [0, Math.min(top, 33), 0], anims } as Template;
+  };
+  for (let st = 0; st <= 4; st++) {
+    const t = elevator(st);
+    T['elev' + st] = t;
+    // older worlds' 5 x 5 elevators: the same model at 5/9 the size
+    const k = 5 / 9, g = t.stat.geo.clone(); g.scale(k, k, k);
+    T['elev' + st + 's'] = { stat: { geo: g, mats: t.stat.mats }, height: t.height * k, light: t.light ? [t.light[0] * k, t.light[1] * k, t.light[2] * k] : null, anims: t.anims.map((a: any) => ({ key: a.key + 's', model: (() => { const gg = a.model.geo.clone(); gg.scale(k, k, k); return { geo: gg, mats: a.model.mats }; })(), fn: (o: any, e: any, tt: any, real: number, busy: boolean) => { a.fn(o, e, tt, real, busy); o.x = (o.x || 0) * k; o.y = (o.y || 0) * k; o.z = (o.z || 0) * k; } })) } as Template;
   }
+  T.elevator = T.elev4;
   T.statue = { stat: one(b => { b.box(1.6, 0.4, 1.6, 0, 0, 0, M.concrete); b.add(new THREE.CylinderGeometry(0.55, 0.55, 0.35, 6), M.gold, 0, 1.2, 0, Math.PI / 2); b.cyl(0.12, 0.45, 0, 0.4, 0, M.gold, 8); }), height: 1.8, light: null, anims: [] };
+  T.slab = { stat: one(b => { b.box(0.96, 0.12, 0.96, 0, -0.08, 0, M.concrete); b.box(0.97, 0.02, 0.97, 0, 0.0, 0, M.greyLt); }), height: 0.1, light: null, anims: [] };
   T.lamp = { stat: one(b => { b.cyl(0.06, 1.6, 0, 0, 0, M.steelDk, 8); b.box(0.35, 0.08, 0.2, 0.1, 1.6, 0, M.steelDk); b.box(0.28, 0.03, 0.16, 0.1, 1.58, 0, M.glowWhite); }), height: 1.7, light: null, anims: [] };
   return T;
 }
@@ -618,24 +715,43 @@ export function treeModelsLow(): Model[] {
 }
 
 // Vehicles
+/** a modern locomotive: one streamlined body with a raked windscreen, livery stripes, roof gear and covered bogies
+ *  (front points +x; drawn at twice this size on the 2-wide track) */
 export function locoModel(): Model {
   return one(b => {
-    b.box(1.85, 0.12, 0.72, 0, 0.18, 0, M.steelDk);
-    // two bogies with wheels and a fuel tank slung between them
-    for (const x of [-0.55, 0.5]) { b.box(0.62, 0.1, 0.62, x, 0.08, 0, M.black); for (const dx of [-0.2, 0.2]) for (const z of [-0.3, 0.3]) b.hcyl(0.13, 0.08, x + dx, 0.16, z, M.black, 'z', 10); }
-    b.hcyl(0.14, 0.62, 0, 0.14, 0, M.grey, 'x', 10);
-    // long hood with grilles, a roof fan and an exhaust stack
-    b.box(1.2, 0.55, 0.6, -0.25, 0.3, 0, M.orange); b.box(1.22, 0.05, 0.62, -0.25, 0.53, 0, M.yellow);
-    for (let i = 0; i < 4; i++) b.box(0.18, 0.04, 0.5, -0.7 + i * 0.3, 0.86, 0, M.grey);
-    b.cyl(0.12, 0.04, -0.6, 0.88, 0, M.steelDk, 12); b.cyl(0.05, 0.16, 0.05, 0.85, 0.12, M.black, 8);
-    // cab with windows, roof and horn
-    b.box(0.5, 0.75, 0.7, 0.62, 0.3, 0, M.orange); b.box(0.52, 0.08, 0.72, 0.62, 1.05, 0, M.steelDk);
-    b.box(0.02, 0.25, 0.5, 0.875, 0.72, 0, M.glass); for (const z of [-0.355, 0.355]) b.box(0.35, 0.25, 0.02, 0.62, 0.72, z, M.glass);
-    b.cyl(0.03, 0.1, 0.5, 1.13, 0.2, M.steel, 6);
-    // walkway handrails, nose with headlights and a yellow buffer beam
-    for (const z of [-0.34, 0.34]) b.box(1.2, 0.03, 0.02, -0.25, 0.62, z, M.yellow);
-    b.box(0.05, 0.1, 0.6, 0.9, 0.3, 0, M.yellow);
-    for (const z of [-0.18, 0.18]) b.box(0.02, 0.07, 0.1, 0.89, 0.45, z, M.glowWhite);
+    // body: a side profile (rear to nose) extruded across the width
+    const sh = new THREE.Shape();
+    sh.moveTo(-0.92, 0.24); sh.lineTo(0.92, 0.24); sh.lineTo(0.94, 0.4); sh.lineTo(0.87, 0.57); sh.lineTo(0.62, 0.86);
+    sh.lineTo(0.52, 0.9); sh.lineTo(-0.86, 0.9); sh.lineTo(-0.92, 0.84); sh.lineTo(-0.92, 0.24);
+    const body = new THREE.ExtrudeGeometry(sh, { depth: 0.7, bevelEnabled: false }); body.translate(0, 0, -0.35);
+    b.add(body, M.orange);
+    // raked windscreen, cab side windows and the cab door
+    b.add(new THREE.BoxGeometry(0.35, 0.012, 0.6), M.glass, 0.755, 0.73, 0, 0, 0, -0.862);
+    for (const z of [-0.352, 0.352]) {
+      b.box(0.24, 0.14, 0.01, 0.6, 0.63, z, M.glass);
+      b.box(0.14, 0.4, 0.01, 0.36, 0.32, z, M.steelDk);
+      // livery: a dark skirt band, a white stripe sweeping back from the nose, small grille panels
+      b.box(1.86, 0.1, 0.012, 0, 0.24, z * 1.003, M.steelDk);
+      b.box(1.5, 0.05, 0.012, -0.12, 0.47, z * 1.006, M.white);
+      for (let k = 0; k < 4; k++) b.box(0.18, 0.16, 0.012, -0.72 + k * 0.24, 0.6, z * 1.004, M.grey);
+    }
+    // nose: headlights, a yellow warning panel and a snow plough
+    b.add(new THREE.BoxGeometry(0.012, 0.15, 0.62), M.yellow, 0.935, 0.42, 0, 0, 0, 0.35);
+    for (const z of [-0.22, 0.22]) b.box(0.02, 0.05, 0.12, 0.93, 0.32, z, M.glowWhite);
+    b.box(0.08, 0.1, 0.66, 0.95, 0.12, 0, M.steelDk);
+    for (const z of [-0.25, 0.25]) b.box(0.02, 0.04, 0.06, -0.93, 0.32, z, M.red);   // tail lights
+    // roof: cooling fans at the back, an air-conditioning pod and a horn over the cab
+    b.box(0.8, 0.05, 0.5, -0.45, 0.9, 0, M.grey);
+    for (const x of [-0.7, -0.45, -0.2]) b.cyl(0.1, 0.03, x, 0.95, 0, M.steelDk, 12);
+    b.box(0.3, 0.08, 0.4, 0.2, 0.9, 0, M.greyLt);
+    b.cyl(0.02, 0.06, 0.45, 0.9, 0.15, M.steel, 6);
+    // underframe: two covered bogies with wheels showing below, a fuel tank between them
+    b.box(1.8, 0.08, 0.64, 0, 0.17, 0, M.steelDk);
+    for (const x of [-0.58, 0.55]) {
+      for (const z of [-0.31, 0.31]) b.box(0.6, 0.12, 0.03, x, 0.06, z, M.black);
+      for (const dx of [-0.19, 0.19]) for (const z of [-0.29, 0.29]) b.hcyl(0.11, 0.06, x + dx, 0.12, z, M.black, 'z', 12);
+    }
+    b.hcyl(0.11, 0.55, 0, 0.13, 0, M.grey, 'x', 12);
   });
 }
 export function wagonModel(): Model {
@@ -717,6 +833,23 @@ export function shipModel(): Model {
     b.cyl(0.025, 0.55, -1.75, 2.05, 0, M.steelDk, 6); b.box(0.06, 0.04, 0.5, -1.75, 2.5, 0, M.greyLt);
     // lifeboats on davits at the sides of the superstructure
     for (const z of [-0.78, 0.78]) b.box(0.55, 0.16, 0.2, -1.85, 1.15, z, M.orange);
+  });
+}
+/** a concrete pile for things standing in water (power poles and towers): down to the bed, with a collar and fenders */
+export function pileModel(): Model {
+  return one(b => {
+    b.cyl(0.2, 1.5, 0, -1.45, 0, M.concrete, 12);
+    b.cyl(0.3, 0.14, 0, -0.02, 0, M.concrete, 12);
+    b.cyl(0.31, 0.06, 0, -0.18, 0, M.yellow, 12);
+    for (const a of [0, Math.PI / 2, Math.PI, Math.PI * 1.5]) b.box(0.06, 0.4, 0.06, Math.cos(a) * 0.22, -0.55, Math.sin(a) * 0.22, M.black);
+  });
+}
+/** the launch: a shockwave ring, and the capsule that rides the elevator's tether up */
+export const shockModel = (): Model => one(b => b.torus(1, 0.06, 0, 0, 0, M.glowBlue));
+export function launchCapModel(): Model {
+  return one(b => {
+    b.cyl(0.6, 1.6, 0, -0.8, 0, M.white, 16); b.cone(0.6, 0.9, 0, 0.8, 0, M.greyLt, 16); b.torus(0.64, 0.08, 0, -0.2, 0, M.glowBlue);
+    for (let q = 0; q < 4; q++) { const a = q * Math.PI / 2; b.box(0.08, 0.6, 0.3, Math.cos(a) * 0.62, -0.9, Math.sin(a) * 0.62, M.orange, -a); }
   });
 }
 export function droneModel(): Model {

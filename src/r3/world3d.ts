@@ -20,6 +20,7 @@ import * as MD from './models';
 import { T3, tunnelInside, updateCuts } from './terrain3d';
 import { MP } from '../teams';
 import { previewLine, railChains } from '../railcurves';
+import { RS, rTiles } from '../railgrid';
 import { isDepleted } from '../deplete';
 
 // ---------------------------------------------------------------------------
@@ -32,8 +33,8 @@ function accent(col: string, dark: boolean) {
   if (!m) { const c = new THREE.Color(col); if (dark) c.multiplyScalar(0.62); m = std('#' + c.getHexString(), dark ? 0.55 : 0.48, 0.3); accentMats.set(k, m); }
   return m;
 }
-/** a team's colour, or '' for the default orange */
-const teamHex = (o: number | undefined) => (MP.teams && o ? MP.info.get(o)?.col || '' : '');
+/** a team's colour (online), the colour picked for this world (single player), or '' for the default orange */
+const teamHex = (o: number | undefined) => MP.teams ? (o ? MP.info.get(o)?.col || '' : '') : ((G.S as any)?.col && (G.S as any).col !== '#f39c12' ? (G.S as any).col : '');
 /** the material list with orange swapped for the team's colour */
 function tint(mats: THREE.Material | THREE.Material[], o: number | undefined): THREE.Material | THREE.Material[] {
   const col = teamHex(o);
@@ -138,7 +139,15 @@ class Layer implements LayerLike {
 // ---------------------------------------------------------------------------
 let TPL: Record<string, MD.Template>;
 /** template key: harbors from older worlds keep the smaller 7 x 4 pier */
-const tk = (e: Ent) => e.type === 'harbor' && !e.big ? 'harbor7' : e.type;
+const tk = (e: Ent) => e.type === 'harbor' && !e.big ? 'harbor7' : e.type === 'station' && !e.sv2 ? 'station3' : e.type === 'elevator' ? 'elev' + elevStage(e) + (e.big ? '' : 's') : e.type;
+/** how far the Space Elevator has been built: one stage per completed phase */
+function elevStage(e: Ent) {
+  const S: any = MP.teams ? MP.teams.get(e.o || 0) || G.S : G.S;
+  return ['p1', 'p2', 'p3', 'p4'].filter(id => S.done && S.done.has(id)).length;
+}
+// ---- the launch when the last phase is done: a capsule rides the tether into the sky with fireworks all around
+let launchPending = false, launchT0 = -1;
+export function startLaunch() { launchPending = true; }
 const models: Record<string, Model> = Object.create(null);
 const mdl = (k: string, f: () => Model) => models[k] || (models[k] = f());
 let beltMats: Record<string, THREE.MeshStandardMaterial>;
@@ -326,14 +335,16 @@ function pushBelt(L: LayerLike, b: Ent, mat?: THREE.Material, prefix = '') {
     L.get(prefix + 'bsS:' + (mat ? 'g' : beltKey(b)), surfS().geo, mat || beltMats[beltKey(b)], false).push(m);
   }
 }
+/** one 2 x 2 block of track (x, y = its top-left tile); the 1-tile track models are drawn at twice the size */
 function pushRail(L: LayerLike, x: number, y: number, pairs: number, mat?: THREE.Material, prefix = '', curves?: Map<number, unknown>) {
-  const ti = y * W + x;
+  const ti = y * W + x, cx = x + RS / 2, cy = y + RS / 2;
   if (curves && curves.has(ti)) return;   // drawn as part of a smooth stretch of track
-  if (!prefix && (G.tiles[ti] === 4 || G.tiles[ti] === 5)) pushModel(L, 'railBridge', mdl('railBridge', MD.railBridge), compose(x + 0.5, 0, y + 0.5, (pairs & 2) && !(pairs & 1) ? -HP : 0));
+  const wet = rTiles(ti).some(k => G.tiles[k] === 4 || G.tiles[k] === 5);
+  if (!prefix && wet) pushModel(L, 'railBridge', mdl('railBridge', MD.railBridge), compose(cx, 0, cy, (pairs & 2) && !(pairs & 1) ? -HP : 0, RS, 1, RS));
   for (let i = 0; i < 6; i++) {
     if (!(pairs & (1 << i))) continue;
-    if (i < 2) pushModel(L, prefix + 'railS', mdl('railS', MD.railStraight), compose(x + 0.5, 0, y + 0.5, i === 0 ? 0 : -HP), mat, false);
-    else { const k = i === 3 ? 0 : i === 4 ? 1 : i === 5 ? 2 : 3; pushModel(L, prefix + 'railC', mdl('railC', MD.railCurve), compose(x + 0.5, 0, y + 0.5, -k * HP), mat, false); }
+    if (i < 2) pushModel(L, prefix + 'railS', mdl('railS', MD.railStraight), compose(cx, 0, cy, i === 0 ? 0 : -HP, RS, 1, RS), mat, false);
+    else { const k = i === 3 ? 0 : i === 4 ? 1 : i === 5 ? 2 : 3; pushModel(L, prefix + 'railC', mdl('railC', MD.railCurve), compose(cx, 0, cy, -k * HP, RS, 1, RS), mat, false); }
   }
 }
 function pipeConn(e: Ent, d: number, lv = e.z || 0) {
@@ -347,14 +358,14 @@ function pipeConn(e: Ent, d: number, lv = e.z || 0) {
 
 /** tunnel mouths where a railway disappears into a mountain */
 /** a rail tile is 'inside' the mountain when all four of its corners are above the tunnel height */
-const inside = tunnelInside;
+const inside = (x: number, y: number) => tunnelInside(x, y) && tunnelInside(x + 1, y) && tunnelInside(x, y + 1) && tunnelInside(x + 1, y + 1);
 function pushPortals(L: LayerLike, e: Ent) {
   if (!inside(e.x, e.y)) return;
   const sides = railSides(e.pairs);
   for (let s = 0; s < 4; s++) {
     if (!(sides & (1 << s))) continue;
-    if (inside(e.x + DX[s], e.y + DY[s])) continue;
-    pushModel(L, 'portal', mdl('portal', MD.portalModel), compose(e.x + 0.5 + DX[s] * 0.5, 0, e.y + 0.5 + DY[s] * 0.5, -s * HP));
+    if (inside(e.x + DX[s] * RS, e.y + DY[s] * RS)) continue;
+    pushModel(L, 'portal', mdl('portal', MD.portalModel), compose(e.x + RS / 2 + DX[s] * RS / 2, 0, e.y + RS / 2 + DY[s] * RS / 2, -s * HP, RS, RS, RS));
   }
 }
 // ---------------------------------------------------------------------------
@@ -383,13 +394,13 @@ function recordChunks(keys: Set<number>, real: number) {
     for (let i = 0; i + 1 < C.length; i++) {
       const a = C[i], b = C[i + 1], dx = b[0] - a[0], dy = b[1] - a[1], len = Math.hypot(dx, dy);
       if (len < 1e-3) continue;
-      const parts = Math.max(1, Math.round(len)), ang = -Math.atan2(dy, dx), pl = len / parts;
+      const parts = Math.max(1, Math.round(len / RS)), ang = -Math.atan2(dy, dx), pl = len / parts;
       for (let k = 0; k < parts; k++) {
         const mx = a[0] + dx * (k + 0.5) / parts, my = a[1] + dy * (k + 0.5) / parts;
         const ch = at(mx, my); if (!ch) continue;
-        pushModel(ch.rec, 'railSeg', mdl('railS', MD.railStraight), compose(mx, 0, my, ang, pl * 1.04, 1, 1), undefined, false);
+        pushModel(ch.rec, 'railSeg', mdl('railS', MD.railStraight), compose(mx, 0, my, ang, pl * 1.04, 1, RS), undefined, false);
         const wt = G.tiles[Math.floor(my) * W + Math.floor(mx)];
-        if (wt === 4 || wt === 5) pushModel(ch.rec, 'railBridge', mdl('railBridge', MD.railBridge), compose(mx, 0, my, ang, pl * 1.02, 1, 1));
+        if (wt === 4 || wt === 5) pushModel(ch.rec, 'railBridge', mdl('railBridge', MD.railBridge), compose(mx, 0, my, ang, pl * 1.02, 1, RS));
       }
     }
   }
@@ -417,7 +428,7 @@ function recordChunks(keys: Set<number>, real: number) {
     if (k === 'rail') {
       pushRail(L, e.x, e.y, e.pairs, undefined, '', curveTiles);
       if (e.sig) ch.sig.push(e);
-      if (G.tiles[e.y * W + e.x] === 6) pushPortals(L, e);
+      if (rTiles(e.y * W + e.x).some(k => G.tiles[k] === 6)) pushPortals(L, e);
       continue;
     }
     if (k === 'pipe') {
@@ -436,6 +447,8 @@ function recordChunks(keys: Set<number>, real: number) {
     // just placed: plays its pop-in animation in the dynamic layer, then this chunk is re-recorded
     if (real - e.born < 0.45) { ch.pops.push(e); ch.popUntil = Math.max(ch.popUntil, e.born + 0.45); continue; }
     pushTemplate(L, 'T:' + tk(e), t, compose(e.x + e.w / 2, 0, e.y + e.h / 2, rotOf(e)), undefined, e.o);
+    // poles, towers and offshore oil pumps out in the water stand on concrete piles
+    if (k === 'pole' || e.type === 'oil_extractor') for (let j = 0; j < e.h; j++) for (let i = 0; i < e.w; i++) { const tt = G.tiles[(e.y + j) * W + e.x + i]; if (tt === 4 || tt === 5) pushModel(L, 'pile', mdl('pile', MD.pileModel), compose(e.x + i + 0.5, 0, e.y + j + 0.5, 0)); }
     if (t.anims.length || t.light || t.smoke || t.glow) ch.anim.push(e);
     if (e.type === 'lamp') ch.lamps.push(e);
     pushPortArrows(L, e, '');
@@ -489,7 +502,7 @@ function rebuildStatic(real: number) {
   const q0 = performance.now(); ST.n++;
   ensureFresh();
   const q1 = performance.now(); ST.fresh += q1 - q0;
-  if (G.railRev !== lastCutRev) { lastCutRev = G.railRev; const rr: number[] = []; for (const r of G.L.rails) if (G.tiles[r.y * W + r.x] === 6) rr.push(r.y * W + r.x); updateCuts(rr); }
+  if (G.railRev !== lastCutRev) { lastCutRev = G.railRev; const rr: number[] = []; for (const r of G.L.rails) for (const k of rTiles(r.y * W + r.x)) if (G.tiles[k] === 6) rr.push(k); updateCuts(rr); }
   // what changed since last time: specific areas (just those chunks) or anything else (everything)
   const tagged = G.rev - lastRev === G.touchN - lastTouchN && G.railRev === lastRailRev;
   lastRailRev = G.railRev;
@@ -713,13 +726,13 @@ export function update3D(time: number, real: number, dt: number, labels: Label3[
       if (!f || !r) continue;
       const x = (f[0] + r[0]) / 2, y = (f[1] + r[1]) / 2, a = Math.atan2(f[1] - r[1], f[0] - r[0]);
       const loco = tr.cars[i] === 'loco';
-      pushModel(DL, loco ? 'loco' : 'wagon', mdl(loco ? 'loco' : 'wagon', loco ? MD.locoModel : MD.wagonModel), compose(x, 0.05, y, -a), undefined, true, tr.o);
+      pushModel(DL, loco ? 'loco' : 'wagon', mdl(loco ? 'loco' : 'wagon', loco ? MD.locoModel : MD.wagonModel), compose(x, 0.05, y, -a, RS, RS, RS), undefined, true, tr.o);
       if (!loco && tr.tot > 0) {
         const k = Object.keys(tr.cargo)[0];
-        if (k) { COL.set(ITEMS[k].c); DL.get('cargo', mdl('cargo', () => ({ geo: new THREE.BoxGeometry(1.6, 0.25, 0.55).translate(0, 0.9, 0), mats: [] })).geo, cargoMat || (cargoMat = std('#ffffff', 0.7, 0.1)), true, true).push(compose(x, 0.05, y, -a, 1, Math.min(1, tr.tot / (WAGON_CAP * tr.cars.filter((c: string) => c === 'wagon').length) + 0.2), 1), COL); }
+        if (k) { COL.set(ITEMS[k].c); DL.get('cargo', mdl('cargo', () => ({ geo: new THREE.BoxGeometry(1.6, 0.25, 0.55).translate(0, 0.9, 0), mats: [] })).geo, cargoMat || (cargoMat = std('#ffffff', 0.7, 0.1)), true, true).push(compose(x, 0.05, y, -a, RS, RS * Math.min(1, tr.tot / (WAGON_CAP * tr.cars.filter((c: string) => c === 'wagon').length) + 0.2), RS), COL); }
       }
     }
-    if (close && pts[0]) labels.push({ x: pts[0][0], y: pts[0][1], z: 1.8, t: tr.name, c: '#ffd0c0' });
+    if (close && pts[0]) labels.push({ x: pts[0][0], y: pts[0][1], z: 3.2, t: tr.name, c: '#ffd0c0' });
   }
   // red warning arrows: something is feeding a building at the wrong spot
   if (G.L.wrong && G.L.wrong.length && Math.sin(real * 6) > -0.3) {
@@ -728,6 +741,31 @@ export function update3D(time: number, real: number, dt: number, labels: Label3[
       if ((w.z || 0) > view.level || Math.abs(w.x - tgx) > VR || Math.abs(w.y - tgy) > VR) continue;
       pushModel(DL, 'arrowBad', wm, compose(w.x + 0.5 + DX[w.dir] * 0.5, (w.z || 0) * LH + 0.45, w.y + 0.5 + DY[w.dir] * 0.5, -w.dir * HP, 1.4, 1.4, 1.4), undefined, false);
       if (near) bbs.add(w.x + 0.5 + DX[w.dir] * 0.5, w.y + 0.5 + DY[w.dir] * 0.5, (w.z || 0) * LH + 1.1, 0.45, 0.45, SPR.bolt, hexCol('#ff5050'));
+    }
+  }
+  // the launch
+  if (launchPending) { launchPending = false; launchT0 = real; }
+  if (launchT0 >= 0) {
+    const lt = real - launchT0, el = G.L.elevator as Ent | undefined;
+    if (lt > 45 || !el) launchT0 = -1;
+    else {
+      const k = el.big ? 1 : 5 / 9, cx = el.x + el.w / 2, cy = el.y + el.h / 2;
+      // a flash and a shockwave rolling out from the base
+      if (lt < 3.5) { const s = (1 + lt * 9) * k; pushModel(DL, 'shock', mdl('shock', MD.shockModel), compose(cx, 0.4, cy, 0, s, 1, s), undefined, false); }
+      if (lt < 1.2) bbAdd.add(cx, cy, 33 * k, 30 * k, 30 * k, SPR.glow, hexCol('#e0f0ff', 1 - lt / 1.2));
+      // the capsule: holds on the platform for a moment, then accelerates up the tether
+      const hgt = (33.5 + (lt > 2 ? 0.5 * 7 * (lt - 2) * (lt - 2) : 0)) * k;
+      if (hgt < 400) {
+        pushModel(DL, 'launchCap', mdl('launchCap', MD.launchCapModel), compose(cx, hgt, cy, real * 0.6, k * 1.4, k * 1.4, k * 1.4), undefined, false);
+        bbAdd.add(cx, cy, hgt - 1.2 * k, 3.5 * k, 3.5 * k, SPR.glow, hexCol('#ffd08a', 0.9));
+        if (lt > 2) for (let q = 0; q < 3; q++) spawn(cx + (Math.random() - 0.5) * 0.8 * k, cy + (Math.random() - 0.5) * 0.8 * k, { z: hgt - 1.5 * k, vz: -3 - Math.random() * 3, vx: (Math.random() - 0.5), vy: (Math.random() - 0.5), life: 1.4, spr: 'glow', size: 1.1 * k, col: rgba(1, 0.65 + Math.random() * 0.3, 0.3, 0.85), grow: 1.8, vr: 0 });
+      }
+      // fireworks all round the elevator
+      if (lt > 1.5 && lt < 38 && Math.random() < 0.18) {
+        const fx = cx + (Math.random() - 0.5) * 34 * k, fy = cy + (Math.random() - 0.5) * 34 * k, fz = (14 + Math.random() * 26) * k;
+        const hue = ['#ff5a5a', '#ffd04a', '#5aff8a', '#5ab4ff', '#c77dff', '#ffffff', '#ff9a3a'][Math.floor(Math.random() * 7)];
+        for (let q = 0; q < 28; q++) { const a = Math.random() * Math.PI * 2, b2 = Math.random() * Math.PI - Math.PI / 2, v = 5 + Math.random() * 3; spawn(fx, fy, { z: fz, vx: Math.cos(a) * Math.cos(b2) * v, vy: Math.sin(a) * Math.cos(b2) * v, vz: Math.sin(b2) * v + 1, life: 1.4 + Math.random() * 0.6, spr: 'glow', size: 0.5, col: hexCol(hue), grav: 3, grow: 0.6, vr: 0 }); }
+      }
     }
   }
   // ships: bob gently on the water and leave a wake
@@ -742,11 +780,11 @@ export function update3D(time: number, real: number, dt: number, labels: Label3[
   for (const r of sigRails) {
     if (!G.ents.has(r.id) || !r.sig || Math.abs(r.x - tgx) > VR || Math.abs(r.y - tgy) > VR) continue;
     const post = mdl('sigPost' + r.sig, () => MD.signalModel(r.sig === 2));
-    pushModel(DL, 'sigPost' + r.sig, post, compose(r.x + 0.5, 0, r.y + 0.5, 0));
+    pushModel(DL, 'sigPost' + r.sig, post, compose(r.x + 1.5, 0, r.y + 1.5, 0));
     const red = signalRed(r.y * W + r.x);
     COL.set(red ? '#ff3a2a' : '#3aff6a');
-    DL.get('light', mdl('lightS', () => ({ geo: new THREE.SphereGeometry(0.07, 8, 6), mats: [] })).geo, lightMat, false, true).push(compose(r.x + 0.9, 1.05, r.y + 0.9, 0, 1.3, 1.3, 1.3), COL);
-    if (near) bbAdd.add(r.x + 0.9, r.y + 0.9, 1.05, 0.5, 0.5, SPR.glow, hexCol(red ? '#ff3a2a' : '#3aff6a', 0.6));
+    DL.get('light', mdl('lightS', () => ({ geo: new THREE.SphereGeometry(0.07, 8, 6), mats: [] })).geo, lightMat, false, true).push(compose(r.x + 1.9, 1.05, r.y + 1.9, 0, 1.3, 1.3, 1.3), COL);
+    if (near) bbAdd.add(r.x + 1.9, r.y + 1.9, 1.05, 0.5, 0.5, SPR.glow, hexCol(red ? '#ff3a2a' : '#3aff6a', 0.6));
   }
   // trucks
   for (const tk of G.trucks) {
@@ -875,18 +913,20 @@ export function update3D(time: number, real: number, dt: number, labels: Label3[
 function updateGhosts(real: number) {
   GL.begin();
   ZO = 0;
+  // a harbor being placed: the open water its ships need, green where it's clear and red where it isn't
+  if (view.zone) for (const [x, y, ok] of view.zone) GL.get(ok ? 'zoneOK' : 'zoneBad', mdl('areaP', () => ({ geo: new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), mats: [] })).geo, ok ? ghostOK : ghostBad, false).push(compose(x + 0.5, 0.04, y + 0.5, 0, 0.92, 1, 0.92));
   // railway being dragged: the smooth line it will have, plus markers where it starts/snaps on
   const rp = view.railPlan;
   if (rp) {
-    const marker = (x: number, y: number, ok: boolean) => GL.get(ok ? 'snapOK' : 'snapBad', mdl('areaP', () => ({ geo: new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), mats: [] })).geo, ok ? ghostOK : ghostBad, false).push(compose(x + 0.5, 0.15 + Math.sin(real * 6) * 0.03, y + 0.5, 0, 1.3, 1, 1.3));
+    const marker = (x: number, y: number, ok: boolean) => GL.get(ok ? 'snapOK' : 'snapBad', mdl('areaP', () => ({ geo: new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), mats: [] })).geo, ok ? ghostOK : ghostBad, false).push(compose(x + RS / 2, 0.15 + Math.sin(real * 6) * 0.03, y + RS / 2, 0, 1.3 * RS, 1, 1.3 * RS));
     if (rp.hoverEnd) marker(rp.hoverEnd.x, rp.hoverEnd.y, true);
     if (rp.pts && rp.pts.length > 1) {
       const line = previewLine(rp.pts, rp.dirA, rp.dirB), mat = rp.ok ? ghostOK : ghostBad, pre = rp.ok ? 'gok:' : 'gbad:';
       for (let i = 0; i + 1 < line.length; i++) {
         const a2 = line[i], b2 = line[i + 1], dx = b2[0] - a2[0], dy = b2[1] - a2[1], len = Math.hypot(dx, dy);
         if (len < 1e-3) continue;
-        const parts = Math.max(1, Math.round(len)), pl = len / parts;
-        for (let k = 0; k < parts; k++) pushModel(GL, pre + 'railSeg', mdl('railS', MD.railStraight), compose(a2[0] + dx * (k + 0.5) / parts, 0.02, a2[1] + dy * (k + 0.5) / parts, -Math.atan2(dy, dx), pl * 1.04, 1, 1), mat, false);
+        const parts = Math.max(1, Math.round(len / RS)), pl = len / parts;
+        for (let k = 0; k < parts; k++) pushModel(GL, pre + 'railSeg', mdl('railS', MD.railStraight), compose(a2[0] + dx * (k + 0.5) / parts, 0.02, a2[1] + dy * (k + 0.5) / parts, -Math.atan2(dy, dx), pl * 1.04, 1, RS), mat, false);
       }
     }
     if (rp.snapEnd) marker(rp.snapEnd.x, rp.snapEnd.y, rp.ok);
@@ -904,8 +944,8 @@ function updateGhosts(real: number) {
       const cells = gh.cells || [];
       for (let i = 0; i + 1 < cells.length; i += 2) {
         const a = cells[i], b = cells[i + 1];
-        const ax = a % W + 0.5, ay = Math.floor(a / W) + 0.5, bx = b % W + 0.5, by = Math.floor(b / W) + 0.5;
-        pushModel(GL, pre + (i ? 'wagon' : 'loco'), mdl(i ? 'wagon' : 'loco', i ? MD.wagonModel : MD.locoModel), compose((ax + bx) / 2, 0.05, (ay + by) / 2, -Math.atan2(ay - by, ax - bx)), mat, false);
+        const ax = a % W + RS / 2, ay = Math.floor(a / W) + RS / 2, bx = b % W + RS / 2, by = Math.floor(b / W) + RS / 2;
+        pushModel(GL, pre + (i ? 'wagon' : 'loco'), mdl(i ? 'wagon' : 'loco', i ? MD.wagonModel : MD.locoModel), compose((ax + bx) / 2, 0.05, (ay + by) / 2, -Math.atan2(ay - by, ax - bx), RS, RS, RS), mat, false);
       }
       continue;
     }

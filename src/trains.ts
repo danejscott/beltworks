@@ -6,27 +6,28 @@ import { DX, DY, opp } from './util';
 import { addInv, borderTiles, canAfford, Ent, entAt, G, Line, markDirty, missingText, pairBit, pay, place, platformTiles, railAt, railExits, railSides, refund, Train } from './world';
 import { TT } from './terrain';
 import { railPairsForPath, smartJunction } from './cmd';
+import { RS, rOrigin, rStep, rTiles } from './railgrid';
 
 export const WAGON_CAP = 120;
-const ACC = 5, DEC = 7;
-export const trainMax = () => 18 * (G.S.shop.express ? 1.5 : 1);
+// speeds are in rail blocks (2 tiles) per second
+const ACC = 5 / RS, DEC = 7 / RS;
+export const trainMax = () => 18 / RS * (G.S.shop.express ? 1.5 : 1);
 export const wagonsOf = (t: Train) => t.cars.filter(c => c === 'wagon').length;
 export const trainCap = (t: Train) => wagonsOf(t) * WAGON_CAP;
 
 const tx = (i: number) => i % W, ty = (i: number) => Math.floor(i / W);
 function sideToward(a: number, b: number) {
-  const dx = tx(b) - tx(a), dy = ty(b) - ty(a);
+  const dx = (tx(b) - tx(a)) / RS, dy = (ty(b) - ty(a)) / RS;
   for (let d = 0; d < 4; d++) if (DX[d] === dx && DY[d] === dy) return d;
   return -1;
 }
 
-/** walk n tiles along the track from tile `start` leaving via side `exit` */
+/** walk n blocks along the track from block `start` leaving via side `exit` */
 function walk(start: number, exit: number, n: number, prefer = true): number[] | null {
   const out: number[] = [];
   let cur = start, ex = exit;
   for (let k = 0; k < n; k++) {
-    const nx = tx(cur) + DX[ex], ny = ty(cur) + DY[ex];
-    const ni = ny * W + nx;
+    const ni = rStep(cur, ex);
     const r = railAt(ni);
     if (!r) return null;
     const entry = opp(ex);
@@ -46,14 +47,14 @@ function occupiedByTrain(i: number, except?: Train) {
 }
 
 export function canPlaceTrain(x: number, y: number, rot: number): { cells?: number[]; err?: string } {
-  const i = y * W + x, r = railAt(i);
-  if (!r) return { err: 'Place the locomotive on a railway' };
+  const i = rOrigin(x, y), r = railAt(i);
+  if (!r || r.y * W + r.x !== i) return { err: 'Place the locomotive on a railway' };
   const sides = railSides(r.pairs);
   let back = opp(rot);
   if (!(sides & (1 << back))) { back = -1; for (let s = 0; s < 4; s++) if (sides & (1 << s)) { back = s; break; } }
   if (back < 0) return { err: 'Bad track' };
   const rest = walk(i, back, 3);
-  if (!rest) return { err: 'Needs 4 tiles of connected track (loco + 1 wagon)' };
+  if (!rest) return { err: 'Needs 4 pieces of connected track (loco + 1 wagon)' };
   const cells = [i, ...rest];
   for (const c of cells) if (occupiedByTrain(c)) return { err: 'Another train is in the way' };
   return { cells };
@@ -91,6 +92,18 @@ export function addWagon(t: Train) {
   t.cells.push(...more); t.cars.push('wagon');
   G.fx.sfx('place');
 }
+/** add a wagon at no cost if there's free track behind (rebuilding old worlds' trains) */
+export function addWagonFree(t: Train): boolean {
+  const n = t.cells.length, tail = t.cells[n - 1], prev = t.cells[n - 2];
+  const entry = sideToward(tail, prev), r = railAt(tail);
+  if (!r || entry < 0) return false;
+  const exits = railExits(r.pairs, entry);
+  if (!exits.length) return false;
+  const more = walk(tail, exits.includes(opp(entry)) ? opp(entry) : exits[0], 2);
+  if (!more || more.some(c => occupiedByTrain(c) || t.cells.includes(c))) return false;
+  t.cells.push(...more); t.cars.push('wagon');
+  return true;
+}
 export function removeWagon(t: Train) {
   if (wagonsOf(t) <= 0) return;
   if (t.v > 0.01) { G.fx.toast('Stop the train first', 'bad'); return; }
@@ -108,17 +121,25 @@ export function removeTrain(t: Train) {
   G.fx.sfx('remove');
 }
 export function trainAt(wx: number, wy: number): Train | null {
-  const i = Math.floor(wy) * W + Math.floor(wx);
+  const i = rOrigin(Math.floor(wx), Math.floor(wy));
   for (const t of G.trains) if (t.cells.includes(i)) return t;
   return null;
 }
 
 // ---------------------------------------------------------------------------
+/** the tiles around a building, up to r tiles out */
+function ringTiles(e: Ent, r: number): number[][] {
+  const out: number[][] = [];
+  for (let y = e.y - r; y < e.y + e.h + r; y++) for (let x = e.x - r; x < e.x + e.w + r; x++) if (x < e.x || x >= e.x + e.w || y < e.y || y >= e.y + e.h) out.push([x, y]);
+  return out;
+}
 function stationGoals(st: Ent): Set<number> {
   const s = new Set<number>();
   // stations with a platform: trains stop on the platform track only (connect your rails to its ends)
-  if (st.plat) { for (const [x, y] of platformTiles(st)) { const i = y * W + x; if (railAt(i)) s.add(i); } return s; }
-  for (const [x, y] of borderTiles(st)) { const i = y * W + x; if (railAt(i)) s.add(i); }
+  if (st.plat) { for (const [x, y] of platformTiles(st)) { const i = y * W + x, r = railAt(i); if (r && r.x === x && r.y === y) s.add(i); } return s; }
+  // (stations from before platforms: any track touching them, or with a one-tile gap — 2-wide track often can't
+  // squeeze right up against a station that was built for 1-wide track)
+  for (const [x, y] of ringTiles(st, 2)) { const r = railAt(y * W + x); if (r) s.add(r.y * W + r.x); }
   return s;
 }
 function bfs(start: number, entry: number, goals: Set<number>, blocked: Set<number> | null): number[] | null {
@@ -138,7 +159,7 @@ function bfs(start: number, entry: number, goals: Set<number>, blocked: Set<numb
     const r = railAt(i);
     if (!r) continue;
     for (const ex of railExits(r.pairs, s)) {
-      const nx = tx(i) + DX[ex], ny = ty(i) + DY[ex], ni = ny * W + nx;
+      const ni = rStep(i, ex);
       const nr = railAt(ni);
       if (!nr) continue;
       const ne = opp(ex);
@@ -152,6 +173,20 @@ function bfs(start: number, entry: number, goals: Set<number>, blocked: Set<numb
   }
   return null;
 }
+/** a route that reaches a station's platform carries on to its far end, so the whole train pulls in alongside it */
+function alongPlatform(p: number[], goals: Set<number>, blk: Set<number> | null): number[] {
+  const out = [...p];
+  for (let guard = 0; guard < 64 && out.length >= 1; guard++) {
+    const cur = out[out.length - 1], prev = out.length > 1 ? out[out.length - 2] : -1;
+    if (prev < 0) break;
+    const s = sideToward(prev, cur), r = railAt(cur);
+    if (s < 0 || !r || !railExits(r.pairs, opp(s)).includes(s)) break;
+    const nx = rStep(cur, s), nr = railAt(nx);
+    if (!goals.has(nx) || !nr || !(railSides(nr.pairs) & (1 << opp(s))) || (blk && blk.has(nx))) break;
+    out.push(nx);
+  }
+  return out;
+}
 function planRoute(t: Train, st: Ent): boolean {
   const goals = stationGoals(st);
   if (!goals.size) return false;
@@ -162,7 +197,8 @@ function planRoute(t: Train, st: Ent): boolean {
   const tryFrom = (rev: boolean, blk: Set<number> | null) => {
     const cells = rev ? [...t.cells].reverse() : t.cells;
     const entry = sideToward(cells[0], cells[1]);
-    return bfs(cells[0], entry, goals, blk);
+    const p = bfs(cells[0], entry, goals, blk);
+    return p && st.plat ? alongPlatform(p, goals, blk) : p;
   };
   for (const blk of [blocked, null]) {
     let p = tryFrom(false, blk);
@@ -175,7 +211,7 @@ function planRoute(t: Train, st: Ent): boolean {
 }
 
 /** is another train using station st ahead of t? (loading there, or heading there and closer) — then t waits in line */
-const QGAP = 4;
+const QGAP = 2;
 function stationBusy(st: Ent, t: Train) {
   for (const o of G.trains) {
     if (o === t || o.sched[o.si] !== st.id) continue;
@@ -320,19 +356,28 @@ function heapPop(h: number[][]) {
 }
 let railCost = 0.35, avoid: Set<number> | null = null;
 function routable(i: number): number {
-  // returns step cost or -1 if blocked
-  const t = G.tiles[i];
-  if (G.nodeGrid[i] || (G.featGrid && G.featGrid[i]) || (avoid && avoid.has(i))) return -1;
-  const id = G.grid[i];
-  if (id) { const e = G.ents.get(id); return e && e.type === 'rail' ? railCost : -1; }
-  return t === TT.WATER || t === TT.DEEP ? 2.2 : t === TT.ROCK ? 1.4 : 1; // tunnels are allowed, slightly pricier than open ground
+  // a rail block (2 x 2 tiles, i = its top-left tile): step cost, or -1 if blocked
+  if (i < 0 || i >= W * H || (avoid && avoid.has(i))) return -1;
+  const x = tx(i), y = ty(i);
+  if (x < 1 || y < 1 || x >= W - RS - 1 || y >= H - RS - 1) return -1;
+  let c = 1;
+  for (const k of rTiles(i)) {
+    if (G.nodeGrid[k] || (G.featGrid && G.featGrid[k])) return -1;
+    const id = G.grid[k];
+    if (id) { const e = G.ents.get(id); if (!e || e.type !== 'rail' || e.y * W + e.x !== i) return -1; c = Math.min(c, railCost); continue; }
+    const t = G.tiles[k];
+    c = Math.max(c, t === TT.WATER || t === TT.DEEP ? 2.2 : t === TT.ROCK ? 1.4 : 1); // tunnels are allowed, slightly pricier than open ground
+  }
+  return c;
 }
+/** the rail blocks just outside a station (for routing out of / into it) */
+const borderBlocks = (e: Ent) => [...new Set(ringTiles(e, e.plat ? 1 : 2).map(([x, y]) => rOrigin(x, y)))].filter(i => routable(i) >= 0);
 export function findRailPath(a: Ent, b: Ent, startTiles?: number[], goalTiles?: number[]): number[] | null {
-  const starts = startTiles || borderTiles(a).map(([x, y]) => y * W + x).filter(i => i >= 0 && i < W * H && routable(i) >= 0);
-  const goals = new Set(goalTiles || borderTiles(b).map(([x, y]) => y * W + x).filter(i => i >= 0 && i < W * H && routable(i) >= 0));
+  const starts = startTiles || borderBlocks(a);
+  const goals = new Set(goalTiles || borderBlocks(b));
   if (!starts.length || !goals.size) return null;
   const gx = b.x + b.w / 2, gy = b.y + b.h / 2;
-  const hf = (i: number) => (Math.abs(i % W - gx) + Math.abs(Math.floor(i / W) - gy)) * 1.05;
+  const hf = (i: number) => (Math.abs(i % W + RS / 2 - gx) + Math.abs(Math.floor(i / W) + RS / 2 - gy)) / RS * 1.05;
   const g = new Map<number, number>(), from = new Map<number, number>(), dirOf = new Map<number, number>();
   const heap: number[][] = [];
   for (const s of starts) { g.set(s, 0); from.set(s, -1); dirOf.set(s, -1); heapPush(heap, [hf(s), s]); }
@@ -342,8 +387,8 @@ export function findRailPath(a: Ent, b: Ent, startTiles?: number[], goalTiles?: 
     if (goals.has(i)) { found = i; break; }
     const gi = g.get(i)!, x = i % W, y = Math.floor(i / W), di = dirOf.get(i)!;
     for (let d = 0; d < 4; d++) {
-      const nx = x + DX[d], ny = y + DY[d];
-      if (nx < 1 || ny < 1 || nx >= W - 1 || ny >= H - 1) continue;
+      const nx = x + DX[d] * RS, ny = y + DY[d] * RS;
+      if (nx < 1 || ny < 1 || nx >= W - RS - 1 || ny >= H - RS - 1) continue;
       const ni = ny * W + nx, c = routable(ni);
       if (c < 0) continue;
       const turn = di >= 0 && di !== d ? 0.8 : 0;
@@ -366,33 +411,38 @@ export function routeCost(path: number[]) {
   for (const k in BLD.rail.cost) c[k] = BLD.rail.cost[k] * n;
   return { tiles: n, cost: c };
 }
+let FREE = false;   // building for free (rebuilding old worlds' loops)
 function layRails(path: number[]) {
   const pts = path.map((i, k) => {
     const x = i % W, y = Math.floor(i / W);
     const nxt = path[k + 1] ?? null, prv = path[k - 1];
     let d = 0;
     const from = nxt !== null ? i : prv, to = nxt !== null ? nxt : i;
-    for (let dd = 0; dd < 4; dd++) if ((from % W) + DX[dd] === to % W && Math.floor(from / W) + DY[dd] === Math.floor(to / W)) d = dd;
+    for (let dd = 0; dd < 4; dd++) if (rStep(from, dd) === to) d = dd;
     return { x, y, d };
   });
   const pairs = railPairsForPath(pts);
   for (let k = 0; k < pts.length; k++) {
-    const p = pts[k], e = entAt(p.x, p.y);
-    if (e) { if (e.type === 'rail') e.pairs = e.pairs | smartJunction(e.pairs, pairs[k], pts, k); }
-    else { const r = place('rail', p.x, p.y, 0, { quiet: true }); r.pairs = pairs[k]; }
+    const p = pts[k], e = railAt(p.y * W + p.x);
+    if (e) { if (e.x === p.x && e.y === p.y) e.pairs = e.pairs | smartJunction(e.pairs, pairs[k], pts, k); }
+    else { const r = place('rail', p.x, p.y, 0, { quiet: true, free: FREE }); r.pairs = pairs[k]; }
   }
 }
 function addPair(i: number, a: number, b: number) { const r = railAt(i); if (r) r.pairs |= pairBit(sideToward(i, a), sideToward(i, b)); }
 export const MAX_LINE_TRAINS = 12;
 export const lineOf = (id?: number) => (G.S.lines || []).find(l => l.id === id) || null;
 export const lineTrains = (l: Line) => G.trains.filter(t => t.line === l.id);
-const nb4 = (i: number) => { const x = i % W, y = Math.floor(i / W); const o: number[] = []; for (let d = 0; d < 4; d++) { const nx = x + DX[d], ny = y + DY[d]; if (nx >= 0 && ny >= 0 && nx < W && ny < H) o.push(ny * W + nx); } return o; };
+const nb4 = (i: number) => { const x = i % W, y = Math.floor(i / W); const o: number[] = []; for (let d = 0; d < 4; d++) { const nx = x + DX[d] * RS, ny = y + DY[d] * RS; if (nx >= 0 && ny >= 0 && nx < W - 1 && ny < H - 1) o.push(ny * W + nx); } return o; };
 
 /**
  * Quick Route: lays a one-way LOOP between two stations (out on one track, back on another),
  * so any number of trains can follow each other around it without ever meeting head-on.
  */
-export function buildRoute(a: Ent, b: Ent, withTrain: boolean): string | null {
+export function buildRoute(a: Ent, b: Ent, withTrain: boolean, free = false): string | null {
+  FREE = free;
+  try { return buildRouteX(a, b, withTrain); } finally { FREE = false; }
+}
+function buildRouteX(a: Ent, b: Ent, withTrain: boolean): string | null {
   if (a === b) return 'Pick a different station';
   if (a.plat && b.plat) return buildPlatformRoute(a, b, withTrain);
   railCost = 3; avoid = null;
@@ -404,7 +454,7 @@ export function buildRoute(a: Ent, b: Ent, withTrain: boolean): string | null {
   const onOut = new Set(out);
   // the return track: from the end of the outbound line back to its start, keeping a one-tile gap
   avoid = new Set<number>();
-  for (const i of out) { avoid.add(i); for (const n of nb4(i)) if (!onOut.has(n)) avoid.add(n); }
+  for (const i of out) avoid.add(i);   // the return track may run right alongside (double track)
   const firstStep = nb4(endN).filter(n => !onOut.has(n));
   const lastStep = nb4(startN).filter(n => !onOut.has(n));
   for (const n of [...firstStep, ...lastStep]) avoid.delete(n);
@@ -416,7 +466,7 @@ export function buildRoute(a: Ent, b: Ent, withTrain: boolean): string | null {
   const { cost } = routeCost([...new Set(loop)]);
   const total: Record<string, number> = { ...cost };
   if (withTrain) for (const src of [BLD.locomotive.cost, BLD.wagon.cost]) for (const k in src) total[k] = (total[k] || 0) + src[k];
-  if (!canAfford(total)) return 'Not enough materials: ' + missingText(total);
+  if (!FREE && !canAfford(total)) return 'Not enough materials: ' + missingText(total);
   layRails(out);
   layRails([endN, ...back, startN]);
   // turn-around joints at each end
@@ -449,7 +499,7 @@ function buildPlatformRoute(a: Ent, b: Ent, withTrain: boolean): string | null {
   if (!okEnd(oA) || !okEnd(oB)) { avoid = null; return 'Found a way there, but the far end of a platform is blocked — the loop runs through both platforms.'; }
   const onOut = new Set(out);
   avoid = new Set(platSet);
-  for (const i of out) { avoid.add(i); for (const n of nb4(i)) if (!onOut.has(n)) avoid.add(n); }
+  for (const i of out) avoid.add(i);   // the return track may run right alongside (double track)
   avoid.delete(oA); avoid.delete(oB);
   railCost = 3;
   const back = findRailPath(b, a, [oB], [oA]);
@@ -463,7 +513,7 @@ function buildPlatformRoute(a: Ent, b: Ent, withTrain: boolean): string | null {
   const { cost } = routeCost(loop);
   const total: Record<string, number> = { ...cost };
   if (withTrain) for (const src of [BLD.locomotive.cost, BLD.wagon.cost]) for (const k in src) total[k] = (total[k] || 0) + src[k];
-  if (!canAfford(total)) return 'Not enough materials: ' + missingText(total);
+  if (!FREE && !canAfford(total)) return 'Not enough materials: ' + missingText(total);
   layRails(loop);
   const n = loop.length;
   addPair(loop[0], loop[n - 1], loop[1]);
@@ -476,13 +526,14 @@ function buildPlatformRoute(a: Ent, b: Ent, withTrain: boolean): string | null {
   return null;
 }
 /** put another train on a looped line, as far as possible from the trains already on it */
-export function addTrainToLine(line: Line, skipCountCheck = false): string | null {
+export function addTrainToLine(line: Line, skipCountCheck = false, free = false): string | null {
+  const fr = free || FREE;
   const a = G.ents.get(line.a), b = G.ents.get(line.b);
   if (!a || !b) return 'one of this line\'s stations is gone';
   if (!skipCountCheck && lineTrains(line).length >= MAX_LINE_TRAINS) return `a line can hold at most ${MAX_LINE_TRAINS} trains`;
   const cost = { ...BLD.locomotive.cost };
   for (const k in BLD.wagon.cost) cost[k] = (cost[k] || 0) + BLD.wagon.cost[k];
-  if (!canAfford(cost)) return 'need ' + missingText(cost);
+  if (!fr && !canAfford(cost)) return 'need ' + missingText(cost);
   const L = line.cells, n = L.length;
   for (const c of L) if (!railAt(c)) return 'the track has a gap — rebuild the missing rails';
   const occ = new Set<number>(); for (const t of G.trains) for (const c of t.cells) occ.add(c);
@@ -496,7 +547,7 @@ export function addTrainToLine(line: Line, skipCountCheck = false): string | nul
     if (dmin > bestD) { bestD = dmin; best = k; }
   }
   if (best < 0 || (occIdx.length && bestD < 8)) return 'there is no free stretch of track left on this line';
-  pay(cost);
+  if (!fr) pay(cost);
   const t: Train = {
     id: G.nextId++, o: MP.teams ? MP.cur : 0, name: 'Train ' + (++G.S.trainSeq), cars: ['loco', 'wagon'], cells: [L[best], L[best - 1], L[best - 2], L[best - 3]],
     frac: 0, route: [], v: 0, sched: [line.a, line.b], si: best < line.split ? 1 : 0, state: 'idle', cargo: {}, tot: 0, waitT: 99, idleT: 0, blockT: 0,
@@ -530,7 +581,7 @@ function computeBlocks() {
       const sides = railSides(rc.pairs);
       for (let s = 0; s < 4; s++) {
         if (!(sides & (1 << s))) continue;
-        const n = (ty(c) + DY[s]) * W + tx(c) + DX[s], rn = railAt(n);
+        const n = rStep(c, s), rn = railAt(n);
         if (!rn || rn.sig || blocks.has(n) || !(railSides(rn.pairs) & (1 << opp(s)))) continue;
         blocks.set(n, id); st.push(n);
       }
@@ -541,7 +592,7 @@ export const blockAt = (i: number) => blocks.get(i);
 /** red if the track next to this signal is taken */
 export function signalRed(i: number): boolean {
   for (let s = 0; s < 4; s++) {
-    const b = blocks.get((ty(i) + DY[s]) * W + tx(i) + DX[s]);
+    const b = blocks.get(rStep(i, s));
     if (b !== undefined && (blockOcc.has(b) || blockRes.has(b))) return true;
   }
   return false;

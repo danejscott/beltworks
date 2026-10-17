@@ -374,7 +374,7 @@ export function recapHTML(win: boolean): [string, string] {
   h += `<div class="rstats">
     <div><b>${fmtTime(win && S.wonT ? S.wonT : pt)}</b><span>${win ? 'to launch' : 'played'}</span></div>
     <div><b>${fmt(made)}</b><span>items made</span></div>
-    <div><b>${fmt(kinds('rail'))}</b><span>tiles of track</span></div>
+    <div><b>${fmt(kinds('rail'))}</b><span>pieces of track</span></div>
     <div><b>${fmt(kinds('belt'))}</b><span>belts</span></div>
     <div><b>${fmt(G.L.machines.length)}</b><span>machines</span></div>
     <div><b>${fmtR(Math.max(cap, S.flags.peakMW || 0))} MW</b><span>peak power</span></div>

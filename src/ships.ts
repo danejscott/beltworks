@@ -6,6 +6,8 @@ import { gridPath } from './trucks';
 import { addInv, borderTiles, canAfford, Ent, G, missingText, pay, pierAlong, refund } from './world';
 
 export const SHIP_CAP = 800;
+/** ships based at one harbor (it has room for about that many to come and go) */
+export const MAX_SHIPS = 4;
 const VMAX = 6, ACC = 2.5;
 const SAIL_UNDER = new Set(['belt', 'tunnel', 'pipe', 'ptunnel', 'rail', 'pole']);   // ships pass under bridges
 
@@ -18,7 +20,7 @@ export interface Ship {
 function cost(i: number): number {
   if (!isWater(G.tiles[i])) return -1;
   const id = G.grid[i];
-  if (id) { const e = G.ents.get(id); if (e && !(SAIL_UNDER.has(BLD[e.type].kind) && e.w === 1)) return -1; }
+  if (id) { const e = G.ents.get(id); if (e && !(SAIL_UNDER.has(BLD[e.type].kind) && (e.w === 1 || BLD[e.type].kind === 'rail'))) return -1; }
   return G.tiles[i] === 5 ? 1 : 1.15;   // deep water is a little faster
 }
 export const shipPassable = (i: number) => cost(i) >= 0;
@@ -80,6 +82,7 @@ const route = (from: number, goals: number[], p: Ent) => cachedPath(from, goals,
 export const shipPorts = (): Ent[] => (G.L ? G.L.ports : []);
 
 export function buyShip(home: Ent, target: Ent | null): string | null {
+  if (BLD[home.type].pier && G.ships.filter(sh => sh.sched[0] === home.id).length >= MAX_SHIPS) return `A harbor serves at most ${MAX_SHIPS} ships`;
   const b = berths(home);
   if (!b.length) return 'No open water next to this port for a ship to moor';
   if (!canAfford(BLD.ship.cost)) return 'Need: ' + missingText(BLD.ship.cost);

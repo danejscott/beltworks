@@ -4,6 +4,7 @@ import { genTerrain, gridFor, H, HX, HY, isLand, isWater, ResNode, setWorldSize,
 import { Feat, genFeatures } from './features';
 import { shoreTiles } from './ships';
 import { DX, DY, opp } from './util';
+import { RS, snapR } from './railgrid';
 import { clearTeams, MP, wrand } from './teams';
 import { applyExtraNode, nearRivalBase } from './online';
 
@@ -69,7 +70,8 @@ export const G = {
   trains: [] as Train[],
   trainOcc: new Map<number, number>(),
   trucks: [] as Truck[],
-  wear: new Map<number, number>(),   // ground wear from trucks (tile -> 0..255)
+  wear: new Map<number, number>(),
+  slabs: new Map<number, number>(),   // concrete slabs poured on water: tile -> the water it replaced   // ground wear from trucks (tile -> 0..255)
   ships: [] as any[],
   feats: [] as Feat[],
   featGrid: null as Int32Array,
@@ -85,7 +87,7 @@ export const G = {
   covGrid: null as Int32Array,
   realNow: 0,
   fx: {
-    placed: (_e: Ent) => { }, removed: (_e: Ent) => { }, tile: (_x: number, _y: number) => { },
+    placed: (_e: Ent) => { }, removed: (_e: Ent) => { }, tile: (_x: number, _y: number) => { }, slab: (_i: number) => { },
     toast: (_h: string, _k?: string) => { }, sfx: (_n: string) => { }, chop: (_x: number, _y: number, _n: number) => { },
     ui: (_k: string, _o: any) => { },
     wear: (_i: number, _v: number) => { },   // UI reactions to the local player's own commands (open a panel, particles)
@@ -165,19 +167,40 @@ export function pierBack(e: { x: number; y: number; w: number; h: number; rot: n
   else for (let i = 0; i < w; i++) out.push([x + i, y + h]);
   return out;
 }
+/** water ships need around a harbor so they can come and go: every tile within HARBOR_CLEAR of the pier, except
+ *  behind its land end. Returns [x, y, ok] for each (used for the placement check and the green / red preview). */
+export const HARBOR_CLEAR = 5;
+export function harborClearance(x: number, y: number, rot: number): [number, number, boolean][] {
+  const [w, h] = dims('harbor', rot), e = { x, y, w, h, rot }, out: [number, number, boolean][] = [];
+  for (let ty = y - HARBOR_CLEAR; ty < y + h + HARBOR_CLEAR; ty++) for (let tx = x - HARBOR_CLEAR; tx < x + w + HARBOR_CLEAR; tx++) {
+    if (tx >= x && tx < x + w && ty >= y && ty < y + h) continue;
+    if (pierAlong(e, tx, ty) < 0) continue;            // behind the land end: that's where the shore (and slabs) go
+    const ok = inB(tx, ty) && isWater(G.tiles[ty * W + tx]) && !G.grid[ty * W + tx];
+    out.push([tx, ty, ok]);
+  }
+  return out;
+}
 /** harbors: how far along the pier a tile is (0 = land end) */
 export function pierAlong(e: { x: number; y: number; w: number; h: number; rot: number }, tx: number, ty: number) {
   return e.rot === 0 ? tx - e.x : e.rot === 2 ? e.x + e.w - 1 - tx : e.rot === 1 ? ty - e.y : e.y + e.h - 1 - ty;
 }
 const isPier = (e: any) => !!(e && e.type && BLD[e.type] && (BLD[e.type].pier || (BLD[e.type].kind === 'station' && e.plat)));
-/** train stations (built since platforms): the row of track along the front, from left to right as seen from behind */
+/** train stations (built since platforms): the 2-wide track blocks along the front (their top-left tiles), from left
+ *  to right as seen from behind */
 export function platformTiles(e: { x: number; y: number; w: number; h: number; rot: number }): number[][] {
   const { x, y, w, h, rot } = e, out: number[][] = [];
-  if (rot === 0) for (let j = 0; j < h; j++) out.push([x + w, y + j]);
-  else if (rot === 2) for (let j = h - 1; j >= 0; j--) out.push([x - 1, y + j]);
-  else if (rot === 1) for (let i = w - 1; i >= 0; i--) out.push([x + i, y + h]);
-  else for (let i = 0; i < w; i++) out.push([x + i, y - 1]);
+  const n = Math.floor((rot & 1 ? w : h) / RS);
+  if (rot === 0) for (let j = 0; j < n; j++) out.push([x + w, y + j * RS]);
+  else if (rot === 2) for (let j = n - 1; j >= 0; j--) out.push([x - RS, y + j * RS]);
+  else if (rot === 1) for (let i = n - 1; i >= 0; i--) out.push([x + i * RS, y + h]);
+  else for (let i = 0; i < n; i++) out.push([x + i * RS, y - RS]);
   return out;
+}
+/** where a new station goes so its platform lines up with the 2-tile rail grid (nudged at most one tile) */
+export function snapStation(x: number, y: number, rot: number): [number, number] {
+  const [w, h] = dims('station', rot);
+  const [px, py] = platformTiles({ x, y, w, h, rot })[0];
+  return [x - (px - snapR(px)), y - (py - snapR(py))];
 }
 /** the rail pair a station's platform track uses (parallel to its front) */
 export const platformPair = (rot: number) => rot & 1 ? pairBit(0, 2) : pairBit(1, 3);
@@ -185,9 +208,11 @@ export const platformPair = (rot: number) => rot & 1 ? pairBit(0, 2) : pairBit(1
 export function addPlatform(e: Ent) {
   e.plat = 1;
   for (const [x, y] of platformTiles(e)) {
-    const r = entAt(x, y);
-    if (r && r.type === 'rail') r.pairs |= platformPair(e.rot);
-    else if (!r) { const n = place('rail', x, y, 0, { free: true, quiet: true, owner: e.o || 0 }); n.pairs = platformPair(e.rot); }
+    const r = railAt(y * W + x);
+    if (r && r.x === x && r.y === y) { r.pairs |= platformPair(e.rot); continue; }
+    let clear = true;
+    for (let j = 0; j < RS; j++) for (let i = 0; i < RS; i++) if (!inB(x + i, y + j) || entAt(x + i, y + j)) clear = false;
+    if (clear) { const n = place('rail', x, y, 0, { free: true, quiet: true, owner: e.o || 0 }); n.pairs = platformPair(e.rot); }
   }
   markDirty('rail'); markDirty('station', e);
 }
@@ -256,10 +281,7 @@ export function canPlace(type: string, x: number, y: number, rot: number, o: { f
     }
     const t = G.tiles[ty * W + tx];
     if (d.pier) {
-      const a = pierAlong({ x, y, w, h, rot }, tx, ty);
-      if (t === TT.ROCK) return 'Can\'t build on rock';
-      if (a === 0 && !isLand(t)) return 'The land end (behind the arrow) must be on the shore';
-      if (a >= 2 && !isWater(t)) return 'Build it out over the water: everything past the first two tiles must stand in the lake or sea';
+      if (!o.free && !isWater(t)) return 'A harbor stands out in the water — connect it to the shore with Concrete Slabs';
       if (G.nodeGrid[ty * W + tx]) return 'Resource node in the way';
       if (G.featGrid && G.featGrid[ty * W + tx]) return 'Something is in the way';
       continue;
@@ -282,12 +304,18 @@ export function canPlace(type: string, x: number, y: number, rot: number, o: { f
   }
   if (MP.teams && d.kind !== 'hub') { const why = nearRivalBase(x, y, w, h, MP.cur); if (why) return why; }
   if (d.kind === 'elevator') { const me = MP.teams ? MP.cur : 0; for (const x of G.ents.values()) if (BLD[x.type].kind === 'elevator' && (x.o || 0) === me) return 'Only one Space Elevator'; }
+  if (d.kind === 'rail' && ((x | y) & 1)) return 'Track lines up on the 2-tile rail grid';
   if (d.kind === 'station' && !o.free) for (const [px, py] of platformTiles({ x, y, w, h, rot })) {
-    if (!inB(px, py)) return 'Out of bounds';
-    const id = G.grid[py * W + px], r = id && G.ents.get(id);
-    if (r && r.type !== 'rail') return 'Needs room in front for its platform track (the arrow side)';
-    if (!r && (G.nodeGrid[py * W + px] || (G.featGrid && G.featGrid[py * W + px]) || !isLand(G.tiles[py * W + px]))) return 'Needs open ground in front for its platform track (the arrow side)';
+    if ((px | py) & 1) return 'Line the station up with the rail grid';
+    for (let j = 0; j < RS; j++) for (let i = 0; i < RS; i++) {
+      const tx = px + i, ty = py + j;
+      if (!inB(tx, ty)) return 'Out of bounds';
+      const id = G.grid[ty * W + tx], r = id && G.ents.get(id);
+      if (r && (r.type !== 'rail' || r.x !== px || r.y !== py)) return 'Needs room in front for its platform track (the arrow side)';
+      if (!r && (G.nodeGrid[ty * W + tx] || (G.featGrid && G.featGrid[ty * W + tx]) || !isLand(G.tiles[ty * W + tx]))) return 'Needs open ground in front for its platform track (the arrow side)';
+    }
   }
+  if (d.pier && !o.free) { const bad = harborClearance(x, y, rot).find(q => !q[2]); if (bad) return `Ships need open water: keep ${HARBOR_CLEAR} tiles of water around the pier (all but its land end)`; }
   if (d.kind === 'port' && !d.pier && shoreTiles(x, y, w, h) < 2) return 'Build it on the shore — it must touch a lake or the sea';
   if (TALL[type] && G.floorN) for (let j = 0; j < h; j++) for (let i = 0; i < w; i++) for (let zz = z + 1; zz < NL; zz++)
     if (hasFloor(x + i, y + j, zz) && (zz - z) * LH - 0.3 < TALL[type]) return 'Too tall to fit under the foundations above';
@@ -324,10 +352,11 @@ export function place(type: string, x: number, y: number, rot: number, o: { free
     case 'gen': e.fuelT = 0; e.fbuf = {}; e.water = 0; e.clock = 1; e.shards = 0; e.st = 'idle'; e.out = 0; e.node = nodeAt(x, y); break;
     case 'battery': e.stored = 0; break;
     case 'rail': e.pairs = 0; break;
-    case 'station': e.store = {}; e.tot = 0; e.mode = 'load'; e.name = 'Station ' + (++G.S.stationSeq); e.rr = 0; e.req = 0; break;
+    case 'station': e.store = {}; e.tot = 0; e.mode = 'load'; e.name = 'Station ' + (++G.S.stationSeq); e.rr = 0; e.req = 0; if (!o.wh) e.sv2 = 1; break;
     case 'trade': e.store = {}; e.tot = 0; e.mode = 'trade'; e.name = 'Trade Post'; break;
     case 'tstation': e.store = {}; e.tot = 0; e.mode = 'load'; e.name = 'Truck Stop ' + (++G.S.stationSeq); e.rr = 0; e.req = 0; break;
     case 'outpost': e.name = 'Outpost ' + (++G.S.stationSeq); break;
+    case 'elevator': if (!o.wh) e.big = 1; break;
     case 'port': e.store = {}; e.tot = 0; e.mode = 'load'; e.name = 'Harbor ' + (++G.S.stationSeq); e.rr = 0; e.req = 0; if (d.pier && !o.wh) e.big = 1; break;
     case 'drone': e.target = 0; e.outbox = {}; e.obTot = 0; e.inbox = {}; e.ibTot = 0; e.rr = 0; e.req = 0; e.drs = []; e.name = 'Port ' + (++G.S.stationSeq); break;
   }
@@ -356,6 +385,20 @@ export function floorBlocked(x: number, y: number, z: number): string | null {
   if (G.tiles[i] === TT.ROCK) return 'Not over mountains';
   for (let zz = 0; zz < z; zz++) { const e = entAt(x, y, zz); if (e && (TALL[e.type] || 0) > (z - zz) * LH - 0.3) return 'Too close to the top of ' + BLD[e.type].n; }
   return null;
+}
+/** pour (or break up) a concrete slab on a water tile: it becomes solid ground until removed */
+export function setSlab(i: number, on: boolean): boolean {
+  if (on) {
+    if (G.slabs.has(i) || !isWater(G.tiles[i]) || G.grid[i] || G.nodeGrid[i]) return false;
+    G.slabs.set(i, G.tiles[i]); G.tiles[i] = TT.DIRT;
+  } else {
+    const t = G.slabs.get(i);
+    if (t === undefined || G.grid[i]) return false;
+    G.slabs.delete(i); G.tiles[i] = t;
+  }
+  G.rev++; G.dirty.links = true;
+  G.fx.slab(i);
+  return true;
 }
 export function setFloor(x: number, y: number, z: number, on: boolean) {
   const i = y * W + x, bit = 1 << z, had = !!(G.floor[i] & bit);
@@ -442,9 +485,10 @@ export function remove(e: Ent, o: { quiet?: boolean } = {}): boolean {
   if (e.z2 !== undefined) gridOf(e.z2)[e.y * W + e.x] = 0;
   G.ents.delete(e.id);
   if (e.plat) for (const [px, py] of platformTiles(e)) {
-    const r = entAt(px, py);
-    if (!r || r.type !== 'rail' || r.pairs !== platformPair(e.rot) || r.sig || G.trains.some(t => t.cells.includes(py * W + px))) continue;
-    G.grid[py * W + px] = 0; G.ents.delete(r.id); markDirty('rail', r);
+    const r = railAt(py * W + px);
+    if (!r || r.x !== px || r.y !== py || r.pairs !== platformPair(e.rot) || r.sig || G.trains.some(t => t.cells.includes(py * W + px))) continue;
+    for (let j = 0; j < r.h; j++) for (let i = 0; i < r.w; i++) G.grid[(r.y + j) * W + r.x + i] = 0;
+    G.ents.delete(r.id); markDirty('rail', r);
   }
   if (d.kind === 'station' || d.kind === 'drone' || d.kind === 'tstation' || d.kind === 'port') {
     for (const t of G.trains) t.sched = t.sched.filter(s => s !== e.id);
@@ -498,14 +542,14 @@ export { opp, DX, DY };
 
 // ---------------------------------------------------------------------------
 export const REGROW_MEAN: Record<string, number> = { easy: 150, hard: 1200, creative: 60 };
-export function newState(seed: number, o: { name?: string; mode?: string; size?: number; dayNight?: boolean; res?: string } = {}): State {
+export function newState(seed: number, o: { name?: string; mode?: string; size?: number; dayNight?: boolean; res?: string; col?: string } = {}): State {
   const mode = o.mode || 'easy';
   const inv: Record<string, number> = { ...diffOf(mode).kit };
   const S: State = {
     seed, inv, unlocked: new Set(START_UNLOCKS), done: new Set(), maxTier: 0, elev: {}, time: 0, won: false,
     flags: {}, delivered: {}, speed: 1, points: 0, coupons: 0, couponsEarned: 0, shop: {}, stationSeq: 0, trainSeq: 0,
     name: o.name || 'New World', mode, size: o.size || 1024, regrow: [],
-    dayNight: o.dayNight !== false, ...(o.res ? { resMode: o.res } : {}), genV: 9, portsV: 2, lenV: 1, depV: 1, lines: [], looted: [], alts: [], altOffer: null, ach: {}, made: {}, discN: null, discF: null, truckSeq: 0, lineSeq: 0,
+    dayNight: o.dayNight !== false, ...(o.res ? { resMode: o.res } : {}), ...(o.col ? { col: o.col } : {}), genV: 9, portsV: 2, lenV: 1, depV: 1, lines: [], looted: [], alts: [], altOffer: null, ach: {}, made: {}, discN: null, discF: null, truckSeq: 0, lineSeq: 0,
   };
   if (mode === 'creative') {
     for (const k in BLD) S.unlocked.add(k);
@@ -551,6 +595,7 @@ export function resetWorld(seed: number, S?: State, keepTerrain = false) {
   applyGameLength(tier => tierMult(mode, tier), !S.lenV);
   const tkey = `${seed}|${S.mode}|${S.genV}|${S.size}|${(S as any).resMode || ''}`;
   const same = keepTerrain && G.tiles && terrainKey === tkey;
+  if (same && G.slabs) for (const [i, w] of G.slabs) G.tiles[i] = w;   // the reused terrain: undo slabs (the save re-pours its own)
   const t = same ? { tiles: G.tiles, trees: G.trees0.slice(), nodes: G.nodes, nodeGrid: G.nodeGrid } : genTerrain(seed, S.mode, S.genV || 1, S.size, (S as any).resMode);
   let f: { feats: Feat[]; grid: Int32Array };
   if (same) {
@@ -575,7 +620,7 @@ export function resetWorld(seed: number, S?: State, keepTerrain = false) {
   G.rev++; G.treeRev++;
   if (S.mode === 'creative') for (const k in BLD) S.unlocked.add(k);
 }
-export function newWorld(seed: number, o: { name?: string; mode?: string; size?: number; dayNight?: boolean; res?: string } = {}) {
+export function newWorld(seed: number, o: { name?: string; mode?: string; size?: number; dayNight?: boolean; res?: string; col?: string } = {}) {
   clearTeams();
   resetWorld(seed, newState(seed, o));
   place('hub', HX, HY, 0, { free: true, quiet: true });

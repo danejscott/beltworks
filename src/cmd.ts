@@ -2,8 +2,9 @@
 // Single-player applies it at once; online, the server orders everyone's commands and every copy of the
 // world applies the same list at the same tick (so all copies stay identical).
 import { BLD, Cost, HANDCRAFT, ITEMS, RECIPES } from './data';
-import { H, TT, W } from './terrain';
+import { H, isWater, TT, W } from './terrain';
 import { DX, DY } from './util';
+import { RS } from './railgrid';
 import { addWagon, buildRoute, addTrainToLine, lineOf, placeTrain, removeTrain, removeWagon, canPlaceTrain } from './trains';
 import { buyTruck, removeTruck } from './trucks';
 import { buyShip, removeShip } from './ships';
@@ -12,7 +13,7 @@ import { buyShop, loadElevator, submitMilestone } from './progress';
 import { flushNet, fluidsTouching, myCraft, setRecipe } from './sim';
 import { asTeam, MP } from './teams';
 import { joinTeam, leaveTeam, nearRivalBase, newSeason, spawnTeam } from './online';
-import { addInv, addPlatform, canAfford, canPlace, canRemove, chopTree, Ent, entAt, floorBlocked, G, groundOnly, hasFloor, markDirty, missingText, nodeAt, pairBit, PAIRS, pay, place, refund, remove, rotateEnt, setFloor, upgradeTarget, creative, NL } from './world';
+import { addInv, addPlatform, canAfford, canPlace, canRemove, chopTree, Ent, entAt, floorBlocked, G, groundOnly, hasFloor, markDirty, missingText, nodeAt, pairBit, PAIRS, pay, place, refund, remove, rotateEnt, setFloor, setSlab, snapStation, upgradeTarget, creative, NL } from './world';
 import { clamp } from './util';
 import { DRONE_COST, DRONE_SLOTS, dronesOf, newDrone } from './drones';
 
@@ -129,7 +130,7 @@ function dragLay(type: string, path: { x: number; y: number; d: number }[], z: n
       toast('💡 Pipes only carry fluids — they do not draw water from a lake. Put a <b>Water Extractor</b> on the water, give it power, and connect your pipes to it.', 'big');
     }
   } else if (d.kind === 'rail') {
-    if (z > 0) return;
+    return;   // track is only laid through the rail planner ('rails'), on the 2-tile rail grid
     const pairs = railPairsForPath(path);
     for (let i = 0; i < path.length; i++) {
       const p = path[i];
@@ -148,6 +149,7 @@ function placeOne(c: Cmd) {
   if (!d) return;
   const z = c.z || 0;
   if (z !== 0 || d.kind === 'lift' || d.kind === 'foundation' || c.type === 'pipe_lift') return;   // floors were removed
+  if (d.kind === 'station') [c.x, c.y] = snapStation(c.x, c.y, c.rot || 0);   // its platform lines up with the rail grid
   let reason = canPlace(c.type, c.x, c.y, c.rot, { z });
   if (!reason && (d.kind === 'ptunnel' || d.kind === 'tank')) {
     const fl = fluidsTouching([[c.x, c.y], [c.x + d.w - 1, c.y + d.h - 1], [c.x + d.w - 1, c.y], [c.x, c.y + d.h - 1]], null, z);
@@ -199,8 +201,9 @@ function layRails(c: Cmd) {
   if (!G.S.unlocked.has('rail')) return;
   const tiles: number[][] = Array.isArray(c.tiles) ? c.tiles.slice(0, 600) : [], junc: number[][] = Array.isArray(c.junc) ? c.junc.slice(0, 40) : [];
   const valid = (p: number) => p > 0 && p < 64 && (p & (p - 1)) === 0;   // exactly one route
-  for (const [x, y, p] of tiles) if (!valid(p) || entAt(x, y) || !tileFree(x, y, 'rail', 0)) { toast('Something is in the way of that track', 'bad'); sfx('err'); return; }
-  for (const [x, y, p] of junc) { const e = entAt(x, y); if (!e || e.type !== 'rail' || !mine(e) || !valid(p)) return; }
+  const blockFree = (x: number, y: number) => { if ((x | y) & 1) return false; for (let j = 0; j < RS; j++) for (let i = 0; i < RS; i++) if (entAt(x + i, y + j) || !tileFree(x + i, y + j, 'rail', 0)) return false; return true; };
+  for (const [x, y, p] of tiles) if (!valid(p) || !blockFree(x, y)) { toast('Something is in the way of that track', 'bad'); sfx('err'); return; }
+  for (const [x, y, p] of junc) { const e = entAt(x, y); if (!e || e.type !== 'rail' || e.x !== x || e.y !== y || !mine(e) || !valid(p)) return; }
   const need: Cost = {};
   for (const k in d.cost) need[k] = d.cost[k] * tiles.length;
   if (!canAfford(need)) { toast(`Not enough for ${tiles.length} rail pieces: ${missingText(need)}`, 'bad'); sfx('err'); return; }
@@ -228,6 +231,22 @@ function foundations(x0: number, y0: number, x1: number, y1: number, z: number) 
   else if (!n && why) { toast(why, 'bad'); sfx('err'); }
 }
 
+/** pour concrete slabs over the water in a rectangle */
+function pourSlabs(x0: number, y0: number, x1: number, y1: number) {
+  if (!G.S.unlocked.has('slab')) return;
+  const xa = Math.max(1, Math.min(x0, x1)), xb = Math.min(W - 2, Math.max(x0, x1)), ya = Math.max(1, Math.min(y0, y1)), yb = Math.min(H - 2, Math.max(y0, y1));
+  if ((xb - xa + 1) * (yb - ya + 1) > 4000) { toast('That area is too big — pour slabs in smaller pieces', 'bad'); sfx('err'); return; }
+  let n = 0, broke = false;
+  for (let y = ya; y <= yb && !broke; y++) for (let x = xa; x <= xb; x++) {
+    const i = y * W + x;
+    if (!isWater(G.tiles[i]) || G.grid[i] || G.nodeGrid[i]) continue;
+    if (!canAfford(BLD.slab.cost)) { broke = true; break; }
+    pay(BLD.slab.cost); setSlab(i, true); n++;
+  }
+  if (n) sfx('place');
+  if (broke) toast(`Out of materials: ${missingText(BLD.slab.cost)}`, 'bad');
+  else if (!n) { toast('Slabs go on open water', 'bad'); sfx('err'); }
+}
 function deconRect(x0: number, y0: number, x1: number, y1: number, z: number) {
   const xa = Math.min(x0, x1), xb = Math.max(x0, x1), ya = Math.min(y0, y1), yb = Math.max(y0, y1);
   if ((xb - xa + 1) * (yb - ya + 1) > 40000) return;
@@ -247,16 +266,26 @@ function deconRect(x0: number, y0: number, x1: number, y1: number, z: number) {
   if (z === 0) for (const t of [...G.trains]) if (owns(t) && t.cells.some(c => { const cx = c % W, cy = Math.floor(c / W); return cx >= xa && cx <= xb && cy >= ya && cy <= yb; })) { removeTrain(t); n++; }
   if (n) { sfx('remove'); if (n > 1) toast(`Removed ${n} things (fully refunded)`, 'good'); }
   if (wood) toast(`+${wood} Wood`, 'good');
+  // a rectangle with nothing built in it breaks up the concrete slabs there
+  if (!seen.size && z === 0 && G.slabs.size) {
+    let s = 0;
+    for (let y = ya; y <= yb; y++) for (let x = xa; x <= xb; x++) if (setSlab(y * W + x, false)) { refund(BLD.slab.cost); s++; }
+    if (s) { sfx('remove'); toast(`Removed ${s} concrete slab${s > 1 ? 's' : ''}`, 'good'); }
+  }
   if (blocked && !n) { toast(blocked, 'bad'); sfx('err'); }
 }
 
 function paste(bp: any, ox: number, oy: number, z0: number) {
   const zOf = (o: any) => z0 + (+o.z || 0);
+  // track has to land on the 2-tile rail grid: nudge the whole paste by a tile if needed
+  const r0 = (bp.ents || []).find((o: any) => o.t === 'rail');
+  if (r0) { ox += (ox + r0.x) & 1; oy += (oy + r0.y) & 1; }
   const tileOK = (o: any) => {
     const d = BLD[o.t], x = ox + o.x, y = oy + o.y, z = zOf(o);
     if (!d || !G.S.unlocked.has(o.t) || z !== 0 || d.kind === 'lift' || o.t === 'pipe_lift') return false;   // ground floor only now
     if (z > 0 && groundOnly(o.t)) return false;
-    if (d.kind === 'rail' || d.kind === 'belt' || d.kind === 'pipe') return tileFree(x, y, d.kind, z);
+    if (d.kind === 'rail') { const e = entAt(x, y); if (e) return e.type === 'rail' && e.x === x && e.y === y; return !canPlace('rail', x, y, 0, { free: true }); }
+    if (d.kind === 'belt' || d.kind === 'pipe') return tileFree(x, y, d.kind, z);
     return !canPlace(o.t, x, y, o.r, { free: true, z });
   };
   let placed = 0, skipped = 0, broke = false, decks = 0;
@@ -322,6 +351,7 @@ function exec(c: Cmd): any {
     case 'drag': return dragLay(c.type, (c.path as number[][]).slice(0, 400).map(([x, y, d]) => ({ x, y, d })), c.z || 0);
     case 'found': return foundations(c.x0, c.y0, c.x1, c.y1, c.z);
     case 'decon': return deconRect(c.x0, c.y0, c.x1, c.y1, c.z || 0);
+    case 'slabs': return pourSlabs(c.x0, c.y0, c.x1, c.y1);
     case 'paste': return paste(c.bp, c.ox, c.oy, c.z || 0);
     case 'signal': return signal(c.x, c.y, c.sig, c.type);
     case 'train': {

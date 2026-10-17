@@ -13,10 +13,12 @@ import { pickAt, poleReachT } from './r3/world3d';
 import { rotateCamera, tiltCamera } from './r3/core';
 import { title } from './title';
 import { upgradeTarget } from './world';
-import { addInv, canAfford, canPlace, canRemove, chopTree, def, dims, Ent, entAt, floorBlocked, G, groundOnly, hasFloor, inPort, LH, NL, PORTED, setFloor, markDirty, missingText, nodeAt, pairBit, PAIRS, pay, place, refund, remove, rotateEnt, rotatePairs } from './world';
+import { addInv, canAfford, canPlace, canRemove, chopTree, def, dims, Ent, entAt, floorBlocked, G, groundOnly, hasFloor, inPort, LH, NL, PORTED, setFloor, markDirty, missingText, nodeAt, pairBit, PAIRS, pay, place, refund, remove, rotateEnt, rotatePairs, snapStation, harborClearance } from './world';
 import * as UI from './ui';
 import { online, railPairsForPath, run, tileFree as tileFreeZ } from './cmd';
 import { DX, DY } from './util';
+import { snapR } from './railgrid';
+import { isWater } from './terrain';
 import { MP } from './teams';
 import { openEnd, planRail, RailPlan } from './railplan';
 
@@ -171,6 +173,11 @@ function commitDrag() {
       drag = null; planKey = '';
       return;
     }
+    // a click: one piece of track, along the current rotation
+    const bx = snapR(m.tx), by = snapR(m.ty);
+    if (!entAt(bx, by)) run({ k: 'rails', tiles: [[bx, by, railPairsForPath([{ x: bx, y: by, d: rot }])[0]]], junc: [] });
+    drag = null; planKey = '';
+    return;
   }
   const path = dragPath();
   run({ k: 'drag', type: t.type, z: view.level, path: path.map(p => [p.x, p.y, p.d]) });
@@ -187,6 +194,7 @@ function ghostPos(type: string): [number, number] {
       if (n && ((d.on === 'node' && n.res !== 'crude_oil' && n.res !== 'geyser') || (d.on === 'oil' && n.res === 'crude_oil') || (d.on === 'geyser' && n.res === 'geyser'))) return [n.x, n.y];
     }
   }
+  if (d.kind === 'station') return snapStation(Math.round(m.wx - w / 2), Math.round(m.wy - h / 2), rot);
   return [Math.round(m.wx - w / 2), Math.round(m.wy - h / 2)];
 }
 function tryPlace(loud: boolean) {
@@ -326,7 +334,7 @@ export function updateGhosts() {
   const g: any[] = [];
   view.sel = null;
   const t = tool.t, m = view.mouse;
-  view.hover = null; view.powerPreview = null; view.railPlan = null;
+  view.hover = null; view.powerPreview = null; view.railPlan = null; view.zone = null;
   if (!t || t.k === 'decon' || t.k === 'paint') {
     const e = pickAt(m.wx, m.wy);
     if (e && m.inCanvas && !panning) view.hover = e;
@@ -341,13 +349,22 @@ export function updateGhosts() {
       if (d.kind === 'foundation') {
         const x0 = drag ? drag.sx : m.tx, y0 = drag ? drag.sy : m.ty;
         view.sel = { x0, y0, x1: m.tx, y1: m.ty, col: view.level ? rgba(0.85, 0.85, 0.8, 0.35) : rgba(1, 0.3, 0.3, 0.25) };
+      } else if (d.kind === 'slab') {
+        // concrete slabs: a rectangle; green where there's open water to pour on
+        const x0 = drag ? drag.sx : m.tx, y0 = drag ? drag.sy : m.ty;
+        const water = isWater(G.tiles[m.ty * W + m.tx]) && !G.grid[m.ty * W + m.tx];
+        view.sel = { x0, y0, x1: m.tx, y1: m.ty, col: water || drag ? rgba(0.3, 0.9, 0.45, 0.3) : rgba(1, 0.3, 0.3, 0.3) };
       } else if (d.kind === 'rail' && view.level === 0 && drag && !(drag.sx === m.tx && drag.sy === m.ty)) {
         // railway: show the planned route as a smooth line (drawn by the 3D view)
         view.railPlan = currentPlan();
-      } else if ((d.kind === 'belt' || d.kind === 'pipe' || d.kind === 'rail') && !d.dz) {
-        if (d.kind === 'rail' && !drag) { const s = openEnd(m.tx, m.ty); view.railPlan = s >= 0 ? { hoverEnd: { x: m.tx, y: m.ty, side: s } } : null; }
+      } else if (d.kind === 'rail') {
+        // one 2 x 2 piece of track under the pointer (snapped to the rail grid), or a marker on an open end to drag from
+        const bx = snapR(m.tx), by = snapR(m.ty), s = openEnd(bx, by);
+        view.railPlan = s >= 0 ? { hoverEnd: { x: bx, y: by, side: s } } : null;
+        if (s < 0) g.push({ type: t.type, x: bx, y: by, rot, ok: !canPlace('rail', bx, by, 0, { free: true }), pairs: railPairsForPath([{ x: bx, y: by, d: rot }])[0] });
+      } else if ((d.kind === 'belt' || d.kind === 'pipe') && !d.dz) {
         const path = drag ? dragPath() : [{ x: m.tx, y: m.ty, d: rot }];
-        const pairs = d.kind === 'rail' ? railPairsForPath(path) : null;
+        const pairs: number[] | null = null;
         path.forEach((p, i) => {
           const ok = tileFree(p.x, p.y, d.kind);
           const gh: any = { type: t.type, x: p.x, y: p.y, rot: p.d, ok };
@@ -356,7 +373,7 @@ export function updateGhosts() {
         });
       } else if (d.kind === 'signal') {
         const r = view.level === 0 ? entAt(m.tx, m.ty) : null;
-        g.push({ type: t.type, x: m.tx, y: m.ty, rot: 0, ok: !!r && r.type === 'rail' });
+        g.push({ type: t.type, x: r && r.type === 'rail' ? r.x : m.tx, y: r && r.type === 'rail' ? r.y : m.ty, rot: 0, ok: !!r && r.type === 'rail' });
       } else if (d.kind === 'train') {
         const r = canPlaceTrain(m.tx, m.ty, rot);
         g.push({ type: 'locomotive', x: m.tx, y: m.ty, rot, ok: !r.err, cells: r.cells });
@@ -369,6 +386,7 @@ export function updateGhosts() {
           for (let k = 1; k <= d.range; k++) { const q = at(x - DX[rot] * k, y - DY[rot] * k); if (q && q.type === t.type) { isExit = q.rot === rot && !q.isExit && !q.pair; break; } }
         }
         g.push({ type: t.type, x, y, rot, ok: !reason, recipe: t.recipe, isExit, reason });
+        if (d.pier) view.zone = harborClearance(x, y, rot);
         if (d.kind === 'pole') {
           const [w, h] = dims(t.type, rot), cx = x + w / 2, cy = y + h / 2, R = poleReachT(t.type);
           const c: [number, number][] = [];
@@ -406,6 +424,12 @@ export function dragInfo() {
   const t = tool.t;
   if (!t || t.k !== 'build' || !drag) return null;
   const d = BLD[t.type];
+  if (d.kind === 'slab') {
+    const m = view.mouse, xa = Math.min(drag.sx, m.tx), xb = Math.max(drag.sx, m.tx), ya = Math.min(drag.sy, m.ty), yb = Math.max(drag.sy, m.ty);
+    let n = 0;
+    for (let y = ya; y <= yb; y++) for (let x = xa; x <= xb; x++) { const i = y * W + x; if (isWater(G.tiles[i]) && !G.grid[i] && !G.nodeGrid[i]) n++; }
+    return { n, cost: pathCost(t.type, n) };
+  }
   if (d.kind === 'foundation') {
     const m = view.mouse, xa = Math.min(drag.sx, m.tx), xb = Math.max(drag.sx, m.tx), ya = Math.min(drag.sy, m.ty), yb = Math.max(drag.sy, m.ty);
     let n = 0;
@@ -451,7 +475,7 @@ export function initInput(canvas: HTMLCanvasElement) {
       if (t.k === 'paste') { doPaste(); return; }
       if (t.k === 'paint') { paintAt(); return; }
       const d = BLD[t.type];
-      if (d.kind === 'foundation') { drag = { sx: m.tx, sy: m.ty, axis: null, kind: 'rect' }; return; }
+      if (d.kind === 'foundation' || d.kind === 'slab') { drag = { sx: m.tx, sy: m.ty, axis: null, kind: 'rect' }; return; }
       if ((d.kind === 'belt' || d.kind === 'pipe' || d.kind === 'rail') && !d.dz) { drag = { sx: m.tx, sy: m.ty, axis: null, kind: d.kind }; return; }
       if (d.kind === 'train' && view.level > 0) { UI.toast('Trains run on the ground floor', 'bad'); return; }
       if (d.kind === 'signal') { placeSignal(m.tx, m.ty, d.sig!, t.type); return; }
@@ -512,6 +536,7 @@ export function initInput(canvas: HTMLCanvasElement) {
     const t = tool.t, m = view.mouse;
     if (!drag || !t) { drag = null; return; }
     if (t.k === 'build' && BLD[t.type].kind === 'foundation') { layFoundations(drag.sx, drag.sy, m.tx, m.ty); drag = null; }
+    else if (t.k === 'build' && BLD[t.type].kind === 'slab') { run({ k: 'slabs', x0: drag.sx, y0: drag.sy, x1: m.tx, y1: m.ty }); drag = null; }
     else if (t.k === 'build') commitDrag();
     else if (t.k === 'decon') {
       const one = drag.sx === m.tx && drag.sy === m.ty, e = one ? pickAt(m.wx, m.wy) : null;

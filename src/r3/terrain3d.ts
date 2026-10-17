@@ -54,6 +54,7 @@ vec3 baseCol(int t, vec2 w){
   else if(t==3) c = mix(vec3(0.36,0.30,0.23), vec3(0.43,0.36,0.27), n*0.6 + m*0.4);
   else if(t==4) c = vec3(0.55,0.5,0.38);
   else if(t==5) c = vec3(0.35,0.33,0.28);
+  else if(t==7){ vec2 f = fract(w); float seam = step(0.95, max(f.x, f.y)); c = mix(mix(vec3(0.56,0.56,0.54), vec3(0.62,0.61,0.58), n), vec3(0.42,0.42,0.40), seam); }   // concrete slab
   else c = mix(vec3(0.30,0.29,0.27), vec3(0.40,0.38,0.35), fbm3(w*0.6));
   return c;
 }
@@ -121,7 +122,7 @@ export function buildTerrain() {
     T3.uniforms.uSnow.value = hh.length > 50 ? Math.max(9, hh[Math.floor(hh.length * 0.8)]) : 10.8; }
   // tile texture
   T3.data = new Uint8Array(W * H * 4);
-  for (let i = 0; i < W * H; i++) { T3.data[i * 4] = G.tiles[i]; T3.data[i * 4 + 1] = G.trees[i] ? 255 : 0; T3.data[i * 4 + 3] = 255; }
+  for (let i = 0; i < W * H; i++) { T3.data[i * 4] = G.slabs.has(i) ? 7 : G.tiles[i]; T3.data[i * 4 + 1] = G.trees[i] ? 255 : 0; T3.data[i * 4 + 3] = 255; }
   for (const [i, v] of G.wear) T3.data[i * 4 + 2] = v;
   if (T3.tex) T3.tex.dispose();
   T3.tex = new THREE.DataTexture(T3.data, W, H, THREE.RGBAFormat, THREE.UnsignedByteType);
@@ -246,10 +247,32 @@ export function terrainTileChanged(x: number, y: number) {
   T3.data[i * 4 + 1] = G.trees[i] ? 255 : 0;
   T3.dirtyT = 1;
 }
+/** a concrete slab was poured / removed: its colour, and the ground heights at its corners (water sits lower) */
+const slabChunks = new Set<number>();
+export function terrainSlabChanged(i: number) {
+  if (!T3.data || !T3.hts) return;
+  T3.data[i * 4] = G.slabs.has(i) ? 7 : G.tiles[i]; T3.dirtyT = 1;
+  const x = i % W, y = Math.floor(i / W), W1 = W + 1;
+  for (const [cx, cy] of [[x, y], [x + 1, y], [x, y + 1], [x + 1, y + 1]]) {
+    const a = tileType(cx - 1, cy - 1), b = tileType(cx, cy - 1), c = tileType(cx - 1, cy), d = tileType(cx, cy);
+    if (a === TT.ROCK || b === TT.ROCK || c === TT.ROCK || d === TT.ROCK) continue;
+    const wt = (t: number) => t === TT.WATER || t === TT.DEEP;
+    const h = wt(a) && wt(b) && wt(c) && wt(d) ? (a === TT.DEEP && b === TT.DEEP && c === TT.DEEP && d === TT.DEEP ? -1.2 : -0.5) : 0;
+    const v = cy * W1 + cx; T3.hts[v] = h; T3.hts0[v] = h;
+    for (const ccx of [Math.floor((cx - 1) / CH), Math.floor(cx / CH)]) for (const ccy of [Math.floor((cy - 1) / CH), Math.floor(cy / CH)]) slabChunks.add(ccy * 10000 + ccx);
+  }
+}
 /** ground wear changed on a tile */
 export function setWear(i: number, v: number) { if (!T3.data) return; T3.data[i * 4 + 2] = v; T3.dirtyT = T3.dirtyT || 1; }
 export function terrainTick(dt: number, time: number) {
   T3.uniforms.uTime.value = time;
+  if (slabChunks.size && T3.group) {
+    for (const m of T3.group.children as THREE.Mesh[]) {
+      const u = m.userData; if (u.ci === undefined || !slabChunks.has(u.cj * 10000 + u.ci)) continue;
+      m.geometry.dispose(); m.geometry = chunkGeo(u.ci, u.cj, [1, 2, 4, 8][u.lod]);
+    }
+    slabChunks.clear();
+  }
   if (T3.group) {
     const tx = view.cam.x, tz = view.cam.y, base = C.dist;
     let budget = 3;
