@@ -151,6 +151,7 @@ export function startLaunch() { launchPending = true; }
 const models: Record<string, Model> = Object.create(null);
 const mdl = (k: string, f: () => Model) => models[k] || (models[k] = f());
 let beltMats: Record<string, THREE.MeshStandardMaterial>;
+let covMat: THREE.Material, noPowMat: THREE.Material;
 let ghostOK: THREE.Material, ghostBad: THREE.Material, areaMat: THREE.Material, lightMat: THREE.MeshBasicMaterial, fadeMat: THREE.Material, deckFade: THREE.Material;
 let SL: Layer, DL: Layer, GL: Layer, TL: Layer;
 let bbs: Billboards, bbAdd: Billboards;
@@ -185,6 +186,8 @@ export function init3D() {
   ghostOK = new THREE.MeshStandardMaterial({ color: '#7dffa0', transparent: true, opacity: 0.45, depthWrite: false, emissive: new THREE.Color('#1a6a30'), side: THREE.DoubleSide });
   ghostBad = new THREE.MeshStandardMaterial({ color: '#ff6060', transparent: true, opacity: 0.45, depthWrite: false, emissive: new THREE.Color('#6a1a1a'), side: THREE.DoubleSide });
   areaMat = new THREE.MeshBasicMaterial({ color: '#ffd24a', transparent: true, opacity: 0.12, depthWrite: false });
+  covMat = new THREE.MeshBasicMaterial({ color: '#ffd24a', transparent: true, opacity: 0.17, depthWrite: false });
+  noPowMat = new THREE.MeshBasicMaterial({ color: '#ff4040', transparent: true, opacity: 0.4, depthWrite: false });
   // floors above the one you're working on are drawn see-through
   fadeMat = new THREE.MeshStandardMaterial({ color: '#c8d4e0', transparent: true, opacity: 0.16, depthWrite: false, roughness: 0.6 });
   deckFade = new THREE.MeshStandardMaterial({ color: '#b8c0c8', transparent: true, opacity: 0.1, depthWrite: false, roughness: 0.8 });
@@ -887,9 +890,16 @@ export function update3D(time: number, real: number, dt: number, labels: Label3[
   for (const se of [view.inspect, view.hover]) if (se && G.ents.has(se.id)) { ZO = (se.z || 0) * LH; pushPortArrows(DL, se, 'sel', true); }
   // power areas
   ZO = view.level * LH;
-  if (view.showPower) for (const p of G.L.poles) {
-    const a = BLD[p.type].area;
-    DL.get('area', mdl('areaP', () => ({ geo: new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), mats: [] })).geo, areaMat, false).push(compose(p.x + p.w / 2, 0.05, p.y + p.h / 2, 0, p.w + a * 2, 1, p.h + a * 2));
+  // power coverage overlay (holding anything that makes or uses power, or V): the ground tint is drawn by the terrain
+  // itself; buildings that need power but sit outside every pole's area get a red bolt
+  if (view.showPower) {
+    const R = Math.min(90, Math.round(C.dist * 0.9 + 30));
+    for (const e of G.ents.values()) {
+      if (Math.abs(e.x - tgx) > R || Math.abs(e.y - tgy) > R) continue;
+      const d = BLD[e.type];
+      if (!d.power || e.pnet || d.kind === 'pole') continue;
+      bbs.add(e.x + e.w / 2, e.y + e.h / 2, visHeight(e) + 0.9 + Math.abs(Math.sin(real * 3)) * 0.2, 0.75, 0.75, SPR.bolt, hexCol('#ff4040'));
+    }
   }
   ZO = 0;
   DL.end();

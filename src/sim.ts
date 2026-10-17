@@ -152,6 +152,7 @@ export function rebuildPower() {
   if (G.dirty.links) rebuildLinks();
   const L = G.L;
   if (!G.covGrid || G.covGrid.length !== W * H) G.covGrid = new Int32Array(W * H); else G.covGrid.fill(0);
+  (G as any).covRev = ((G as any).covRev || 0) + 1;
   const cov = G.covGrid;
   const poles: Ent[] = L.poles;
   const parent = new Map<number, number>();

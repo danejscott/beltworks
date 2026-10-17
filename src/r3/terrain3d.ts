@@ -15,7 +15,7 @@ export const T3 = {
   tex: null as THREE.DataTexture,
   data: null as Uint8Array,
   group: null as THREE.Group,
-  uniforms: { uTiles: { value: null as THREE.Texture }, uTime: { value: 0 }, uSize: { value: new THREE.Vector2(W, H) }, uCamT: { value: new THREE.Vector2() }, uTreeR: { value: 100 }, uSnow: { value: 10.8 } },
+  uniforms: { uTiles: { value: null as THREE.Texture }, uTime: { value: 0 }, uSize: { value: new THREE.Vector2(W, H) }, uCamT: { value: new THREE.Vector2() }, uTreeR: { value: 100 }, uSnow: { value: 10.8 }, uCov: { value: 0 } },
   dirtyT: 0,
   mat: null as THREE.Material,
 };
@@ -36,7 +36,7 @@ function chunkGeo(ci: number, cj: number, st: number) {
 }
 
 const GLSL_COMMON = `
-uniform sampler2D uTiles; uniform float uTime; uniform vec2 uSize; uniform vec2 uCamT; uniform float uTreeR; uniform float uSnow;
+uniform sampler2D uTiles; uniform float uCov; uniform float uTime; uniform vec2 uSize; uniform vec2 uCamT; uniform float uTreeR; uniform float uSnow;
 varying vec3 vW;
 float h21(vec2 p){ p = fract(p*vec2(123.34, 456.21)); p += dot(p, p+45.32); return fract(p.x*p.y); }
 float vn(vec2 p){ vec2 i=floor(p), f=fract(p); f=f*f*(3.0-2.0*f);
@@ -208,6 +208,16 @@ vec3 terrainColor(){
     c = mix(c, vec3(0.93,0.95,0.98) * (0.93 + 0.07 * vn(w * 6.0)), clamp(sn, 0.0, 1.0));
   }
   if (vW.y < -0.05) c *= mix(1.0, 0.55, clamp(-vW.y, 0.0, 1.0));
+  // power coverage overlay: powered ground glows yellow, with a brighter line along the edge of the coverage
+  if (uCov > 0.5 && s.a < 0.995) {
+    vec2 f = fract(w);
+    float edge = 0.0;
+    if (f.x < 0.08 && tileAt(w - vec2(1.0, 0.0)).a > 0.995) edge = 1.0;
+    if (f.x > 0.92 && tileAt(w + vec2(1.0, 0.0)).a > 0.995) edge = 1.0;
+    if (f.y < 0.08 && tileAt(w - vec2(0.0, 1.0)).a > 0.995) edge = 1.0;
+    if (f.y > 0.92 && tileAt(w + vec2(0.0, 1.0)).a > 0.995) edge = 1.0;
+    c = mix(c, vec3(1.0, 0.8, 0.25), 0.26 + edge * 0.5);
+  }
   float cl = vn(w*0.035 + uTime*vec2(0.012, 0.007)) * 0.65 + vn(w*0.09 + uTime*vec2(0.02, 0.01)) * 0.35;
   c *= 1.0 - smoothstep(0.58, 0.75, cl) * 0.18;
   return srgb(c);
@@ -264,8 +274,17 @@ export function terrainSlabChanged(i: number) {
 }
 /** ground wear changed on a tile */
 export function setWear(i: number, v: number) { if (!T3.data) return; T3.data[i * 4 + 2] = v; T3.dirtyT = T3.dirtyT || 1; }
+let covRev = -1;
 export function terrainTick(dt: number, time: number) {
   T3.uniforms.uTime.value = time;
+  // power coverage: copy which tiles are powered into the texture's alpha when it changes (only while it's shown)
+  T3.uniforms.uCov.value = view.showPower ? 1 : 0;
+  if (view.showPower && T3.data && G.covGrid && covRev !== (G as any).covRev) {
+    covRev = (G as any).covRev;
+    const cov = G.covGrid, d = T3.data, n = Math.min(cov.length, d.length >> 2);
+    for (let i = 0; i < n; i++) d[i * 4 + 3] = cov[i] ? 250 : 255;
+    T3.tex.needsUpdate = true;
+  }
   if (slabChunks.size && T3.group) {
     for (const m of T3.group.children as THREE.Mesh[]) {
       const u = m.userData; if (u.ci === undefined || !slabChunks.has(u.cj * 10000 + u.ci)) continue;

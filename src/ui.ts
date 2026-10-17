@@ -129,6 +129,7 @@ export function updateHint() {
           : ` · <span class="neg">⚠ Out of range of your grid — move ${pp.tooFar} tile${pp.tooFar === 1 ? '' : 's'} closer, inside a yellow ring</span>`;
       }
       else if (gh && (d.power || d.kind === 'gen')) { if (!coveredByPower(gh.x, gh.y, d)) h += ' · <span class="warn">⚡ no power here — add a pole</span>'; }
+      if (view.showPower) h += ' · <span class="dim">yellow = powered ground, red = buildings without power (<b>V</b> toggles)</span>';
     }
   }
   if (view.level > 0) h = `<b style="color:#f5a524">Floor ${view.level}</b> · ` + h;
