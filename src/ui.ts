@@ -494,7 +494,7 @@ function pipeAdvice(n: any): string {
   return '';
 }
 function trainDyn(t: Train) {
-  const stTxt: Record<string, string> = { moving: 'Driving', loading: 'At station', nopath: 'No route! Check the track connects', noschedule: 'No schedule', stopped: 'Stopped', idle: 'Planning route' };
+  const stTxt: Record<string, string> = { moving: 'Driving', loading: 'At station', nopath: 'No route ahead! Trains cannot turn around, so the line needs a loop or a turnaround at its ends (Quick Route builds loops)', noschedule: 'No schedule', stopped: 'Stopped', idle: 'Planning route' };
   const st = G.ents.get(t.sched[t.si]);
   let h = `<div class="row">${status(t.state === 'nopath' ? 'block' : (t as any).sigWait ? 'starve' : t.state === 'moving' || t.state === 'loading' ? 'work' : 'idle', (t as any).sigWait ? 'Waiting at a red signal' : (t as any).queued && t.state === 'moving' ? 'Waiting in line for the station' : stTxt[t.state] || t.state)}</div>`;
   if (st) h += `<div class="sm">Next: ${esc(st.name)} · ${fmtR(t.v * 2)} tiles/s</div>`;

@@ -191,21 +191,13 @@ function planRoute(t: Train, st: Ent): boolean {
   const goals = stationGoals(st);
   if (!goals.size) return false;
   if (goals.has(t.cells[0])) { t.route = []; return true; }
-  if (!t.oneWay && goals.has(t.cells[t.cells.length - 1])) { t.cells.reverse(); t.frac = 0; t.route = []; return true; }
+  // trains only ever drive forwards (a real train can't flip round on the spot): the way to the next station has to
+  // lie ahead, through junctions, loops or turnarounds
   const blocked = new Set<number>();
   for (const o of G.trains) if (o !== t) for (const c of o.cells) blocked.add(c);
-  const tryFrom = (rev: boolean, blk: Set<number> | null) => {
-    const cells = rev ? [...t.cells].reverse() : t.cells;
-    const entry = sideToward(cells[0], cells[1]);
-    const p = bfs(cells[0], entry, goals, blk);
-    return p && st.plat ? alongPlatform(p, goals, blk) : p;
-  };
   for (const blk of [blocked, null]) {
-    let p = tryFrom(false, blk);
-    if (p) { t.route = p; return true; }
-    if (t.oneWay) continue; // loop trains never reverse
-    p = tryFrom(true, blk);
-    if (p) { t.cells.reverse(); t.frac = 0; t.route = p; return true; }
+    const p = bfs(t.cells[0], sideToward(t.cells[0], t.cells[1]), goals, blk);
+    if (p) { t.route = st.plat ? alongPlatform(p, goals, blk) : p; return true; }
   }
   return false;
 }
