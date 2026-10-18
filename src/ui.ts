@@ -264,7 +264,8 @@ function inspStatic(e: Ent): string {
   }
   if (d.kind === 'station') {
     h += `<div class="sec">Name</div><input type="text" value="${esc(e.name)}" data-input="name" maxlength="24" style="width:100%">`;
-    h += `<div class="sec">Mode</div><div class="row"><button class="${e.mode === 'load' ? 'go' : ''}" data-act="mode:load">⬆ Load trains</button><button class="${e.mode === 'unload' ? 'go' : ''}" data-act="mode:unload">⬇ Unload trains</button></div>`;
+    h += `<div class="sec">Mode</div><div class="row"><button class="${e.mode === 'load' ? 'go' : ''}" data-act="mode:load">⬆ Load trains</button><button class="${e.mode === 'unload' ? 'go' : ''}" data-act="mode:unload">⬇ Unload trains</button><button class="${e.mode === 'both' ? 'go' : ''}" data-act="mode:both" title="Belts bring in what trains pick up; what trains drop off goes out of the other port">⇅ Both</button></div>`;
+    h += '<div class="sm dim">Each train can also be told exactly what to drop off and pick up here (click the train → Schedule).</div>';
     h += e.plat ? '<div class="sm">Trains stop on the platform track (along the front). Connect your railway to either end of the platform. Belts go in and out at the back.</div>' : '<div class="sm">Trains stop on any rail tile touching the station.</div>';
     const others = stationList().filter((o: Ent) => o !== e);
     h += '<div class="sec">🚆 Quick Route</div>';
@@ -387,6 +388,11 @@ function inspDyn(e: Ent): string {
       h += `<div>${fmt(e.tot)} / ${fmt(d.cap)} items</div><div class="chips">`;
       for (const k in e.store) if (e.store[k]) h += `<span class="chip" data-tip="item:${k}">${ic(k, 18)}${fmt(e.store[k])}</span>`;
       h += '</div>';
+      if (d.kind === 'station' && e.mode === 'both') {
+        h += `<div class="sm" style="margin-top:4px">Dropped off by trains, going out: ${fmt(e.dtot || 0)}</div><div class="chips">`;
+        for (const k in e.drop || {}) if (e.drop[k]) h += `<span class="chip" data-tip="item:${k}">${ic(k, 18)}${fmt(e.drop[k])}</span>`;
+        h += '</div>';
+      }
       if (d.kind === 'station') {
         const tr = G.trains.filter(t => t.sched.includes(e.id));
         h += `<div class="sm">${tr.length ? 'Served by ' + tr.map(t => esc(t.name)).join(', ') : 'No trains visit this station yet. Click a train to add it to its schedule.'}</div>`;
@@ -416,13 +422,38 @@ function inspDyn(e: Ent): string {
   }
   return h;
 }
+const modeIcon = (m: string) => m === 'load' ? ' ⬆' : m === 'both' ? ' ⇅' : ' ⬇';
+/** items a train can be told to carry (sorted by name) */
+let cargoOpts = '';
+function cargoOptions() {
+  if (!cargoOpts) cargoOpts = ITEM_KEYS.filter(k => !ITEMS[k].fluid).sort((a, b) => ITEMS[a].n.localeCompare(ITEMS[b].n)).map(k => `<option value="${k}">${esc(ITEMS[k].n)}</option>`).join('');
+  return cargoOpts;
+}
+/** one stop's "drop off" or "pick up" order: the station decides, everything, nothing, or a list of items */
+function orderRow(t: Train, i: number, w: 'u' | 'l', s: Ent) {
+  const o = t.orders && t.orders[i], v = o ? o[w] : null;
+  const def = (w === 'u' ? s.mode === 'unload' || s.mode === 'both' : s.mode === 'load' || s.mode === 'both') ? 'everything' : 'nothing';
+  const mode = v == null ? 'def' : v.includes('*') ? 'all' : v.length ? 'list' : 'none';
+  const tag = i + w;
+  let h = `<div class="row" style="gap:4px;margin:2px 0 2px 14px;align-items:center;flex-wrap:wrap"><span class="sm" style="width:58px">${w === 'u' ? '⬇ Drop off' : '⬆ Pick up'}</span>`;
+  h += `<select data-input="tordm:${tag}" style="max-width:150px"><option value="def" ${mode === 'def' ? 'selected' : ''}>Station mode (${def})</option><option value="all" ${mode === 'all' ? 'selected' : ''}>Everything</option><option value="none" ${mode === 'none' ? 'selected' : ''}>Nothing</option>${mode === 'list' ? '<option value="list" selected>Only these:</option>' : ''}<optgroup label="Only…">${cargoOptions()}</optgroup></select>`;
+  if (mode === 'list') {
+    for (const k of v!) h += `<span class="chip" data-tip="item:${k}">${ic(k, 16)}${esc(ITEMS[k].n)} <a data-act="tordx:${tag}:${k}" style="cursor:pointer;opacity:.7">✕</a></span>`;
+    if (v!.length < 12) h += `<select data-input="tordadd:${tag}" style="max-width:110px"><option value="">+ add…</option>${cargoOptions()}</select>`;
+  }
+  return h + '</div>';
+}
 function trainStatic(t: Train) {
   const sts = stationList();
   let h = `<div class="ih"><div class="it">🚂 Train</div><button class="x" data-act="closeInsp">✕</button></div>`;
   h += `<input type="text" value="${esc(t.name)}" data-input="tname" maxlength="24" style="width:100%"><div id="idyn"></div>`;
   h += `<div class="sec">Schedule</div>`;
   if (!t.sched.length) h += '<div class="sm">Add at least two stations. The train loops through them in order.</div>';
-  t.sched.forEach((sid, i) => { const s = G.ents.get(sid); h += `<div class="stop"><span class="sn">${i + 1}. ${s ? esc(s.name) + (s.mode === 'load' ? ' ⬆' : ' ⬇') : '?'}</span><button class="mini" data-act="tup:${i}">▲</button><button class="mini" data-act="tdel:${i}">✕</button></div>`; });
+  t.sched.forEach((sid, i) => {
+    const s = G.ents.get(sid);
+    h += `<div class="stop"><span class="sn">${i + 1}. ${s ? esc(s.name) + modeIcon(s.mode) : '?'}</span><button class="mini" data-act="tup:${i}">▲</button><button class="mini" data-act="tdel:${i}">✕</button></div>`;
+    if (s) h += orderRow(t, i, 'u', s) + orderRow(t, i, 'l', s);
+  });
   h += `<select data-input="addstop" style="width:100%;margin-top:4px"><option value="">+ Add a station…</option>${sts.map((s: Ent) => `<option value="${s.id}">${esc(s.name)} (${s.mode})</option>`).join('')}</select>`;
   if (t.oneWay) h += `<div class="sm">🛤 Runs one way around a Quick Route loop. <button class="mini go" data-act="lineadd:${t.line}">+ Another train on this line</button></div>`;
   h += `<div class="sec">Wagons: ${wagonsOf(t)}</div><div class="row"><button data-act="wagon:1">+ Wagon</button><button data-act="wagon:-1" ${wagonsOf(t) ? '' : 'disabled'}>− Wagon</button><span class="sm">${costHTML(BLD.wagon.cost)}</span></div>`;
@@ -456,7 +487,7 @@ function renderInspect() {
   if (!e && !t && !k) { box.classList.add('hidden'); return; }
   box.classList.remove('hidden');
   const key = e ? [e.id, e.type, e.recipe, G.S.unlocked.size, e.shards, e.amp, e.mode, e.target, e.rot, G.L.drones.length, G.S.inv.power_shard > 0, G.S.inv.amplifier > 0, G.L.tstations.length, G.S.lines.length, G.trains.length].join('|')
-    : t ? ['T', t.id, t.sched.join(','), t.cars.length, t.running, stationList().length].join('|')
+    : t ? ['T', t.id, t.sched.join(','), t.cars.length, t.running, stationList().length, JSON.stringify(t.orders || []), t.sched.map(s => G.ents.get(s)?.mode).join(',')].join('|')
     : ['K', k!.id, k!.sched.join(','), G.L.tstations.length].join('|');
   if (key !== inspKey) { box.innerHTML = e ? inspStatic(e) : t ? trainStatic(t) : truckStatic(k!); inspKey = key; }
   const dyn = document.getElementById('idyn');
@@ -1015,6 +1046,7 @@ function act(cmd: string, a: string, b: string) {
     case 'tremove': if (t) run({ k: 'rmv', v: 't', id: t.id }); break;
     case 'tup': if (t) { run({ k: 'tup', t: t.id, i: +a }); inspKey = ''; } break;
     case 'tdel': if (t) { run({ k: 'tdel', t: t.id, i: +a }); inspKey = ''; } break;
+    case 'tordx': if (t) { const i = parseInt(a), w = a.slice(-1), cur = (t.orders && t.orders[i] && t.orders[i]![w as 'u' | 'l']) || []; run({ k: 'torder', t: t.id, i, w, v: cur.filter(x => x !== b) }); inspKey = ''; } break;
     default: if (extraAct(cmd, a, b)) inspKey = '';
   }
   if (modalKind && cmd !== 'closeModal' && cmd !== 'open') setTimeout(() => { if (modalKind) { ($('#mbody') as any).dataset.h = ''; renderModal(); } }, 0);
@@ -1041,6 +1073,12 @@ export function initUI() {
     else if (k === 'routeTo' && e) run({ k: 'set', id: e.id, f: 'routeTo', v: +el.value });
     else if (k === 'tname' && t) { if (ev.type === 'change' || !online()) run({ k: 'tname', t: t.id, v: el.value }); }
     else if (k === 'addstop' && t && el.value && ev.type === 'change') { run({ k: 'tstop', t: t.id, v: +el.value }); inspKey = ''; }
+    else if ((k === 'tordm' || k === 'tordadd') && t && ev.type === 'change' && el.value) {
+      const i = parseInt(a), w = a.slice(-1), cur = t.orders && t.orders[i] && t.orders[i]![w as 'u' | 'l'];
+      const list = cur && !cur.includes('*') ? cur : [];
+      const v = k === 'tordadd' ? [...new Set([...list, el.value])] : el.value === 'def' ? null : el.value === 'all' ? ['*'] : el.value === 'none' ? [] : el.value === 'list' ? list : [...new Set([...list, el.value])];
+      run({ k: 'torder', t: t.id, i, w, v }); inspKey = '';
+    }
     else if (k === 'mapf') { mapFilter[a] = el.checked; drawBigMap(); }
     else if (k === 'invq') { invQuery = el.value; filterInventory(); }
     else if (k === 'vol') setVolume(a as any, +el.value / 100);

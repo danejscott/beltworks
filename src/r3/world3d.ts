@@ -839,7 +839,7 @@ export function update3D(time: number, real: number, dt: number, labels: Label3[
     }
     if (p.name && near) labels.push({ x: p.x + 1.5, y: p.y + 1.5, z: 2.2, t: p.name, c: '#a8d8ff' });
   }
-  for (const s of G.L.stations) if (near) labels.push({ x: s.x + 1.5, y: s.y + 1.5, z: 2.9, t: s.name + (s.mode === 'load' ? ' ⬆' : ' ⬇'), c: '#ffe08a' });
+  for (const s of G.L.stations) if (near) labels.push({ x: s.x + s.w / 2, y: s.y + s.h / 2, z: 2.9, t: s.name + (s.mode === 'load' ? ' ⬆' : s.mode === 'both' ? ' ⇅' : ' ⬇'), c: '#ffe08a' });
   for (const s of G.L.outposts || []) labels.push({ x: s.x + 1.5, y: s.y + 1.5, z: 3.9, t: '⛺ ' + (MP.teams && s.o && s.o !== MP.myTeam ? teamLabel(s.o) : s.name), c: MP.teams && s.o ? MP.info.get(s.o)?.col || '#ffc070' : '#ffc070' });
   for (const s of G.L.ports || []) if (near) labels.push({ x: s.x + 1.5, y: s.y + 1.5, z: 2.9, t: '⚓ ' + s.name + (s.mode === 'load' ? ' ⬆' : ' ⬇'), c: '#a8d0ff' });
   for (const s of G.L.tstations) if (near) labels.push({ x: s.x + 1.5, y: s.y + 1.5, z: 2.6, t: s.name + (s.mode === 'load' ? ' ⬆' : ' ⬇'), c: '#ffd0a0' });

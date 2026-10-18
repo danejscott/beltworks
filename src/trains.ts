@@ -290,13 +290,16 @@ export function updateTrains(dt: number) {
         const TT: any = t;
         if (t.waitT === 0) TT.got = 0;
         t.waitT += dt;
-        const before = t.tot;
-        const moved = transfer(t, st, dt);
-        if (t.tot !== before) TT.got = (TT.got || 0) + Math.abs(t.tot - before);
+        const before = t.tot, ord = stopOrders(t, t.si, st);
+        const moved = transfer(t, st, dt, ord);
+        if (moved) TT.got = (TT.got || 0) + 1;
+        if (t.tot !== before) TT.cnt = (TT.cnt || 0) + Math.abs(t.tot - before);
         t.idleT = moved ? 0 : t.idleT + dt;
-        // wait while cargo keeps coming (until full); with nothing at all to load, move on after a while and try again
-        const full = st.mode === 'load' ? t.tot >= trainCap(t) : t.tot <= 0;
-        const leave = full ? t.waitT > 2 : st.mode === 'load' ? (TT.got > 0 ? t.idleT > 4 || t.waitT > 90 : t.waitT > 20) : t.idleT > 4 || t.waitT > 120;
+        // done when there's nothing left to drop off and nothing more to pick up (full, or nothing arriving for a while)
+        const canDrop = Object.keys(t.cargo).some(k => t.cargo[k] > 0 && wants(ord.u, k)) && dropRoom(st) > 0;
+        const full = t.tot >= trainCap(t);
+        const leave = !canDrop && (!ord.l.length || full) ? t.waitT > 2
+          : (t.idleT > 4 && (TT.got > 0 || t.waitT > 20)) || t.waitT > 120;
         if (leave) {
           t.si = (t.si + 1) % t.sched.length;
           t.state = 'idle'; t.waitT = 99;
@@ -306,7 +309,17 @@ export function updateTrains(dt: number) {
     }
   }
 }
-function transfer(t: Train, st: Ent, dt: number): boolean {
+/** does an order list take item k? */
+const wants = (list: string[], k: string) => list.includes('*') || list.includes(k);
+/** a stop's orders: the train's own, or the station's mode (load / unload / both) */
+export function stopOrders(t: Train, i: number, st: Ent): { u: string[]; l: string[] } {
+  const o = t.orders && t.orders[i];
+  const du = st.mode === 'unload' || st.mode === 'both' ? ['*'] : [], dl = st.mode === 'load' || st.mode === 'both' ? ['*'] : [];
+  return { u: o && o.u ? o.u : du, l: o && o.l ? o.l : dl };
+}
+/** where dropped-off cargo goes: a pick-up-and-drop-off station keeps it apart (it goes out by belt) */
+const dropRoom = (st: Ent) => BLD.station.cap - (st.mode === 'both' ? st.dtot || 0 : st.tot);
+function transfer(t: Train, st: Ent, dt: number, ord: { u: string[]; l: string[] }): boolean {
   if (!st.pnet || st.pnet.sat < 0.05) return false;
   t['xacc'] = (t['xacc'] || 0) + dt * 150 * Math.max(1, wagonsOf(t));
   let n = Math.floor(t['xacc']);
@@ -314,22 +327,27 @@ function transfer(t: Train, st: Ent, dt: number): boolean {
   t['xacc'] -= n;
   const cap = trainCap(t);
   let moved = 0;
-  if (st.mode === 'load') {
-    while (n > 0 && t.tot < cap && st.tot > 0) {
-      const k = Object.keys(st.store)[0];
-      const m = Math.min(n, st.store[k], cap - t.tot);
-      st.store[k] -= m; st.tot -= m; if (!st.store[k]) delete st.store[k];
-      t.cargo[k] = (t.cargo[k] || 0) + m; t.tot += m; n -= m; moved += m;
-    }
-  } else {
-    const scap = BLD.station.cap;
-    while (n > 0 && st.tot < scap && t.tot > 0) {
-      const k = Object.keys(t.cargo)[0];
-      const m = Math.min(n, t.cargo[k], scap - st.tot);
-      t.cargo[k] -= m; t.tot -= m; if (!t.cargo[k]) delete t.cargo[k];
-      st.store[k] = (st.store[k] || 0) + m; st.tot += m; n -= m; moved += m;
-    }
-    if (moved) G.S.flags.trainDelivered = (G.S.flags.trainDelivered || 0) + moved;
+  // drop off first
+  const both = st.mode === 'both';
+  if (both && !st.drop) { st.drop = {}; st.dtot = 0; }
+  for (const k of Object.keys(t.cargo)) {
+    if (n <= 0) break;
+    if (!wants(ord.u, k)) continue;
+    const m = Math.min(n, t.cargo[k], dropRoom(st));
+    if (m <= 0) continue;
+    t.cargo[k] -= m; t.tot -= m; if (!t.cargo[k]) delete t.cargo[k];
+    if (both) { st.drop[k] = (st.drop[k] || 0) + m; st.dtot += m; }
+    else { st.store[k] = (st.store[k] || 0) + m; st.tot += m; }
+    n -= m; moved += m;
+    G.S.flags.trainDelivered = (G.S.flags.trainDelivered || 0) + m;
+  }
+  // then pick up (never something this stop drops off, so nothing goes round in circles)
+  for (const k of Object.keys(st.store)) {
+    if (n <= 0 || t.tot >= cap) break;
+    if (!wants(ord.l, k) || wants(ord.u, k) || !st.store[k]) continue;
+    const m = Math.min(n, st.store[k], cap - t.tot);
+    st.store[k] -= m; st.tot -= m; if (!st.store[k]) delete st.store[k];
+    t.cargo[k] = (t.cargo[k] || 0) + m; t.tot += m; n -= m; moved += m;
   }
   return moved > 0;
 }

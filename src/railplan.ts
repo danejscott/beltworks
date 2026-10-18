@@ -19,7 +19,7 @@ export interface RailPlan {
   ok: boolean; why?: string;
 }
 
-const M = 2;   // blocks of straight (or diagonal) track before the next 45° bend
+let M = 2;   // blocks of straight (or diagonal) track before the next 45° bend (1 when nothing smoother fits)
 const CW = () => Math.floor(W / RS), CH = () => Math.floor(H / RS);
 const rail = (x: number, y: number) => {
   if (x < 0 || y < 0 || x >= CW() || y >= CH()) return null;
@@ -61,7 +61,7 @@ export function snapEnd(x: number, y: number, not?: { x: number; y: number }): {
 }
 function snapEndB(x: number, y: number, not?: { x: number; y: number }): { x: number; y: number; side: number } | null {
   let best: any = null, bd = 1e9;
-  for (let dy = -2; dy <= 2; dy++) for (let dx = -2; dx <= 2; dx++) {
+  for (let dy = -3; dy <= 3; dy++) for (let dx = -3; dx <= 3; dx++) {
     const nx = x + dx, ny = y + dy;
     if (not && nx === not.x && ny === not.y) continue;
     const s = openEndB(nx, ny);
@@ -83,6 +83,18 @@ export function planRail(tsx: number, tsy: number, tex: number, tey: number): Ra
   return { ...p, tiles: p.tiles.map(T), junc: p.junc.map(T), pts: p.pts.map(([x, y]) => [x * RS, y * RS] as [number, number]), snapEnd: p.snapEnd && { x: p.snapEnd.x * RS, y: p.snapEnd.y * RS } };
 }
 function planB(sx: number, sy: number, ex: number, ey: number): RailPlan {
+  // starting near the end of some track (not on track): start from that end, so it joins on
+  if (!rail(sx, sy)) { const sn = snapEndB(sx, sy); if (sn && Math.abs(sn.x - sx) + Math.abs(sn.y - sy) <= 2) { sx = sn.x; sy = sn.y; } }
+  M = 2;
+  const p = planM(sx, sy, ex, ey, false);
+  if (p.ok || !p.why || p.why.startsWith('Start on') || p.why.startsWith('Can\'t join')) return p;
+  // nothing smooth fits: allow tighter bends and a shorter straight run onto the end
+  M = 1;
+  const q = planM(sx, sy, ex, ey, true);
+  M = 2;
+  return q.ok ? q : p;
+}
+function planM(sx: number, sy: number, ex: number, ey: number, tight: boolean): RailPlan {
   const dd = Math.abs(ex - sx) >= Math.abs(ey - sy) ? (ex >= sx ? 0 : 2) : (ey >= sy ? 1 : 3);
   const fail = (why: string): RailPlan => ({ tiles: [], junc: [], pts: why ? [[sx + 0.5, sy + 0.5], [ex + 0.5, ey + 0.5]] : [], dirA: (dd + 2) & 3, dirB: dd, snapEnd: null, ok: false, why });
   // ---- where it starts
@@ -100,8 +112,8 @@ function planB(sx: number, sy: number, ex: number, ey: number): RailPlan {
   const gAxis = goal.kind === 'side' ? straightAxis(goal.x, goal.y) : -1;
 
   // ---- search: state = tile, heading, tiles since the last bend (capped), phase on diagonals
-  const x0 = Math.max(1, Math.min(sx, goal.x) - 28), x1 = Math.min(CW() - 2, Math.max(sx, goal.x) + 28);
-  const y0 = Math.max(1, Math.min(sy, goal.y) - 28), y1 = Math.min(CH() - 2, Math.max(sy, goal.y) + 28);
+  const x0 = Math.max(1, Math.min(sx, goal.x) - 40), x1 = Math.min(CW() - 2, Math.max(sx, goal.x) + 40);
+  const y0 = Math.max(1, Math.min(sy, goal.y) - 40), y1 = Math.min(CH() - 2, Math.max(sy, goal.y) + 40);
   const key = (x: number, y: number, h: number, n: number, ph: number) => ((((y * CW() + x) * 8 + h) * (M + 1) + n) * 2 + ph);
   const free = (x: number, y: number) => x >= x0 && x <= x1 && y >= y0 && y <= y1 && !rail(x, y) && blockFree(x, y);
   type S = { x: number; y: number; h: number; n: number; ph: number; g: number; last: number; prev: S | null; side: number; cross?: boolean };
@@ -117,7 +129,7 @@ function planB(sx: number, sy: number, ex: number, ey: number): RailPlan {
   else for (let h = 0; h < 8; h++) starts.push({ h, side: -1 });
   for (const st of starts) push(hf(sx, sy), { x: sx, y: sy, h: st.h, n: startOnTrack ? (startEnd >= 0 ? 1 : 0) : M, ph: 0, g: 0, last: -1, prev: null, side: st.side });
   let found: S | null = null, iter = 0;
-  while (open.length && iter++ < 120000) {
+  while (open.length && iter++ < 220000) {
     const [, s] = pop();
     const k = key(s.x, s.y, s.h, s.n, s.ph) * 2 + (s.cross ? 1 : 0);
     if ((best.get(k) ?? 1e9) < s.g) continue;
@@ -135,7 +147,7 @@ function planB(sx: number, sy: number, ex: number, ey: number): RailPlan {
       let hug = 0;
       if (Math.abs(nx - sx) + Math.abs(ny - sy) > 2 && Math.abs(nx - goal.x) + Math.abs(ny - goal.y) > 2)
         for (let dy = -1; dy <= 1 && !hug; dy++) for (let dx = -1; dx <= 1; dx++) if ((dx || dy) && rail(nx + dx, ny + dy)) { hug = 0.8; break; }
-      const g = s.g + 1 + (dh ? 0.35 : 0) + hug;
+      const g = s.g + 1 + (dh ? (tight ? 0.5 : 1.1) + (s.n < M + 2 ? 0.7 : 0) : 0) + hug;
       const n = dh ? 1 : Math.min(M, s.n + 1);
       const ns: S = { x: nx, y: ny, h, n, ph, g, last: mv, prev: s, side: -1 };
       if (s.cross && mv !== s.last) continue;   // straight over a crossing

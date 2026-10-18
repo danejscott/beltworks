@@ -408,7 +408,7 @@ function exec(c: Cmd): any {
       if (e.amp) { e.amp = 0; addInv('amplifier', 1); } else if ((S.inv.amplifier || 0) > 0) { S.inv.amplifier--; e.amp = 1; sfx('craft'); }
       return;
     }
-    case 'mode': { const e = ent(c.id); if (mine(e) && e.mode) { e.mode = c.m; markDirty(BLD[e.type].kind, e); sfx('click'); } return; }
+    case 'mode': { const e = ent(c.id); if (mine(e) && e.mode && (c.m !== 'both' || e.type === 'station')) { e.mode = c.m; if (c.m === 'both' && !e.drop) { e.drop = {}; e.dtot = 0; } markDirty(BLD[e.type].kind, e); sfx('click'); } return; }
     case 'twant': { if (!c.it || (ITEMS[c.it] && !ITEMS[c.it].fluid)) S.flags.twant = c.it || ''; sfx('click'); return; }
     case 'paint': {   // copy-settings tool: recipe, clock speed, filters and mode from another building of the same type
       const e = ent(c.id); if (!mine(e) || e.type !== c.type) return;
@@ -476,12 +476,27 @@ function exec(c: Cmd): any {
     case 'lineadd': { const l = lineOf(+c.l); if (l) { const err = addTrainToLine(l); if (err) { toast('Can\'t add a train: ' + err, 'bad'); sfx('err'); } else toast('🚂 Another train joined the line', 'good'); } return; }
     case 'wagon': { const t = findTrain(c.t); if (mine(t as any)) { if (c.n > 0) addWagon(t!); else removeWagon(t!); } return; }
     case 'trun': { const t = findTrain(c.t); if (mine(t as any)) { t!.running = !t!.running; if (t!.running) { t!.state = 'idle'; t!.waitT = 99; } sfx('click'); } return; }
-    case 'tup': { const t = findTrain(c.t); if (!mine(t as any)) return; const i = +c.i; if (i > 0) { const s = t!.sched.splice(i, 1)[0]; t!.sched.splice(i - 1, 0, s); } else { const s = t!.sched.shift()!; t!.sched.push(s); } return; }
-    case 'tdel': { const t = findTrain(c.t); if (!mine(t as any)) return; t!.sched.splice(+c.i, 1); if (t!.si >= t!.sched.length) t!.si = 0; t!.state = 'idle'; t!.waitT = 99; return; }
+    case 'tup': {
+      const t = findTrain(c.t); if (!mine(t as any)) return; const i = +c.i, o = t!.orders || (t!.orders = []);
+      while (o.length < t!.sched.length) o.push(null);
+      if (i > 0) { const s = t!.sched.splice(i, 1)[0]; t!.sched.splice(i - 1, 0, s); const q = o.splice(i, 1)[0]; o.splice(i - 1, 0, q); }
+      else { const s = t!.sched.shift()!; t!.sched.push(s); o.push(o.shift()!); }
+      return;
+    }
+    case 'torder': {   // what a train drops off / picks up at one stop: v = null (station decides), ['*'], [] or item list
+      const t = findTrain(c.t); if (!mine(t as any)) return;
+      const i = +c.i; if (!(i >= 0 && i < t!.sched.length) || (c.w !== 'u' && c.w !== 'l')) return;
+      const o = t!.orders || (t!.orders = []);
+      while (o.length < t!.sched.length) o.push(null);
+      const v = c.v === null ? null : Array.isArray(c.v) ? c.v.filter((k: any) => k === '*' || (ITEMS[k] && !ITEMS[k].fluid)).slice(0, 12) : null;
+      const cur = o[i] || {}; cur[c.w as 'u' | 'l'] = v; o[i] = cur.u == null && cur.l == null ? null : cur;
+      sfx('click'); return;
+    }
+    case 'tdel': { const t = findTrain(c.t); if (!mine(t as any)) return; t!.sched.splice(+c.i, 1); if (t!.orders) t!.orders.splice(+c.i, 1); if (t!.si >= t!.sched.length) t!.si = 0; t!.state = 'idle'; t!.waitT = 99; return; }
     case 'tname': { const t = findTrain(c.t); if (mine(t as any)) t!.name = String(c.v).slice(0, 40) || t!.name; return; }
     case 'tstop': {
       const t = findTrain(c.t), st = ent(c.v); if (!mine(t as any) || !st || !owns(st)) return;
-      t!.sched.push(st.id); if (t!.state === 'noschedule' || t!.state === 'nopath') { t!.state = 'idle'; t!.waitT = 99; } sfx('click'); return;
+      t!.sched.push(st.id); if (t!.orders) { while (t!.orders.length < t!.sched.length - 1) t!.orders.push(null); t!.orders.push(null); } if (t!.state === 'noschedule' || t!.state === 'nopath') { t!.state = 'idle'; t!.waitT = 99; } sfx('click'); return;
     }
     // ---- trucks & ships
     case 'buydrone': {   // drone ports are racks of three: buy drones one at a time

@@ -20,7 +20,7 @@ import { DX, DY } from './util';
 import { snapR } from './railgrid';
 import { isWater } from './terrain';
 import { MP } from './teams';
-import { openEnd, planRail, RailPlan } from './railplan';
+import { openEnd, planRail, RailPlan, snapEnd } from './railplan';
 
 // ---------------------------------------------------------------------------
 /** a blueprint: buildings (o.z = floor, counted up from the lowest floor copied) and foundation decks (fl: [x, y, floor]) */
@@ -360,7 +360,10 @@ export function updateGhosts() {
       } else if (d.kind === 'rail') {
         // one 2 x 2 piece of track under the pointer (snapped to the rail grid), or a marker on an open end to drag from
         const bx = snapR(m.tx), by = snapR(m.ty), s = openEnd(bx, by);
-        view.railPlan = s >= 0 ? { hoverEnd: { x: bx, y: by, side: s } } : null;
+        // on (or near) the end of some track: that's where a drag from here starts, joined on
+        const near = s < 0 && !entAt(bx, by) ? snapEnd(bx, by) : null;
+        const nearOk = near && Math.abs(near.x - bx) + Math.abs(near.y - by) <= 4;
+        view.railPlan = s >= 0 ? { hoverEnd: { x: bx, y: by, side: s } } : nearOk ? { hoverEnd: near } : null;
         if (s < 0) g.push({ type: t.type, x: bx, y: by, rot, ok: !canPlace('rail', bx, by, 0, { free: true }), pairs: railPairsForPath([{ x: bx, y: by, d: rot }])[0] });
       } else if ((d.kind === 'belt' || d.kind === 'pipe') && !d.dz) {
         const path = drag ? dragPath() : [{ x: m.tx, y: m.ty, d: rot }];

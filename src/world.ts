@@ -47,7 +47,11 @@ export interface Train {
   frac: number; route: number[]; v: number; sched: number[]; si: number;
   state: string; cargo: Record<string, number>; tot: number; waitT: number; idleT: number; blockT: number; running: boolean; dir?: number;
   oneWay?: boolean; line?: number;
+  /** per stop (lined up with sched): what to drop off (u) and pick up (l) there. Missing / null = the station's own
+   *  mode decides; ['*'] = everything; [] = nothing; otherwise just those items */
+  orders?: (TOrder | null)[];
 }
+export interface TOrder { u?: string[] | null; l?: string[] | null }
 
 /** floors: 0 = ground, 1..3 = on foundations; LH = height of one floor in world units */
 export const NL = 4, LH = 4;
@@ -352,7 +356,7 @@ export function place(type: string, x: number, y: number, rot: number, o: { free
     case 'gen': e.fuelT = 0; e.fbuf = {}; e.water = 0; e.clock = 1; e.shards = 0; e.st = 'idle'; e.out = 0; e.node = nodeAt(x, y); break;
     case 'battery': e.stored = 0; break;
     case 'rail': e.pairs = 0; break;
-    case 'station': e.store = {}; e.tot = 0; e.mode = 'load'; e.name = 'Station ' + (++G.S.stationSeq); e.rr = 0; e.req = 0; if (!o.wh) e.sv2 = 1; break;
+    case 'station': e.store = {}; e.tot = 0; e.drop = {}; e.dtot = 0; e.mode = 'load'; e.name = 'Station ' + (++G.S.stationSeq); e.rr = 0; e.req = 0; if (!o.wh) e.sv2 = 1; break;
     case 'trade': e.store = {}; e.tot = 0; e.mode = 'trade'; e.name = 'Trade Post'; break;
     case 'tstation': e.store = {}; e.tot = 0; e.mode = 'load'; e.name = 'Truck Stop ' + (++G.S.stationSeq); e.rr = 0; e.req = 0; break;
     case 'outpost': e.name = 'Outpost ' + (++G.S.stationSeq); break;

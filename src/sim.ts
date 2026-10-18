@@ -654,6 +654,10 @@ export function update(dt: number) {
     if (e.mode === 'unload' && e.tot > 0) {
       const k = takeFromStore(e);
       if (k && (e.type === 'truck_station' ? pushOutBack(e, k) : pushOut(e, k))) { e.store[k]--; e.tot--; e.kr = (e.kr || 0) + 1; if (!e.store[k]) delete e.store[k]; }
+    } else if (e.mode === 'both' && e.dtot > 0) {
+      // pick up & drop off: belts bring in what trains collect (store); what trains drop off (drop) goes out
+      const keys = Object.keys(e.drop), k = keys[(e.kr || 0) % keys.length];
+      if (k && pushOut(e, k)) { e.drop[k]--; e.dtot--; e.kr = (e.kr || 0) + 1; if (!e.drop[k]) delete e.drop[k]; }
     }
   }
   pmark('logi');
