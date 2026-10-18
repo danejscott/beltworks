@@ -309,6 +309,25 @@ export function updateTrains(dt: number) {
     }
   }
 }
+/** a train on (or heading onto) rail block i: which route through the block it uses. 'on' = it's on it now (everything
+ *  else through this block has to wait), 'coming' = it will be within the next few blocks */
+export function railUse(i: number): { t: Train; pair: number; state: 'on' | 'coming' } | null {
+  const pairOf = (a: number, b: number) => {
+    const sa = a >= 0 ? sideToward(i, a) : -1, sb = b >= 0 ? sideToward(i, b) : -1;
+    if (sa >= 0 && sb >= 0) return pairBit(sa, sb);
+    const s = sa >= 0 ? sa : sb; return s >= 0 ? pairBit(s, opp(s)) : 0;
+  };
+  for (const t of G.trains) {
+    const k = t.cells.indexOf(i);
+    if (k >= 0) return { t, pair: pairOf(k > 0 ? t.cells[k - 1] : t.route[0] ?? -1, t.cells[k + 1] ?? -1), state: 'on' };
+  }
+  for (const t of G.trains) {
+    if (t.state !== 'moving') continue;
+    const k = t.route.indexOf(i);
+    if (k >= 0 && k < 6) return { t, pair: pairOf(t.route[k + 1] ?? -1, k > 0 ? t.route[k - 1] : t.cells[0]), state: 'coming' };
+  }
+  return null;
+}
 /** does an order list take item k? */
 const wants = (list: string[], k: string) => list.includes('*') || list.includes(k);
 /** a stop's orders: the train's own, or the station's mode (load / unload / both) */

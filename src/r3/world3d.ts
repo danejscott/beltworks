@@ -8,11 +8,11 @@ import { hexCol, rgba } from '../gl';
 import { curPhase } from '../progress';
 import { ensureFresh, multiIn } from '../sim';
 import { H, W } from '../terrain';
-import { signalRed, trainPoints, WAGON_CAP } from '../trains';
+import { railUse, signalRed, trainPoints, WAGON_CAP } from '../trains';
 import { nightness } from '../daynight';
 import { DX, DY, easeOutBack, hash2 } from '../util';
 import { parts, proj, spawn, view } from '../view';
-import { Ent, entAt, frontTiles, G, inPort, LH, platformPair, platformTiles, PORTED, railSides } from '../world';
+import { Ent, entAt, frontTiles, G, inPort, LH, PAIRS, platformPair, platformTiles, PORTED, railSides } from '../world';
 import { Billboards } from './bb';
 import { C, screenRay } from './core';
 import { B, M, Model, std } from './mat';
@@ -151,7 +151,7 @@ export function startLaunch() { launchPending = true; }
 const models: Record<string, Model> = Object.create(null);
 const mdl = (k: string, f: () => Model) => models[k] || (models[k] = f());
 let beltMats: Record<string, THREE.MeshStandardMaterial>;
-let covMat: THREE.Material, noPowMat: THREE.Material;
+let covMat: THREE.Material, noPowMat: THREE.Material, routeMat: THREE.Material;
 let ghostOK: THREE.Material, ghostBad: THREE.Material, areaMat: THREE.Material, lightMat: THREE.MeshBasicMaterial, fadeMat: THREE.Material, deckFade: THREE.Material;
 let SL: Layer, DL: Layer, GL: Layer, TL: Layer;
 let bbs: Billboards, bbAdd: Billboards;
@@ -192,6 +192,7 @@ export function init3D() {
   fadeMat = new THREE.MeshStandardMaterial({ color: '#c8d4e0', transparent: true, opacity: 0.16, depthWrite: false, roughness: 0.6 });
   deckFade = new THREE.MeshStandardMaterial({ color: '#b8c0c8', transparent: true, opacity: 0.1, depthWrite: false, roughness: 0.8 });
   lightMat = new THREE.MeshBasicMaterial({ color: '#ffffff', toneMapped: false });
+  routeMat = new THREE.MeshBasicMaterial({ color: '#ffffff', toneMapped: false, transparent: true, opacity: 0.9, depthTest: false, depthWrite: false });
   // gently swaying leaves (idle animation)
   MD.treeModels().forEach((t, i) => { models['tree' + i] = t; });
   MD.treeModelsLow().forEach((t, i) => { models['treeL' + i] = t; });
@@ -890,6 +891,28 @@ export function update3D(time: number, real: number, dt: number, labels: Label3[
   for (const se of [view.inspect, view.hover]) if (se && G.ents.has(se.id)) { ZO = (se.z || 0) * LH; pushPortArrows(DL, se, 'sel', true); }
   // power areas
   ZO = view.level * LH;
+  // routes through junctions and level crossings: green = free, amber = a train is going (or about to go) through,
+  // red = that route has to wait until it's past. On the piece under the pointer, and on every junction / crossing
+  // in view while holding the Railway or a signal.
+  {
+    const show = (r: Ent) => {
+      const use = railUse(r.y * W + r.x), cx = r.x + RS / 2, cy = r.y + RS / 2;
+      for (let k = 0; k < 6; k++) {
+        if (!(r.pairs & (1 << k))) continue;
+        const col = !use ? '#3aff6a' : use.pair === (1 << k) ? '#ffb030' : '#ff3a2a';
+        COL.set(col);
+        for (const sd of PAIRS[k]) {
+          const px = cx + DX[sd] * RS / 2, py = cy + DY[sd] * RS / 2;
+          const mx = (px + cx) / 2, my = (py + cy) / 2;
+          DL.get('route', mdl('routeSeg', () => ({ geo: new THREE.BoxGeometry(1, 0.06, 0.2), mats: [] })).geo, routeMat, false, true).push(compose(mx, 0.32, my, -Math.atan2(py - cy, px - cx), RS / 2 + 0.1, 1, 1), COL);
+        }
+      }
+    };
+    const multi = (r: Ent) => { let n = 0; for (let k = 0; k < 6; k++) if (r.pairs & (1 << k)) n++; return n > 1; };
+    const hr = entAt(view.mouse.tx, view.mouse.ty);
+    if (hr && hr.type === 'rail' && multi(hr)) show(hr);
+    if (view.railTool) for (const r of G.L.rails) if (r !== hr && multi(r) && Math.abs(r.x - tgx) < 60 && Math.abs(r.y - tgy) < 60) show(r);
+  }
   // power coverage overlay (holding anything that makes or uses power, or V): the ground tint is drawn by the terrain
   // itself; buildings that need power but sit outside every pole's area get a red bolt
   if (view.showPower) {

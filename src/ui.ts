@@ -15,10 +15,12 @@ import { chooseFolder, FS, reconnectFolder } from './filesaves';
 import { clockPow, myCraft, ensureFresh, flushNet, handTime, hist, inCap, outCap, PURITY, rate, setRecipe, stats } from './sim';
 import { BIOME_NAMES, biomeAtTiles, H, HX, HY, isWater, RES_BIOMES, TILE_NAMES, TT, W } from './terrain';
 import { addWagon, buildRoute, removeTrain, removeWagon, trainCap, wagonsOf } from './trains';
+import { railUse } from './trains';
+import { openEnd } from './railplan';
 import { $, clamp, DX, DY, esc, fmt, fmtR } from './util';
 import { s2w, view } from './view';
 import { pickAt } from './r3/world3d';
-import { addInv, canAfford, count, def, Ent, entAt, G, hasFloor, missingText, nodeAt, remove, rotateEnt, Train, Truck } from './world';
+import { addInv, canAfford, count, def, Ent, entAt, G, hasFloor, missingText, nodeAt, PAIRS, remove, rotateEnt, Train, Truck } from './world';
 import { portDyn, portStatic, shipDyn, shipStatic } from './ui2';
 import { fmtTime, recapHTML, showTimer, startTimelapse } from './ui2';
 import { EXTRA_MODALS, extraAct, extraInput, LIVE_MODALS, outpostStatic, plannerAllowed, setRerender, stationExtra, tradeDyn, travelPoints, truckDyn, truckStatic, tstationDyn, tstationStatic } from './ui2';
@@ -114,7 +116,13 @@ export function updateHint() {
   else {
     const d = BLD[t.type], di = dragInfo();
     const rp = view.railPlan;
-    if (d.kind === 'rail' && rp && rp.pts) h = rp.ok ? `Laying <b>${rp.tiles.length}</b> × Railway · ${costHTML(Object.fromEntries(Object.entries(d.cost).map(([k, v]) => [k, (v as number) * rp.tiles.length]))) || 'free'}${rp.snapEnd ? ' · <b style="color:#7dffa0">joins the track there</b>' : ''}${rp.junc.length ? ' · makes a junction' : ''} · release to build` : `<span class="neg">${esc(rp.why || 'Cannot lay track there')}</span>`;
+    let joins = '';
+    if (d.kind === 'rail' && rp && rp.ok && rp.junc && rp.junc.length) {
+      let nc = 0, nj = 0;
+      for (const j of rp.junc) { const r = entAt(j.x, j.y); if (!r) continue; const p = r.pairs | j.p; if ((p & 3) === 3 && !(p & 60)) nc++; else nj++; }
+      joins = (nj ? ` · <span class="pos">joins existing track at ${nj} junction${nj > 1 ? 's' : ''}</span>` : '') + (nc ? ` · <span class="warn">⚠ ${nc} level crossing${nc > 1 ? 's' : ''} (trains take turns there)</span>` : '');
+    }
+    if (d.kind === 'rail' && rp && rp.pts) h = rp.ok ? `Laying <b>${rp.tiles.length}</b> × Railway · ${costHTML(Object.fromEntries(Object.entries(d.cost).map(([k, v]) => [k, (v as number) * rp.tiles.length]))) || 'free'}${rp.snapEnd ? ' · <b style="color:#7dffa0">joins the track there</b>' : ''}${rp.junc.length ? ' · makes a junction' : ''} · release to build${joins}` : `<span class="neg">${esc(rp.why || 'Cannot lay track there')}</span>`;
     else if (d.kind === 'rail') h = '<b>Railway</b> · drag from a <b>track end</b> (green marker) to extend it, or from open ground · drop near another end to <b>join</b> it (snaps) · start or end on a straight piece to make a <b>junction</b> · curves are worked out for you';
     else if (di) h = `Laying <b>${di.n}</b> × ${d.n} · ${costHTML(di.cost) || 'free'} · <b>R</b> flip corner · release to build`;
     else if (d.kind === 'belt' || d.kind === 'pipe' || d.kind === 'rail') h = `<b>${d.n}</b> · click-drag to lay a line · <b>R</b> rotate · ${d.kind === 'rail' ? 'drag off an existing track to make a junction' : 'drag over old ones to upgrade'} · <b>Right-click</b> cancel`;
@@ -442,6 +450,22 @@ function orderRow(t: Train, i: number, w: 'u' | 'l', s: Ent) {
     if (v!.length < 12) h += `<select data-input="tordadd:${tag}" style="max-width:110px"><option value="">+ add…</option>${cargoOptions()}</select>`;
   }
   return h + '</div>';
+}
+/** hovering track: what this piece is (end, junction, level crossing) and which way trains may go through it now */
+function railHoverText(e: Ent) {
+  let routes = 0, sides = 0;
+  for (let k = 0; k < 6; k++) if (e.pairs & (1 << k)) { routes++; sides |= (1 << PAIRS[k][0]) | (1 << PAIRS[k][1]); }
+  const nSides = [0, 1, 2, 3].filter(s => sides & (1 << s)).length;
+  const crossing = nSides === 4 && (e.pairs & 3) === 3 && routes === 2;
+  let h = '';
+  if (crossing) h = '<b>Level crossing</b><div class="sm">Two lines cross here. Only one train at a time: the first to arrive goes, a train on the other line waits before it. On busy lines, put <b>block signals</b> a little before the crossing so waiting trains don\'t block other track.</div>';
+  else if (routes > 1) h = '<b>Junction</b><div class="sm">Lines split or merge here. Each train takes the branch toward its next station; one train uses it at a time. <b>Path signals</b> before it let trains whose paths don\'t overlap go together.</div>';
+  else h = `<b>Railway</b>${openEnd(e.x, e.y) >= 0 ? '<div class="sm">Open end — drag from here with the Railway tool to extend it.</div>' : '<div class="sm">Drag from anywhere on track to branch off it or keep building; dragging along existing track reuses it.</div>'}`;
+  const u = railUse(e.y * W + e.x);
+  if (u && routes > 1) h += `<div class="sm" style="margin-top:4px"><span style="color:#ffb030">■</span> ${esc(u.t.name)} ${u.state === 'on' ? 'is going through' : 'is coming through'} — <span style="color:#ff5a4a">■</span> other routes wait</div>`;
+  else if (routes > 1) h += '<div class="sm" style="margin-top:4px"><span style="color:#5aff8a">■</span> Clear — every route is free</div>';
+  if (e.sig) h += `<div class="sm">${e.sig === 2 ? 'Path signal' : 'Block signal'} on this piece.</div>`;
+  return h;
 }
 function trainStatic(t: Train) {
   const sts = stationList();
@@ -922,7 +946,7 @@ function renderTip() {
     if (e) {
       const d = def(e);
       if (d.kind === 'belt') h = `<b>${d.n}</b><div class="sm">Max ${d.speed! / 0.5 * 60}/min · carrying ${e.items.length}</div>${G.L.wrong && G.L.wrong.some((w: any) => w.x === e.x && w.y === e.y && (w.z || 0) === (e.z || 0)) ? '<div class="neg sm">⚠ This belt points at the side of a building. Buildings only take items at their blue input arrow.</div>' : ''}${e.items.length ? `<div>${[...new Set(e.items.map((i: any) => i.it))].map((k: any) => ic(k, 16) + ' ' + ITEMS[k].n).join('<br>')}</div>` : ''}`;
-      else if (d.kind === 'rail') h = '<b>Railway</b>';
+      else if (d.kind === 'rail') h = railHoverText(e);
       else if (d.kind === 'machine') h = `<b>${d.n}</b>${e.recipe ? ' — ' + RECIPES[e.recipe].n : ''}<div>${status(e.st)}</div>`;
       else if (d.kind === 'miner') h = `<b>${d.n}</b> — ${ITEMS[e.node.res].n}<div>${status(e.st)}</div>`;
       else if (d.kind === 'pipe' && e.fnet) h = `<b>${d.n}</b><div class="sm">${e.fnet.fluid ? ITEMS[e.fnet.fluid].n : 'Empty'} · ${fmtR(e.fnet.amount)}/${fmtR(e.fnet.cap)}</div>`;

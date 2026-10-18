@@ -37,6 +37,7 @@ export let curCat = 0;
 export function setTool(t: any) {
   tool.t = t; drag = null; lastPlaced = null;
   view.showPower = !!(t && t.k === 'build' && (BLD[t.type].power || BLD[t.type].kind === 'pole' || BLD[t.type].kind === 'gen'));
+  view.railTool = !!(t && t.k === 'build' && (BLD[t.type].kind === 'rail' || BLD[t.type].kind === 'signal'));
   UI.renderHotbar(); UI.updateHint();
 }
 export function setCat(i: number) { curCat = (i + CATS.length) % CATS.length; UI.renderHotbar(); }

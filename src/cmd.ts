@@ -199,7 +199,7 @@ function upgradeOne(old: Ent, type: string, z: number) {
 function layRails(c: Cmd) {
   const d = BLD.rail;
   if (!G.S.unlocked.has('rail')) return;
-  const tiles: number[][] = Array.isArray(c.tiles) ? c.tiles.slice(0, 600) : [], junc: number[][] = Array.isArray(c.junc) ? c.junc.slice(0, 40) : [];
+  const tiles: number[][] = Array.isArray(c.tiles) ? c.tiles.slice(0, 600) : [], junc: number[][] = Array.isArray(c.junc) ? c.junc.slice(0, 300) : [];
   const valid = (p: number) => p > 0 && p < 64 && (p & (p - 1)) === 0;   // exactly one route
   const blockFree = (x: number, y: number) => { if ((x | y) & 1) return false; for (let j = 0; j < RS; j++) for (let i = 0; i < RS; i++) if (entAt(x + i, y + j) || !tileFree(x + i, y + j, 'rail', 0)) return false; return true; };
   for (const [x, y, p] of tiles) if (!valid(p) || !blockFree(x, y)) { toast('Something is in the way of that track', 'bad'); sfx('err'); return; }
