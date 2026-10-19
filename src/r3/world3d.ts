@@ -8,7 +8,8 @@ import { hexCol, rgba } from '../gl';
 import { curPhase } from '../progress';
 import { ensureFresh, multiIn } from '../sim';
 import { H, W } from '../terrain';
-import { railUse, signalRed, trainPoints, WAGON_CAP } from '../trains';
+import { railUse, signalRed, trainAt, trainPoints, tripLegs, WAGON_CAP } from '../trains';
+import { railCenter } from '../railcurves';
 import { nightness } from '../daynight';
 import { DX, DY, easeOutBack, hash2 } from '../util';
 import { parts, proj, spawn, view } from '../view';
@@ -891,6 +892,37 @@ export function update3D(time: number, real: number, dt: number, labels: Label3[
   for (const se of [view.inspect, view.hover]) if (se && G.ents.has(se.id)) { ZO = (se.z || 0) * LH; pushPortArrows(DL, se, 'sel', true); }
   // power areas
   ZO = view.level * LH;
+  // a train's trip: the selected train (or the one under the pointer) shows the way it will drive, stop by stop —
+  // dashes flowing in its direction of travel (gold to the next stop, blue after), numbered stops, and the places it
+  // will reverse
+  {
+    const tr: any = view.inspectTrain && G.trains.includes(view.inspectTrain) ? view.inspectTrain : trainAt(view.mouse.wx, view.mouse.wy);
+    if (tr) {
+      const now = real;
+      if (!tr._legs || now - (tr._legsT || 0) > 0.5) { tr._legs = tripLegs(tr); tr._legsT = now; }
+      const plane = mdl('routeSeg', () => ({ geo: new THREE.BoxGeometry(1, 0.06, 0.2), mats: [] })).geo;
+      (tr._legs as any[]).forEach((l, k) => {
+        const st = G.ents.get(l.st);
+        if (l.fail) { const p = railCenter(tr.cells[0]); labels.push({ x: p[0], y: p[1], z: 3.6, t: '✕ no route to ' + (st ? st.name : '?'), c: '#ff6a5a' }); return; }
+        const pts = [l.from, ...l.path].map((c: number) => railCenter(c));
+        COL.set(k === 0 ? '#ffd04a' : '#5ab4ff');
+        let d = 0;
+        for (let q = 0; q + 1 < pts.length; q++) {
+          const a = pts[q], b = pts[q + 1], len = Math.hypot(b[0] - a[0], b[1] - a[1]);
+          if (len < 1e-3) continue;
+          const pieces = Math.max(1, Math.round(len / 0.5)), pl = len / pieces;
+          for (let m = 0; m < pieces; m++, d += pl) {
+            if (((d - now * 4) % 1.6 + 1.6) % 1.6 > 0.95) continue;   // gaps that march along with the train
+            const mx = a[0] + (b[0] - a[0]) * (m + 0.5) / pieces, my = a[1] + (b[1] - a[1]) * (m + 0.5) / pieces;
+            DL.get('trip', plane, routeMat, false, true).push(compose(mx, 0.45, my, -Math.atan2(b[1] - a[1], b[0] - a[0]), pl * 0.9, 1, k === 0 ? 3.6 : 2.6), COL);
+          }
+        }
+        const end = pts[pts.length - 1];
+        if (st && end) labels.push({ x: end[0], y: end[1], z: 3.4, t: `${k + 1} · ${st.name}`, c: k === 0 ? '#ffd04a' : '#9fd2ff' });
+        if (l.rev) { const p = pts[0]; labels.push({ x: p[0], y: p[1], z: 4.2, t: '↺ reverses here', c: '#ff9a3a' }); }
+      });
+    }
+  }
   // routes through junctions and level crossings: green = free, amber = a train is going (or about to go) through,
   // red = that route has to wait until it's past. On the piece under the pointer, and on every junction / crossing
   // in view while holding the Railway or a signal.

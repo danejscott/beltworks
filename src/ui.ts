@@ -15,7 +15,7 @@ import { chooseFolder, FS, reconnectFolder } from './filesaves';
 import { clockPow, myCraft, ensureFresh, flushNet, handTime, hist, inCap, outCap, PURITY, rate, setRecipe, stats } from './sim';
 import { BIOME_NAMES, biomeAtTiles, H, HX, HY, isWater, RES_BIOMES, TILE_NAMES, TT, W } from './terrain';
 import { addWagon, buildRoute, removeTrain, removeWagon, trainCap, wagonsOf } from './trains';
-import { railUse } from './trains';
+import { railUse, tripLegs } from './trains';
 import { openEnd } from './railplan';
 import { $, clamp, DX, DY, esc, fmt, fmtR } from './util';
 import { s2w, view } from './view';
@@ -494,10 +494,18 @@ function pipeAdvice(n: any): string {
   return '';
 }
 function trainDyn(t: Train) {
-  const stTxt: Record<string, string> = { moving: 'Driving', loading: 'At station', nopath: 'No route ahead! Trains cannot turn around, so the line needs a loop or a turnaround at its ends (Quick Route builds loops)', noschedule: 'No schedule', stopped: 'Stopped', idle: 'Planning route' };
+  const stTxt: Record<string, string> = { moving: 'Driving', loading: 'At station', nopath: 'No route! Check the track connects (its planned trip is drawn on the map)', noschedule: 'No schedule', stopped: 'Stopped', idle: 'Planning route' };
   const st = G.ents.get(t.sched[t.si]);
   let h = `<div class="row">${status(t.state === 'nopath' ? 'block' : (t as any).sigWait ? 'starve' : t.state === 'moving' || t.state === 'loading' ? 'work' : 'idle', (t as any).sigWait ? 'Waiting at a red signal' : (t as any).queued && t.state === 'moving' ? 'Waiting in line for the station' : stTxt[t.state] || t.state)}</div>`;
   if (st) h += `<div class="sm">Next: ${esc(st.name)} · ${fmtR(t.v * 2)} tiles/s</div>`;
+  // the trip ahead, as it's drawn on the track: where it goes, and where it has to reverse
+  const legs = tripLegs(t);
+  if (legs.length) {
+    h += '<div class="sm" style="margin:4px 0">🗺 Trip: ' + legs.map((l, k) => {
+      const s2 = G.ents.get(l.st), nm = s2 ? esc(s2.name) : '?';
+      return (l.rev ? '<span style="color:#ff9a3a">↺ reverses</span> → ' : '') + (l.fail ? `<span class="neg">✕ no route to ${nm}</span>` : `<b style="color:${k ? '#7fc4ff' : '#ffd04a'}">${k + 1}. ${nm}</b> <span class="dim">(${Math.round(l.path.length * 2)} tiles)</span>`);
+    }).join(' → ') + '</div>';
+  }
   h += `<div class="row">Cargo ${fmt(t.tot)} / ${fmt(trainCap(t))}</div><div class="bar"><i style="width:${trainCap(t) ? t.tot / trainCap(t) * 100 : 0}%"></i></div><div class="chips">`;
   for (const k in t.cargo) h += `<span class="chip">${ic(k, 18)}${fmt(t.cargo[k])}</span>`;
   return h + '</div>';

@@ -191,15 +191,55 @@ function planRoute(t: Train, st: Ent): boolean {
   const goals = stationGoals(st);
   if (!goals.size) return false;
   if (goals.has(t.cells[0])) { t.route = []; return true; }
-  // trains only ever drive forwards (a real train can't flip round on the spot): the way to the next station has to
-  // lie ahead, through junctions, loops or turnarounds
+  if (!t.oneWay && goals.has(t.cells[t.cells.length - 1])) { t.cells.reverse(); t.frac = 0; t.route = []; return true; }
   const blocked = new Set<number>();
   for (const o of G.trains) if (o !== t) for (const c of o.cells) blocked.add(c);
+  const tryFrom = (rev: boolean, blk: Set<number> | null) => {
+    const cells = rev ? [...t.cells].reverse() : t.cells;
+    const entry = sideToward(cells[0], cells[1]);
+    const p = bfs(cells[0], entry, goals, blk);
+    return p && st.plat ? alongPlatform(p, goals, blk) : p;
+  };
   for (const blk of [blocked, null]) {
-    const p = bfs(t.cells[0], sideToward(t.cells[0], t.cells[1]), goals, blk);
-    if (p) { t.route = st.plat ? alongPlatform(p, goals, blk) : p; return true; }
+    let p = tryFrom(false, blk);
+    if (p) { t.route = p; return true; }
+    if (t.oneWay) continue; // loop trains never reverse
+    p = tryFrom(true, blk);
+    if (p) { t.cells.reverse(); t.frac = 0; t.route = p; return true; }
   }
   return false;
+}
+/** one leg of a train's trip: from block `from` along `path` to station `st`; rev = it reverses before setting off */
+export interface Leg { st: number; from: number; path: number[]; rev: boolean; fail?: boolean }
+/** the train's whole trip ahead, stop by stop (once round its schedule), worked out the same way it will drive it */
+export function tripLegs(t: Train): Leg[] {
+  const legs: Leg[] = [];
+  if (!t.sched.length || t.cells.length < 2) return legs;
+  let cells = t.cells.slice();
+  const n = t.sched.length;
+  for (let k = 0; k < Math.min(n, 8); k++) {
+    const st = G.ents.get(t.sched[(t.si + k) % n]);
+    if (!st) break;
+    const goals = stationGoals(st);
+    let path: number[] | null = null, rev = false;
+    if (k === 0 && t.state === 'moving' && t.route.length) path = t.route.slice();
+    else if (goals.has(cells[0])) path = [];
+    else if (!t.oneWay && goals.has(cells[cells.length - 1])) { cells.reverse(); path = []; rev = true; }
+    else {
+      path = bfs(cells[0], sideToward(cells[0], cells[1]), goals, null);
+      if (!path && !t.oneWay) {
+        const rc = [...cells].reverse();
+        path = bfs(rc[0], sideToward(rc[0], rc[1]), goals, null);
+        if (path) { cells = rc; rev = true; }
+      }
+      if (path && st.plat) path = alongPlatform(path, goals, null);
+    }
+    if (!path) { legs.push({ st: st.id, from: cells[0], path: [], rev: false, fail: true }); break; }
+    legs.push({ st: st.id, from: cells[0], path, rev });
+    const seq = [...cells.slice().reverse(), ...path];   // tail … head … the way it drives
+    cells = seq.slice(-t.cells.length).reverse();
+  }
+  return legs;
 }
 
 /** is another train using station st ahead of t? (loading there, or heading there and closer) — then t waits in line */
