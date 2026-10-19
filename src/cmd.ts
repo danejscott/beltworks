@@ -5,6 +5,7 @@ import { BLD, Cost, HANDCRAFT, ITEMS, RECIPES } from './data';
 import { H, isWater, TT, W } from './terrain';
 import { DX, DY } from './util';
 import { RS } from './railgrid';
+import { planSmooth } from './railplan';
 import { addWagon, buildRoute, addTrainToLine, lineOf, placeTrain, removeTrain, removeWagon, canPlaceTrain } from './trains';
 import { buyTruck, removeTruck } from './trucks';
 import { buyShip, removeShip } from './ships';
@@ -195,12 +196,32 @@ function upgradeOne(old: Ent, type: string, z: number) {
   return e;
 }
 
+/** smooth a stretch of track: take up the plain pieces between two points and re-lay it as gentle curves */
+function smoothRails(c: Cmd) {
+  if (!G.S.unlocked.has('rail')) return;
+  const sm: any = planSmooth(+c.ax, +c.ay, +c.bx, +c.by);
+  if (sm.why !== undefined) { if (sm.why) { toast(sm.why, 'bad'); sfx('err'); } return; }
+  const taken: { x: number; y: number; pairs: number; o: number }[] = [];
+  for (const b of sm.remove) { const r = entAt(b.x, b.y); if (!r || r.type !== 'rail' || !mine(r)) { toast('That track is not yours', 'bad'); return; } }
+  for (const b of sm.remove) { const r = entAt(b.x, b.y)!; taken.push({ x: r.x, y: r.y, pairs: r.pairs, o: r.o || 0 }); remove(r, { quiet: true }); }
+  const before = G.railRev;
+  layRails({ k: 'rails', tiles: sm.plan.tiles.map((q: any) => [q.x, q.y, q.p]), junc: sm.plan.junc.map((q: any) => [q.x, q.y, q.p]) });
+  const laid = sm.plan.tiles.every((q: any) => { const r = entAt(q.x, q.y); return r && r.type === 'rail'; });
+  if (!laid) {
+    // couldn't lay the new route (materials?): put the old track back as it was
+    for (const q of sm.plan.tiles) { const r = entAt(q.x, q.y); if (r && r.type === 'rail' && !taken.some(t => t.x === r.x && t.y === r.y)) remove(r, { quiet: true }); }
+    for (const t of taken) { if (entAt(t.x, t.y)) continue; pay(BLD.rail.cost); const r = place('rail', t.x, t.y, 0, { quiet: true }); r.pairs = t.pairs; markDirty('rail', r); }
+    return;
+  }
+  void before;
+  toast(`〰 Smoothed: ${sm.remove.length} pieces re-laid as ${sm.plan.tiles.length}`, 'good');
+}
 /** lay a planned stretch of railway (see railplan.ts): all of it or nothing, so a half-built line never dead-ends */
 function layRails(c: Cmd) {
   const d = BLD.rail;
   if (!G.S.unlocked.has('rail')) return;
   const tiles: number[][] = Array.isArray(c.tiles) ? c.tiles.slice(0, 600) : [], junc: number[][] = Array.isArray(c.junc) ? c.junc.slice(0, 300) : [];
-  const valid = (p: number) => p > 0 && p < 64 && (p & (p - 1)) === 0;   // exactly one route
+  const valid = (p: number) => p > 0 && p < 64;   // one route, or the two of a wye's split
   const blockFree = (x: number, y: number) => { if ((x | y) & 1) return false; for (let j = 0; j < RS; j++) for (let i = 0; i < RS; i++) if (entAt(x + i, y + j) || !tileFree(x + i, y + j, 'rail', 0)) return false; return true; };
   for (const [x, y, p] of tiles) if (!valid(p) || !blockFree(x, y)) { toast('Something is in the way of that track', 'bad'); sfx('err'); return; }
   for (const [x, y, p] of junc) { const e = entAt(x, y); if (!e || e.type !== 'rail' || e.x !== x || e.y !== y || !mine(e) || !valid(p)) return; }
@@ -348,6 +369,7 @@ function exec(c: Cmd): any {
     // ---- building
     case 'place': return placeOne(c);
     case 'rails': return layRails(c);
+    case 'railsmooth': return smoothRails(c);
     case 'drag': return dragLay(c.type, (c.path as number[][]).slice(0, 400).map(([x, y, d]) => ({ x, y, d })), c.z || 0);
     case 'found': return foundations(c.x0, c.y0, c.x1, c.y1, c.z);
     case 'decon': return deconRect(c.x0, c.y0, c.x1, c.y1, c.z || 0);

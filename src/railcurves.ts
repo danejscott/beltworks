@@ -8,10 +8,10 @@ import { G, PAIRS } from './world';
 import { W } from './terrain';
 import { RS, rStep } from './railgrid';
 
-export interface RChain { tiles: number[]; curve: [number, number][]; centers: [number, number][]; loop: boolean }
+export interface RChain { tiles: number[]; curve: [number, number][]; centers: [number, number][]; loop: boolean; pairs: number[] }
 let cacheRev = -1;
 let chains: RChain[] = [];
-let byTile = new Map<number, { c: RChain; j: number }>();
+let byTile = new Map<number, { c: RChain; j: number }[]>();
 
 /** widest bend radius (tiles) */
 const R_MAX = 9 * RS;
@@ -110,87 +110,100 @@ function nearestOn(curve: Pt[], p: Pt, hint: number): [Pt, number] {
   return [best, bi];
 }
 
+// Every route through a block (a junction has several) is a node; nodes join up into chains wherever a side is used
+// by exactly one route on both blocks either side of it. So a junction's every route is smoothed together with the
+// track leading into it, and chains only break at switch points (where routes split), never at a sharp corner.
+const sidesOfPair = (k: number): [number, number] => [PAIRS[k][0], PAIRS[k][1]];
+/** the one route of block i that uses side s (or -1 if none / several: a switch point) */
+function routeOn(i: number, s: number): number {
+  const r = rail(i);
+  if (!r || r.x + r.y * W !== i) return -1;
+  let found = -1;
+  for (let k = 0; k < 6; k++) if (r.pairs & (1 << k) && (PAIRS[k][0] === s || PAIRS[k][1] === s)) { if (found >= 0) return -1; found = k; }
+  return found;
+}
 function rebuild() {
   cacheRev = G.railRev;
   chains = []; byTile = new Map();
   if (!G.L) return;
   const seen = new Set<number>();
+  /** the node through side s of node (i, k), if the track carries straight on into exactly one route there */
+  const next = (i: number, k: number, s: number): [number, number] | null => {
+    if (routeOn(i, s) !== k) return null;
+    const n = step(i, s), k2 = routeOn(n, (s + 2) & 3);
+    return k2 >= 0 ? [n, k2] : null;
+  };
+  const mid = (i: number, s: number): Pt => [cx(i) + DX[s] * RS / 2, cy(i) + DY[s] * RS / 2];
   for (const r of G.L.rails) {
-    const start = r.y * W + r.x;
-    if (seen.has(start) || !sidesOf(start)) continue;
-    // walk back to the start of this chain (or all the way round a loop)
-    let cur = start, from = -1, loop = false, endSide = -1;
-    for (let guard = 0; guard < 200000; guard++) {
-      const sd = sidesOf(cur)!;
-      const s = sd[0] === from ? sd[1] : sd[0];   // keep going away from where we came from
-      if (!connects(cur, s) || !sidesOf(step(cur, s))) { endSide = s; break; }   // dead end or junction: the chain starts here
-      const nx = step(cur, s);
-      if (nx === start) { loop = true; endSide = (s + 2) & 3; cur = start; break; }
-      from = (s + 2) & 3; cur = nx;
-    }
-    // now walk forward from that end, collecting the chain
-    const tiles: number[] = [];
-    let prevSide = endSide;
-    let t = cur;
-    for (let guard = 0; guard < 200000; guard++) {
-      tiles.push(t); seen.add(t);
-      const sd = sidesOf(t)!;
-      const s = sd[0] === prevSide ? sd[1] : sd[0];
-      if (!connects(t, s)) break;
-      const nx = step(t, s);
-      if (!sidesOf(nx) || seen.has(nx)) break;
-      prevSide = (s + 2) & 3; t = nx;
-    }
-    const tileSet = new Set(tiles);
-    const n = tiles.length;
-    // the path through the points where the track crosses from tile to tile (straight runs and 45° diagonals)
-    const mid = (i: number, j: number): Pt => [(cx(i) + cx(j)) / 2, (cy(i) + cy(j)) / 2];
-    let P: Pt[];
-    if (loop) P = tiles.map((tt, j) => mid(tiles[(j - 1 + n) % n], tt));
-    else {
-      const a = tiles[0], sa = sidesOf(a)!, na = n > 1 ? tiles[1] : -1;
-      const outA = step(a, sa[0]) === na ? sa[1] : sa[0];
-      const b = tiles[n - 1], sb = sidesOf(b)!, nb = n > 1 ? tiles[n - 2] : -1;
-      const outB = n === 1 ? (outA === sb[0] ? sb[1] : sb[0]) : (step(b, sb[0]) === nb ? sb[1] : sb[0]);
-      P = [[cx(a) + DX[outA] * RS / 2, cy(a) + DY[outA] * RS / 2]];
-      for (let j = 0; j + 1 < n; j++) P.push(mid(tiles[j], tiles[j + 1]));
-      P.push([cx(b) + DX[outB] * RS / 2, cy(b) + DY[outB] * RS / 2]);
-    }
-    // bends beside other track get only a little room, so curves never reach over it
-    const cutAt = (k: number) => {
-      const ti = tiles[Math.max(0, Math.min(n - 1, loop ? k : k - 1))], x = ti % W, y = (ti / W) | 0;
-      for (let dy = -RS; dy <= RS; dy += RS) for (let dx = -RS; dx <= RS; dx += RS) {
-        const ni = (y + dy) * W + x + dx;
-        if ((dx || dy) && rail(ni) && !tileSet.has(ni)) return CUT_NEAR;
+    const i0 = r.y * W + r.x;
+    for (let k0 = 0; k0 < 6; k0++) {
+      if (!(r.pairs & (1 << k0)) || seen.has(i0 * 8 + k0)) continue;
+      // walk back to the start of this chain (or all the way round a loop)
+      let ci = i0, ck = k0, out = sidesOfPair(k0)[0], loop = false;
+      for (let guard = 0; guard < 200000; guard++) {
+        const nx = next(ci, ck, out);
+        if (!nx) break;
+        if (nx[0] === i0 && nx[1] === k0) { loop = true; break; }
+        const [a, b] = sidesOfPair(nx[1]), into = (out + 2) & 3;
+        ci = nx[0]; ck = nx[1]; out = a === into ? b : a;
       }
-      return CUT;
-    };
-    const curve = filletLine(P, loop, cutAt);
-    // where each tile's track is (for trains): the curve point nearest the middle of that tile's piece of path
-    const centers: Pt[] = [];
-    let hint = 0;
-    for (let j = 0; j < n; j++) {
-      const a = P[j], b = loop ? P[(j + 1) % n] : P[j + 1];
-      const [q, i] = nearestOn(curve, [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], hint);
-      centers.push(q); hint = i;
+      // now walk forward from that end, collecting the chain: nodes and the side each is entered by
+      const tiles: number[] = [], pairs: number[] = [], entries: number[] = [];
+      let ti = ci, tk = ck, ent = out;
+      for (let guard = 0; guard < 200000; guard++) {
+        tiles.push(ti); pairs.push(tk); entries.push(ent); seen.add(ti * 8 + tk);
+        const [a, b] = sidesOfPair(tk), ex = a === ent ? b : a;
+        const nx = next(ti, tk, ex);
+        if (!nx || seen.has(nx[0] * 8 + nx[1])) break;
+        ti = nx[0]; tk = nx[1]; ent = (ex + 2) & 3;
+      }
+      const tileSet = new Set(tiles);
+      const n = tiles.length;
+      const exitOf = (j: number) => { const [a, b] = sidesOfPair(pairs[j]); return a === entries[j] ? b : a; };
+      // the path through the points where the track crosses from block to block (straight runs and 45° diagonals)
+      const P: Pt[] = loop ? tiles.map((t, j) => mid(t, entries[j])) : [mid(tiles[0], entries[0]), ...tiles.map((t, j) => mid(t, exitOf(j)))];
+      // bends beside other track get only a little room, so curves never reach over it
+      const cutAt = (q: number) => {
+        const t = tiles[Math.max(0, Math.min(n - 1, loop ? q : q - 1))], x = t % W, y = (t / W) | 0;
+        for (let dy = -RS; dy <= RS; dy += RS) for (let dx = -RS; dx <= RS; dx += RS) {
+          const ni = (y + dy) * W + x + dx;
+          if ((dx || dy) && rail(ni) && !tileSet.has(ni)) return CUT_NEAR;
+        }
+        return CUT;
+      };
+      const curve = filletLine(P, loop, cutAt);
+      // where each node's track is (for trains): the curve point nearest the middle of that node's piece of path
+      const centers: Pt[] = [];
+      let hint = 0;
+      for (let j = 0; j < n; j++) {
+        const a = P[j], b = loop ? P[(j + 1) % n] : P[j + 1];
+        const [q, h] = nearestOn(curve, [(a[0] + b[0]) / 2, (a[1] + b[1]) / 2], hint);
+        centers.push(q); hint = h;
+      }
+      const c: RChain = { tiles, curve, centers, loop, pairs };
+      chains.push(c);
+      tiles.forEach((t, j) => { let l = byTile.get(t); if (!l) byTile.set(t, l = []); l.push({ c, j }); });
     }
-    const c: RChain = { tiles, curve, centers, loop };
-    chains.push(c);
-    tiles.forEach((ti, j) => byTile.set(ti, { c, j }));
   }
 }
 export function railChains() {
   if (cacheRev !== G.railRev) rebuild();
   return { chains, byTile };
 }
-/** where the (smoothed) track passes through tile i */
-export function railCenter(i: number): [number, number] {
-  const h = railChains().byTile.get(i);
-  return h ? h.c.centers[h.j] : [cx(i), cy(i)];
+/** where the (smoothed) track passes through block i — on the route that leads toward block `toward`, if given */
+export function railCenter(i: number, toward = -1): [number, number] {
+  const l = railChains().byTile.get(i);
+  if (!l || !l.length) return [cx(i), cy(i)];
+  if (toward >= 0 && l.length > 1) {
+    for (let s = 0; s < 4; s++) if (step(i, s) === toward) {
+      for (const h of l) { const k = h.c.pairs[h.j]; if (PAIRS[k][0] === s || PAIRS[k][1] === s) return h.c.centers[h.j]; }
+    }
+  }
+  return l[0].c.centers[l[0].j];
 }
-/** a point fraction f of the way from tile a's track to tile b's (for trains) */
+/** a point fraction f of the way from block a's track to block b's (for trains) */
 export function railPos(a: number, b: number, f: number): [number, number] {
-  const A = railCenter(a), B = a === b ? A : railCenter(b);
+  const A = railCenter(a, b), B = a === b ? A : railCenter(b, a);
   return [A[0] + (B[0] - A[0]) * f, A[1] + (B[1] - A[1]) * f];
 }
 /** the smooth line a planned stretch of track will have (placement preview): tile centres from start to end, and

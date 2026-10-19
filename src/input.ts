@@ -20,7 +20,8 @@ import { DX, DY } from './util';
 import { snapR } from './railgrid';
 import { isWater } from './terrain';
 import { MP } from './teams';
-import { openEnd, planRail, RailPlan, snapEnd } from './railplan';
+import { openEnd, planRail, planSmooth, RailPlan, snapEnd } from './railplan';
+let smoothKey = '', smoothCache: any = null;
 
 // ---------------------------------------------------------------------------
 /** a blueprint: buildings (o.z = floor, counted up from the lowest floor copied) and foundation decks (fl: [x, y, floor]) */
@@ -336,6 +337,17 @@ export function updateGhosts() {
   view.sel = null;
   const t = tool.t, m = view.mouse;
   view.hover = null; view.powerPreview = null; view.railPlan = null; view.zone = null;
+  if (t && t.k === 'smooth') {
+    // smoothing track: first pick a point on a line, then a second; show what will be re-laid
+    const r = entAt(m.tx, m.ty), onRail = !!r && r.type === 'rail';
+    if (!t.a) { if (onRail) view.railPlan = { hoverEnd: { x: r!.x, y: r!.y, side: 0 } }; }
+    else if (onRail && !(r!.x === t.a.x && r!.y === t.a.y)) {
+      const k = `${t.a.x},${t.a.y},${r!.x},${r!.y},${G.railRev}`;
+      if (k !== smoothKey) { smoothKey = k; smoothCache = planSmooth(t.a.x, t.a.y, r!.x, r!.y); }
+      const sm: any = smoothCache;
+      view.railPlan = sm && sm.plan ? { ...sm.plan, smoothRemove: sm.remove } : { hoverEnd: t.a, why: sm && sm.why };
+    } else view.railPlan = { hoverEnd: t.a };
+  }
   if (!t || t.k === 'decon' || t.k === 'paint') {
     const e = pickAt(m.wx, m.wy);
     if (e && m.inCanvas && !panning) view.hover = e;
@@ -478,6 +490,16 @@ export function initInput(canvas: HTMLCanvasElement) {
       if (t.k === 'bpsel') { drag = { sx: m.tx, sy: m.ty, axis: null, kind: 'rect' }; return; }
       if (t.k === 'paste') { doPaste(); return; }
       if (t.k === 'paint') { paintAt(); return; }
+      if (t.k === 'smooth') {
+        const r = entAt(m.tx, m.ty);
+        if (!r || r.type !== 'rail') { UI.toast('Click a point on your track', 'bad'); sfx('err'); return; }
+        if (!t.a || (t.a.x === r.x && t.a.y === r.y)) { setTool({ k: 'smooth', a: { x: r.x, y: r.y } }); sfx('click'); return; }
+        const sm: any = planSmooth(t.a.x, t.a.y, r.x, r.y);
+        if (sm.why !== undefined) { if (sm.why) { UI.toast(sm.why, 'bad'); sfx('err'); } return; }
+        run({ k: 'railsmooth', ax: t.a.x, ay: t.a.y, bx: r.x, by: r.y });
+        setTool({ k: 'smooth', a: null }); smoothKey = '';
+        return;
+      }
       const d = BLD[t.type];
       if (d.kind === 'foundation' || d.kind === 'slab') { drag = { sx: m.tx, sy: m.ty, axis: null, kind: 'rect' }; return; }
       if ((d.kind === 'belt' || d.kind === 'pipe' || d.kind === 'rail') && !d.dz) { drag = { sx: m.tx, sy: m.ty, axis: null, kind: d.kind }; return; }

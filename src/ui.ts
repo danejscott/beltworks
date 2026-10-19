@@ -90,6 +90,7 @@ export function renderHotbar() {
   });
   const tk = tool.t && tool.t.k;
   h += `<div class="sep"></div><div class="slot tool ${tk === 'decon' ? 'sel' : ''}" data-act="decon" data-tip="tool:decon"><span class="k">X</span><span class="big" style="color:#ef5b5b">✖</span></div>`;
+  h += `<div class="slot tool ${tk === 'smooth' ? 'sel' : ''}" data-act="smooth" data-tip="tool:smooth"><span class="k"></span><span class="big" style="color:#9fd2ff">〰</span></div>`;
   h += `<div class="slot tool ${tk === 'paint' ? 'sel' : ''}" data-act="paint" data-tip="tool:paint"><span class="k">⇧Q</span><span class="big" style="color:#b48cff">🖌</span></div>`;
   h += `<div class="slot tool ${tk === 'bpsel' || tk === 'paste' ? 'sel' : ''}" data-act="copy" data-tip="tool:copy"><span class="k">^C</span><span class="big" style="color:#8ad0ff">⧉</span></div>`;
   h += `<div class="slot tool" data-act="open:bp" data-tip="tool:bp"><span class="k">B</span><span class="big" style="color:#8ad0ff">▦</span></div>`;
@@ -112,6 +113,7 @@ export function updateHint() {
   else if (t.k === 'decon') h = '<b>Deconstruct:</b> click one thing, or drag a box (also clears trees). 100% refund · <b>X</b>/<b>Right-click</b> exit';
   else if (t.k === 'paint') h = t.src ? `<b>Copy settings</b> of a ${esc(BLD[t.src.type].n)}${t.src.r ? ` (${esc(RECIPES[t.src.r]?.n || t.src.r)})` : ''}: click or drag over others of the same kind · <b>Esc</b>/<b>Right-click</b> done` : '<b>Copy settings:</b> click the building to copy from (recipe, clock speed, filters) · <b>Esc</b> cancel';
   else if (t.k === 'bpsel') h = '<b>Blueprint:</b> drag a box around what you want to copy · <b>Esc</b> cancel';
+  else if (t.k === 'smooth') { const rp: any = view.railPlan; h = !t.a ? '<b>Smooth track</b> · click a point on a line of track, then a second point further along — the plain track between is re-laid as gentle curves' : rp && rp.ok ? `<b>Smooth track</b> · click to re-lay ${rp.smoothRemove.length} pieces as ${rp.tiles.length} smooth ones · <b>Right-click</b> cancel` : `<b>Smooth track</b> · now click a second point on the same line${rp && rp.why ? ` · <span class="neg">${esc(rp.why)}</span>` : ''} · <b>Right-click</b> cancel`; }
   else if (t.k === 'paste') h = `<b>Pasting ${esc(t.bp.name || 'copy')}</b> (${t.bp.ents.length} pieces${bpFloors(t.bp) > 1 ? ` on ${bpFloors(t.bp)} floors` : ''}${t.bp.fl?.length ? ` + ${t.bp.fl.length} foundation tiles` : ''}) · click to place · <b>R</b> rotate · cost ${costHTML(bpCost(t.bp))} · <b>Right-click</b> done`;
   else {
     const d = BLD[t.type], di = dragInfo();
@@ -123,7 +125,7 @@ export function updateHint() {
       joins = (nj ? ` · <span class="pos">joins existing track at ${nj} junction${nj > 1 ? 's' : ''}</span>` : '') + (nc ? ` · <span class="warn">⚠ ${nc} level crossing${nc > 1 ? 's' : ''} (trains take turns there)</span>` : '');
     }
     if (d.kind === 'rail' && rp && rp.pts) h = rp.ok ? `Laying <b>${rp.tiles.length}</b> × Railway · ${costHTML(Object.fromEntries(Object.entries(d.cost).map(([k, v]) => [k, (v as number) * rp.tiles.length]))) || 'free'}${rp.snapEnd ? ' · <b style="color:#7dffa0">joins the track there</b>' : ''}${rp.junc.length ? ' · makes a junction' : ''} · release to build${joins}` : `<span class="neg">${esc(rp.why || 'Cannot lay track there')}</span>`;
-    else if (d.kind === 'rail') h = '<b>Railway</b> · drag from a <b>track end</b> (green marker) to extend it, or from open ground · drop near another end to <b>join</b> it (snaps) · start or end on a straight piece to make a <b>junction</b> · curves are worked out for you';
+    else if (d.kind === 'rail') h = '<b>Railway</b> · drag from a <b>track end</b> (green marker) to extend it, or from open ground · drop near another end to <b>join</b> it (snaps) · start or end on a straight piece to make a <b>junction</b> (it splits both ways, so trains can turn left or right) · curves stay gentle (45° at a time) · <b>〰</b> smooths old track';
     else if (di) h = `Laying <b>${di.n}</b> × ${d.n} · ${costHTML(di.cost) || 'free'} · <b>R</b> flip corner · release to build`;
     else if (d.kind === 'belt' || d.kind === 'pipe' || d.kind === 'rail') h = `<b>${d.n}</b> · click-drag to lay a line · <b>R</b> rotate · ${d.kind === 'rail' ? 'drag off an existing track to make a junction' : 'drag over old ones to upgrade'} · <b>Right-click</b> cancel`;
     else if (d.kind === 'train') h = '<b>Locomotive</b> · click a railway (needs 4 connected pieces of track) · <b>R</b> flip direction';
@@ -945,6 +947,7 @@ function renderTip() {
     if (tp.startsWith('bld:')) h = bldTip(tp.slice(4));
     else if (tp.startsWith('item:')) { const k = tp.slice(5), it = ITEMS[k]; h = `${ic(k, 20)} <b>${it.n}</b><div class="sm">Have ${fmt(G.S.inv[k] || 0)} · sink value ${fmt(it.val || 0)} pts</div><div class="sm">Made: ${fmtR(rate(stats.P, k))}/min · Used: ${fmtR(rate(stats.C, k))}/min</div>`; }
     else if (tp === 'tool:decon') h = '<b>Deconstruct</b> <kbd>X</kbd><div class="sm">Click one thing or drag a box. Full refund.</div>';
+    else if (tp === 'tool:smooth') h = '<b>Smooth track</b><div class="sm">Click a point on a line of track, then a second point further along: the plain track between is taken up and re-laid as gentle curves (if a smoother route fits). Junctions and signals stay as they are.</div>';
     else if (tp === 'tool:paint') h = '<b>Copy settings</b> <kbd>Shift+Q</kbd><div class="sm">Pick a machine, then click others of the same kind to give them its recipe, clock speed and filters.</div>';
     else if (tp === 'tool:copy') h = '<b>Copy area</b> <kbd>Ctrl+C</kbd><div class="sm">Drag a box, then click to paste copies.</div>';
     else if (tp === 'tool:bp') h = '<b>Blueprint library</b> <kbd>B</kbd>';
@@ -1027,6 +1030,7 @@ function act(cmd: string, a: string, b: string) {
     case 'decon': setTool(tool.t && tool.t.k === 'decon' ? null : { k: 'decon' }); sfx('click'); break;
     case 'copy': setTool({ k: 'bpsel', quick: true }); sfx('click'); break;
     case 'paint': setTool(tool.t && tool.t.k === 'paint' ? null : { k: 'paint', src: null }); sfx('click'); break;
+    case 'smooth': setTool(tool.t && tool.t.k === 'smooth' ? null : { k: 'smooth', a: null }); sfx('click'); break;
     case 'recipe': if (e) { run({ k: 'recipe', id: e.id, r: a || null }); inspKey = ''; } break;
     case 'rot': if (e) run({ k: 'rot', id: e.id, dir: 1 }); break;
     case 'copyEnt': if (e) { setTool({ k: 'build', type: e.type, recipe: e.recipe || null, clock: e.clock, filt: e.filt, mode: e.mode }); closeInspect(); } break;

@@ -995,6 +995,8 @@ function updateGhosts(real: number) {
       }
     }
     if (rp.snapEnd) marker(rp.snapEnd.x, rp.snapEnd.y, rp.ok);
+    // a wye junction the plan will build: its pieces as ghost track
+    if (rp.tiles) for (const t of rp.tiles) if (t.w) pushRail(GL, t.x, t.y, t.p, rp.ok ? ghostOK : ghostBad, rp.ok ? 'gok:' : 'gbad:');
     for (const j of rp.junc || []) marker(j.x, j.y, rp.ok);
   }
   ZO = view.level * LH;
