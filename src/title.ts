@@ -9,6 +9,8 @@ import { loadRecords } from './progress';
 import { $, esc } from './util';
 import { me, recentServers, saveMe, serverURL, setServerURL } from './net';
 import { fmtCode, normCode, PLAYER_COLS } from './online';
+import { canPromptInstall, downloadGame, initInstall, installGuideHTML, isFileCopy, isInstalled, isIOS, promptInstall, shareText } from './getgame';
+import { GAME_URL } from './codes';
 
 export const title = { open: false };
 export interface NewWorldOpts { name: string; size: number; mode: string; dayNight: boolean; res?: string; col?: string }
@@ -50,7 +52,7 @@ export async function showTitle(h: typeof handlers) {
     <div class="tlogo">BELTWORKS</div><div class="ttag">Build it. Belt it. Automate everything.</div>
     <div class="tcols">
       <div class="tcol"><h3>Your worlds</h3><div class="wlist">${list}</div>
-        <div class="row" style="margin-top:10px"><button data-tact="import">⬆ Import a save file</button></div>${folderHTML()}${bestsHTML()}</div>
+        <div class="row" style="margin-top:10px"><button data-tact="import">⬆ Import a save file</button></div>${getGameHTML()}${folderHTML()}${bestsHTML()}</div>
       <div class="tcol"><div class="ttabs"><button class="${sel.tab === 'new' ? 'sel' : ''}" data-tact="tab:new">🌱 New world</button><button class="${sel.tab === 'online' ? 'sel' : ''}" data-tact="tab:online">🌐 Play online</button></div>
       ${sel.tab === 'online' ? onlineHTML() : `
         <label class="flabel">World name</label>
@@ -113,6 +115,17 @@ function bestsHTML() {
 export function hideTitle() { title.open = false; $('#title').classList.add('hidden'); }
 
 /** where worlds are kept: just this browser (wiped with browsing data) or also a folder of save files */
+/** website: download/install the game; downloaded copy: a link back to the newest version */
+function getGameHTML() {
+  if (isFileCopy()) return `<div class="sm dim" style="margin-top:10px">💻 You're playing the downloaded copy. <a href="${GAME_URL}" target="_blank" rel="noopener">Get the newest version</a> · <a href="#" data-tact="gginfo">How to install</a></div>`;
+  if (isInstalled()) return `<div class="sm dim" style="margin-top:10px">📲 Installed as an app — it updates itself whenever you're online. <a href="#" data-tact="gginfo">Share with a friend</a></div>`;
+  const inst = canPromptInstall() || isIOS() ? `<button class="go" data-tact="install" title="Adds Beltworks to your computer or phone as an app: its own window, works offline">📲 Install app</button>` : '';
+  return `<div class="row" style="margin-top:8px;gap:8px;flex-wrap:wrap">${inst}<button class="${inst ? '' : 'go'}" data-tact="dlgame" title="Saves the whole game as one file you can double-click to play offline">⬇ Download the game</button><button class="mini" data-tact="gginfo">How to install / share</button></div>`;
+}
+function showGuide(started: boolean) {
+  document.querySelector('.getgame-back')?.remove();
+  $('#title').insertAdjacentHTML('beforeend', installGuideHTML(started));
+}
 function folderHTML() {
   if (!FS.supported) return `<div class="sm dim" style="margin-top:10px">💾 Worlds are saved in this browser. Clearing browsing data deletes them — use Menu → Export save for a backup file.</div>`;
   if (!FS.dir) return `<div class="savebox" style="margin-top:10px;padding:8px 10px;border:1px solid #f5a52466;border-radius:8px;background:#2b261633"><div class="sm">⚠ Worlds are only saved <b>inside this browser</b> — clearing browsing data deletes them.</div><button class="go" style="margin-top:6px" data-tact="folder">📁 Also save to a folder on this computer</button></div>`;
@@ -120,6 +133,8 @@ function folderHTML() {
   return `<div class="sm" style="margin-top:10px">📁 Also saving to folder <b>${esc(FS.name)}</b> — your worlds are safe even if browser data is cleared. <button class="mini" data-tact="folder">Change…</button></div>`;
 }
 export function initTitle() {
+  // the browser's "install this app" offer arrives (or goes) while the title is up: refresh its button
+  initInstall(() => { if (title.open && handlers) showTitle(handlers); });
   // the colour mixer (a native colour picker under the rainbow swatch)
   $('#title').addEventListener('input', ev => {
     const t = ev.target as HTMLInputElement;
@@ -174,6 +189,15 @@ export function initTitle() {
       const name = (($('#wname') as HTMLInputElement).value || '').trim() || randName();
       sfx('place');
       handlers.create({ name, size: SIZES[sel.size].n, mode: sel.mode, dayNight: sel.dn === 'on', res: sel.mode === 'creative' ? sel.res : undefined, col: sel.wcol });
-    } else if (cmd === 'import') importSave(ok => { if (ok) handlers.imported(); else alert('That is not a valid Beltworks save file.'); });
+    } else if (cmd === 'dlgame') { sfx('click'); const ok = await downloadGame(); if (ok) showGuide(true); else alert(`The download didn't start. Open ${GAME_URL} in Chrome or Edge and try again.`); }
+    else if (cmd === 'gginfo') { ev.preventDefault(); sfx('click'); showGuide(false); }
+    else if (cmd === 'install') { sfx('click'); if (!(await promptInstall())) showGuide(false); }
+    else if (cmd === 'ggclose') { if (ev.target === a || a.tagName === 'BUTTON') document.querySelector('.getgame-back')?.remove(); }
+    else if (cmd === 'ggshare') {
+      sfx('click');
+      try { await navigator.clipboard.writeText(shareText()); a.textContent = '✅ Copied! Paste it into a text or email'; }
+      catch { prompt('Copy this and send it to a friend:', shareText()); }
+    }
+    else if (cmd === 'import') importSave(ok => { if (ok) handlers.imported(); else alert('That is not a valid Beltworks save file.'); });
   });
 }

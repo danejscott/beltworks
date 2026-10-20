@@ -1,0 +1,77 @@
+BELTWORKS — a 3D factory-building game
+Free, no account needed. Mine, smelt, belt and automate your way to launching a rocket.
+
+==================================================================
+EASIEST: PLAY IN YOUR BROWSER
+==================================================================
+Open  https://danejscott.github.io/beltworks/  and click Play or Create world.
+That link is always the newest version.
+
+
+==================================================================
+OPTION 1 — INSTALL IT AS AN APP  (recommended)
+==================================================================
+It gets its own icon and window, works offline, and updates itself whenever you
+open it with internet.
+
+  Windows / Mac / Chromebook (Chrome or Edge):
+    1. Open https://danejscott.github.io/beltworks/
+    2. On the title screen click "📲 Install app"
+       (or click the install icon at the right end of the address bar).
+    3. Beltworks now opens from your Start menu / Dock / desktop like any app.
+
+  Android (Chrome):
+    Open the link, then tap menu ⋮ → "Install app" (or "Add to Home screen").
+
+  iPhone / iPad (Safari):
+    Open the link, tap Share → "Add to Home Screen".
+
+
+==================================================================
+OPTION 2 — THE SINGLE FILE IN THIS ZIP
+==================================================================
+  1. Unzip this folder (right-click → Extract All).
+  2. Double-click "Play Beltworks.html".
+     It opens in your web browser and runs with no internet.
+     Chrome or Edge work best. If it opens in the wrong program:
+     right-click it → Open with → Chrome.
+  3. That's it — no installer.
+
+  The file is the whole game. Keep it somewhere easy, like your Desktop.
+  When Beltworks gets an update, download the newest copy from the website
+  (title screen → "⬇ Download the game"), or just play on the website.
+
+
+==================================================================
+YOUR SAVES
+==================================================================
+  - Worlds save automatically on your device (in the browser / app you play in).
+  - Back up or move a world: in game open ☰ → "⬇ Export save file".
+    To load it: title screen → "⬆ Import a save file".
+  - Chrome / Edge: title screen → "📁 Also save to a folder on this computer"
+    keeps every world as a file in a folder you choose, so they're safe even if
+    browser data is cleared.
+
+
+==================================================================
+PLAYING ONLINE WITH FRIENDS
+==================================================================
+  - Title screen → "🌐 Play online": pick a name and colour, then Create server
+    (you get an 8-character code) or type a friend's code to join.
+  - Works from the website, the installed app, and the downloaded file.
+  - Take an online world offline: in the online world open
+    ☰ → "⬇ Download a copy to this device", then on the title screen use
+    "⬆ Import a save file". It becomes a single-player world you own.
+
+
+==================================================================
+CONTROLS (the basics)
+==================================================================
+  Left-drag / WASD   move the camera        Mouse wheel   zoom
+  1-0                pick a building         R             rotate
+  F                  conveyor belt (press again for a slower/faster belt)
+  X                  deconstruct             Q             copy a building
+  V                  show power coverage     M             map
+  ?  (in the top bar) full help
+
+Have fun — the factory must grow!

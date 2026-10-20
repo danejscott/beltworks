@@ -334,10 +334,30 @@ export async function addFrame(id: string, url: string) {
 export async function getFrames(id: string): Promise<string[]> {
   try { const d = await db(); return (await req(d.transaction('frames', 'readonly').objectStore('frames').get(id))) || []; } catch { return []; }
 }
+/** an online (team) world as a plain single-player save: your team's progress, inventory and research, the whole map
+ *  with everyone's buildings, and no online links. Importing it gives you a world of your own to keep playing offline. */
+export function offlineCopy() {
+  const o: any = serialize();
+  if (!o.mp) return o;
+  const mine = o.mp.teams.find(([id]: [number, any]) => id === MP.myTeam) || o.mp.teams[0];
+  const S: any = { ...(mine ? mine[1] : {}) };
+  for (const k of WORLD_KEYS) S[k] = o.S[k];
+  S.name = `${o.S.name || 'Online world'} (offline copy)`;
+  // single-player treats owner 0 as "you": swap your team's number with team 0's so your HUB and buildings are yours
+  const me = mine ? mine[0] : 0;
+  const swap = (x: any) => { const w = x.o || 0; if (w === me) delete x.o; else if (w === 0) x.o = me; };
+  if (me !== 0) for (const list of [o.ents, o.trains, o.trucks, o.ships]) for (const x of list || []) swap(x);
+  delete o.mp;
+  o.S = S;
+  return o;
+}
+/** download the current world as a save file (online worlds: an offline single-player copy) */
 export function exportSave() {
-  const blob = new Blob([JSON.stringify(serialize())], { type: 'application/json' });
+  const online = !!MP.teams;
+  const data = online ? offlineCopy() : serialize();
+  const blob = new Blob([JSON.stringify(data)], { type: 'application/json' });
   const a = document.createElement('a'); a.href = URL.createObjectURL(blob);
-  a.download = `beltworks-${(G.S.name || 'world').replace(/[^a-z0-9]+/gi, '-')}-${new Date().toISOString().slice(0, 10)}.json`; a.click();
+  a.download = `beltworks-${(data.S.name || 'world').replace(/[^a-z0-9]+/gi, '-')}-${new Date().toISOString().slice(0, 10)}.json`; a.click();
   setTimeout(() => URL.revokeObjectURL(a.href), 3000);
 }
 /** import a save file as a brand-new world slot */

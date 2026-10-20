@@ -4,6 +4,7 @@
 // the latest save (uploaded by a player's game every couple of minutes) and the actions since, so anyone can
 // start or join the world at any time — whoever is online "hosts" it together.
 import { applyCmd, Cmd, setSender } from './cmd';
+import { GAME_URL } from './codes';
 import { deserialize, serialize, stateHash } from './save';
 import { createServerWorld, ensureTradePost } from './online';
 import { MP } from './teams';
@@ -142,7 +143,8 @@ function onMsg(m: any) {
     case 'info': G.fx.toast(m.msg, 'good'); break;
     case 'err-soft': G.fx.toast(m.msg, 'bad'); break;
     case 'err': H.error(m.msg); disconnect(); break;
-    case 'update': NET.outdated = true; H.error(m.msg); disconnect(); break;
+    // a downloaded copy can't be refreshed: point it at the website to download the new version
+    case 'update': NET.outdated = true; H.error(location.protocol === 'file:' ? `Beltworks was updated, so this downloaded copy is out of date. Open ${GAME_URL}, click "⬇ Download the game" and replace your old file (or just play there), then rejoin. Your base is safe.` : m.msg); disconnect(); break;
   }
 }
 async function onBinary(b: Uint8Array) {
