@@ -808,7 +808,7 @@ const HELP = `<div class="help cols"><div>
 <li>Middle-drag or <kbd>[</kbd> <kbd>]</kbd> rotate the camera · middle-drag up/down or <kbd>,</kbd> <kbd>.</kbd> tilt it · <kbd>\</kbd> resets the view (your angle is remembered per world)</li>
 <li><kbd>H</kbd> milestones · <kbd>C</kbd> craft · <kbd>P</kbd> stats · <kbd>K</kbd> shop · <kbd>M</kbd> map · <kbd>I</kbd> inventory (search, rates, goal needs) · <kbd>V</kbd> power areas</li>
 <li><kbd>O</kbd> fast travel between your HUB and Outposts (not in Hard) · <kbd>G</kbd> go home</li>
-<li><kbd>T</kbd> vehicles · <kbd>N</kbd> scanner · <kbd>U</kbd> research · <kbd>J</kbd> achievements · <kbd>L</kbd> planner (Easy/Creative)</li>
+<li><kbd>T</kbd> vehicles · <kbd>N</kbd> scanner · <kbd>U</kbd> research · <kbd>J</kbd> achievements · <kbd>L</kbd> production planner</li>
 <li>Click ore to hand-mine (hold to keep going). Click or drag across trees to chop them.</li>
 <li>Right-click / <kbd>Esc</kbd> cancel</li></ul>
 <h3>Difficulty & game length</h3><p>Easy (~10–15 h), Normal (~15–30 h) and Hard (~30–50 h) differ in resource richness, starting kit and how much each later milestone and Space Elevator phase asks for. Tier 0 is the same everywhere.</p>

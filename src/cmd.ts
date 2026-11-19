@@ -6,7 +6,7 @@ import { H, isWater, TT, W } from './terrain';
 import { DX, DY } from './util';
 import { RS } from './railgrid';
 import { planSmooth } from './railplan';
-import { addWagon, buildRoute, addTrainToLine, lineOf, placeTrain, removeTrain, removeWagon, canPlaceTrain } from './trains';
+import { addWagon, autoSignals, buildRoute, addTrainToLine, lineOf, placeTrain, removeTrain, removeWagon, canPlaceTrain } from './trains';
 import { buyTruck, removeTruck } from './trucks';
 import { buyShip, removeShip } from './ships';
 import { analyseDrive, collectCrystal, lootSite, pickAlt } from './explore';
@@ -14,7 +14,7 @@ import { buyShop, loadElevator, submitMilestone } from './progress';
 import { flushNet, fluidsTouching, myCraft, setRecipe } from './sim';
 import { asTeam, MP } from './teams';
 import { joinTeam, leaveTeam, nearRivalBase, newSeason, spawnTeam } from './online';
-import { addInv, addPlatform, canAfford, canPlace, canRemove, chopTree, Ent, entAt, floorBlocked, G, groundOnly, hasFloor, markDirty, missingText, nodeAt, pairBit, PAIRS, pay, place, refund, remove, rotateEnt, setFloor, setSlab, snapStation, upgradeTarget, creative, NL } from './world';
+import { addInv, addPlatform, canAfford, canPlace, canRemove, chopTree, Ent, entAt, floorBlocked, G, groundOnly, hasFloor, markDirty, missingText, nodeAt, pairBit, PAIRS, pay, place, refund, remove, rotateEnt, railAt, setFloor, setSlab, snapStation, upgradeTarget, creative, NL } from './world';
 import { clamp } from './util';
 import { DRONE_COST, DRONE_SLOTS, dronesOf, newDrone } from './drones';
 
@@ -345,16 +345,62 @@ function paste(bp: any, ox: number, oy: number, z0: number) {
   toast(msg, broke || skipped ? 'bad' : 'good');
 }
 
-function signal(x: number, y: number, sig: number, type: string) {
+const SIG_TYPES = ['', 'rail_signal', 'path_signal'];
+/** a rail piece's signal heads, packed (older worlds' signals face both ways along the track) */
+function headsOf(r: Ent): number {
+  if (r.sg != null) return r.sg;
+  if (!r.sig) return 0;
+  return (r.pairs & 1 ? [0, 2] : [1, 3]).reduce((m, d) => m | (r.sig << (2 * d)), 0);
+}
+function setHeads(r: Ent, sg: number) {
+  r.sg = sg; let t = 0;
+  for (let d = 0; d < 4; d++) t = Math.max(t, (sg >> (2 * d)) & 3);
+  r.sig = sg ? t : 0; markDirty('rail', r);
+}
+function refundHeads(r: Ent) { const sg = headsOf(r); for (let d = 0; d < 4; d++) { const t = (sg >> (2 * d)) & 3; if (t) refund(BLD[SIG_TYPES[t]].cost); } }
+/** put a signal on a straight piece of track: facing direction dir (trains going that way obey it), or both ways (4) */
+function signal(x: number, y: number, sig: number, type: string, dir = 4) {
   const r = entAt(x, y);
-  if (!r || r.type !== 'rail') { toast('Put signals on a railway tile', 'bad'); sfx('err'); return; }
+  if (!r || r.type !== 'rail') { toast('Put signals on a railway', 'bad'); sfx('err'); return; }
   if (!mine(r)) return;
-  if (r.sig === sig) { toast('That tile already has this signal', 'bad'); return; }
   const d = BLD[type];
   if (!d || !G.S.unlocked.has(type)) return;
-  if (!canAfford(d.cost)) { toast('Need: ' + missingText(d.cost), 'bad'); sfx('err'); return; }
-  if (r.sig) refund(BLD[r.sig === 1 ? 'rail_signal' : 'path_signal'].cost);
-  pay(d.cost); r.sig = sig; markDirty('rail', r); sfx('place');
+  if (sig === 3) return autoSig(r);
+  if (r.pairs !== 1 && r.pairs !== 2) { toast('Signals go on a plain straight piece of track (not on curves or junctions)', 'bad'); sfx('err'); return; }
+  const axis = r.pairs === 1 ? [0, 2] : [1, 3];
+  const dirs = dir === 4 ? axis : [axis.includes(dir) ? dir : axis[0]];
+  let sg = headsOf(r), n = 0;
+  for (const dd of dirs) { if (((sg >> (2 * dd)) & 3) !== sig) n++; }
+  if (!n) { toast('Already signalled that way', 'bad'); return; }
+  const need: Cost = {}; for (const k in d.cost) need[k] = d.cost[k] * n;
+  if (!canAfford(need)) { toast('Need: ' + missingText(need), 'bad'); sfx('err'); return; }
+  for (const dd of dirs) {
+    const cur = (sg >> (2 * dd)) & 3;
+    if (cur === sig) continue;
+    if (cur) refund(BLD[SIG_TYPES[cur]].cost);
+    pay(d.cost); sg = (sg & ~(3 << (2 * dd))) | (sig << (2 * dd));
+  }
+  setHeads(r, sg); sfx('place');
+}
+/** the signal assistant: re-signal the whole network around this piece */
+function autoSig(r: Ent) {
+  const plan = autoSignals(r.y * W + r.x);
+  const need: Cost = {};
+  let nb = 0, np = 0;
+  for (const sg of plan.heads.values()) for (let d = 0; d < 4; d++) { const t = (sg >> (2 * d)) & 3; if (t === 1) nb++; else if (t === 2) np++; }
+  for (const [k, n] of [['rail_signal', nb], ['path_signal', np]] as [string, number][]) for (const c in BLD[k].cost) need[c] = (need[c] || 0) + BLD[k].cost[c] * n;
+  // what comes back from the signals already there
+  for (const i of plan.net) { const e = railAt(i); if (e && e.sig && mine(e)) refundHeads(e); }
+  if (!canAfford(need)) {
+    // can't afford the new layout: put the old signals' cost back where it was
+    for (const i of plan.net) { const e = railAt(i); if (e && e.sig && mine(e)) { const sg = headsOf(e); for (let d = 0; d < 4; d++) { const t = (sg >> (2 * d)) & 3; if (t) pay(BLD[SIG_TYPES[t]].cost); } } }
+    toast('Signal assistant needs: ' + missingText(need), 'bad'); sfx('err'); return;
+  }
+  for (const i of plan.net) { const e = railAt(i); if (e && e.sig && mine(e)) setHeads(e, 0); }
+  pay(need);
+  for (const [i, sg] of plan.heads) { const e = railAt(i); if (e && mine(e)) setHeads(e, sg); }
+  sfx('place');
+  toast(nb + np ? `Signal assistant: ${np} path signal${np === 1 ? '' : 's'} into junctions, ${nb} block signal${nb === 1 ? '' : 's'} — hold a signal to see the blocks` : 'Signal assistant: this network has no junctions or one-way lines to signal', nb + np ? 'good' : '');
 }
 
 const findTrain = (id: any) => G.trains.find(t => t.id === +id) || null;
@@ -375,7 +421,7 @@ function exec(c: Cmd): any {
     case 'decon': return deconRect(c.x0, c.y0, c.x1, c.y1, c.z || 0);
     case 'slabs': return pourSlabs(c.x0, c.y0, c.x1, c.y1);
     case 'paste': return paste(c.bp, c.ox, c.oy, c.z || 0);
-    case 'signal': return signal(c.x, c.y, c.sig, c.type);
+    case 'signal': return signal(c.x, c.y, c.sig, c.type, c.d ?? 4);
     case 'train': {
       if (!G.S.unlocked.has('locomotive')) return;
       const tr = placeTrain(c.x, c.y, c.rot);
@@ -385,7 +431,7 @@ function exec(c: Cmd): any {
     case 'rm': {   // remove one building (or just the signal on a rail tile)
       const e = ent(c.id);
       if (!mine(e)) return;
-      if (c.sig && e.type === 'rail' && e.sig) { refund(BLD[e.sig === 1 ? 'rail_signal' : 'path_signal'].cost); e.sig = 0; markDirty('rail', e); sfx('remove'); return; }
+      if (c.sig && e.type === 'rail' && e.sig) { refundHeads(e); setHeads(e, 0); sfx('remove'); return; }
       const why = canRemove(e);
       if (why) { toast(why, 'bad'); sfx('err'); return; }
       if (remove(e)) { sfx('remove'); G.fx.ui('removed', e); }

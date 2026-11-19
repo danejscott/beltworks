@@ -39,6 +39,7 @@ export function setTool(t: any) {
   tool.t = t; drag = null; lastPlaced = null;
   view.showPower = !!(t && t.k === 'build' && (BLD[t.type].power || BLD[t.type].kind === 'pole' || BLD[t.type].kind === 'gen'));
   view.railTool = !!(t && t.k === 'build' && (BLD[t.type].kind === 'rail' || BLD[t.type].kind === 'signal'));
+  view.sigTool = !!(t && t.k === 'build' && BLD[t.type].kind === 'signal');
   UI.renderHotbar(); UI.updateHint();
 }
 export function setCat(i: number) { curCat = (i + CATS.length) % CATS.length; UI.renderHotbar(); }
@@ -212,9 +213,18 @@ function tryPlace(loud: boolean) {
 
 // ---------------------------------------------------------------------------
 // Rail signals live on rail tiles
+/** signals face the way trains travel past them: aim at the half of the track piece trains are heading toward
+ *  (R switches to a two-way pair) */
+export const sigAim = { both: false };
+export function signalDir(r: Ent): number {
+  if (sigAim.both) return 4;
+  const m = view.mouse, cx = r.x + r.w / 2, cy = r.y + r.h / 2;
+  return r.pairs & 1 ? (m.wx >= cx ? 0 : 2) : (m.wy >= cy ? 1 : 3);
+}
 function placeSignal(x: number, y: number, sig: number, type: string) {
-  if (view.level !== 0) { UI.toast('Put signals on a railway tile', 'bad'); sfx('err'); return; }
-  run({ k: 'signal', x, y, sig, type });
+  if (view.level !== 0) { UI.toast('Put signals on a railway', 'bad'); sfx('err'); return; }
+  const r = entAt(x, y);
+  run({ k: 'signal', x, y, sig, type, d: r && r.type === 'rail' ? signalDir(r) : 4 });
 }
 
 // ---------------------------------------------------------------------------
@@ -388,8 +398,9 @@ export function updateGhosts() {
           g.push(gh);
         });
       } else if (d.kind === 'signal') {
-        const r = view.level === 0 ? entAt(m.tx, m.ty) : null;
-        g.push({ type: t.type, x: r && r.type === 'rail' ? r.x : m.tx, y: r && r.type === 'rail' ? r.y : m.ty, rot: 0, ok: !!r && r.type === 'rail' });
+        const r = view.level === 0 ? entAt(m.tx, m.ty) : null, onRail = !!r && r.type === 'rail';
+        const ok = onRail && (d.sig === 3 || r!.pairs === 1 || r!.pairs === 2);
+        g.push({ type: t.type, x: onRail ? r!.x : m.tx, y: onRail ? r!.y : m.ty, rot: 0, ok, sd: onRail && d.sig !== 3 ? signalDir(r!) : -1, pairs: onRail ? r!.pairs : 0 });
       } else if (d.kind === 'train') {
         const r = canPlaceTrain(m.tx, m.ty, rot);
         g.push({ type: 'locomotive', x: m.tx, y: m.ty, rot, ok: !r.err, cells: r.cells });
@@ -611,6 +622,7 @@ export function initInput(canvas: HTMLCanvasElement) {
     if (k >= '0' && k <= '9') { selectSlot(k === '0' ? 9 : +k - 1); return; }
     if (k === 'tab') { ev.preventDefault(); setCat(curCat + (ev.shiftKey ? -1 : 1)); return; }
     if (k === 'f') { pickEntry(CATS.find(c => c.id === 'log')!.types[0]); return; }
+    if (k === 'r' && tool.t && tool.t.k === 'build' && BLD[tool.t.type].kind === 'signal' && BLD[tool.t.type].sig !== 3) { sigAim.both = !sigAim.both; UI.toast(sigAim.both ? 'Two-way signal (trains both ways obey it)' : 'One-way signal: aim at the half of the track trains head toward', ''); sfx('click'); return; }
     if (k === 'r') {
       if (drag) { drag.axis = drag.axis === 'v' ? 'h' : 'v'; sfx('click'); return; }
       if (tool.t && tool.t.k === 'paste') { tool.t.prot = ((tool.t.prot || 0) + (ev.shiftKey ? 3 : 1)) & 3; sfx('click'); return; }

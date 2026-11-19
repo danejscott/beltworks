@@ -9,6 +9,8 @@ import { ACHS } from './achievements';
 import { altMachineOK, altPool, analyseDrive, CRYSTAL_NAMES, discoveredCount, lootSite, pickAlt, scan, scanCol, scanName, scanRange, SCAN_TARGETS } from './explore';
 import { Feat } from './features';
 import { machineName, plan, plannableItems } from './planner';
+import { flowChart, FLOW_CSS } from './flowchart';
+let flowCss = false;
 import { addTrainToLine, lineOf, lineTrains, MAX_LINE_TRAINS, maxCars, trainCap } from './trains';
 import { buyTruck, removeTruck, tradeVal, TRUCK_CAP, truckStations } from './trucks';
 import { buyShip, removeShip, Ship, SHIP_CAP, shipPorts } from './ships';
@@ -22,7 +24,7 @@ import { getFrames, slot } from './save';
 import { TIER_NAMES } from './data';
 import { closeModal, costHTML, flyTo, ic, openModal, openShip, openTrain, openTruck, status, toast } from './ui';
 
-export const plannerAllowed = () => G.S.mode === 'easy' || G.S.mode === 'creative';
+export const plannerAllowed = () => true;
 export const fastTravelAllowed = () => G.S.mode !== 'hard';
 /** the HUB plus every Outpost, for the travel list */
 export function travelPoints(): { name: string; x: number; y: number; e: Ent }[] {
@@ -36,7 +38,7 @@ export function travelPoints(): { name: string; x: number; y: number; e: Ent }[]
 }
 let pendingSite: Feat | null = null;
 export function openSite(f: Feat) { pendingSite = f; openModal('site'); }
-const pl = { item: 'reinforced_plate', rate: 10 };
+const pl = { item: 'reinforced_plate', rate: 10, view: 'chart' };
 
 const stTxt: Record<string, string> = { queued: 'Waiting for a free bay', moving: 'Driving', loading: 'At station', nopath: 'No route!', noschedule: 'No schedule', stopped: 'Stopped', idle: 'Planning route' };
 const vehLed = (s: string) => s === 'nopath' ? 'block' : s === 'moving' || s === 'loading' ? 'work' : 'idle';
@@ -109,10 +111,17 @@ export const EXTRA_MODALS: Record<string, () => [string, string]> = {
     return ['🧪 Research: Alternate Recipes', h];
   },
   planner: () => {
-    if (!plannerAllowed()) return ['📐 Production Planner', '<p>The planner is available in <b>Easy</b> and <b>Creative</b> worlds. In Hard mode, you do the maths!</p>'];
-    const items = plannableItems();
-    let h = `<div class="row wrap" style="gap:10px"><label>Make</label><select data-input="plitem">${items.map(k => `<option value="${k}" ${k === pl.item ? 'selected' : ''}>${ITEMS[k].n}</option>`).join('')}</select><label>at</label><input type="number" min="0.1" step="any" value="${pl.rate}" data-input="plrate" style="width:90px"><label>per minute</label></div>`;
+    if (!flowCss) { flowCss = true; const st = document.createElement('style'); st.textContent = FLOW_CSS; document.head.appendChild(st); }
+    const items = plannableItems().sort((a, b) => ITEMS[a].n.localeCompare(ITEMS[b].n));
+    let h = `<div class="row wrap" style="gap:10px"><label>Make</label><select data-input="plitem">${items.map(k => `<option value="${k}" ${k === pl.item ? 'selected' : ''}>${ITEMS[k].n}</option>`).join('')}</select><label>at</label><input type="number" min="0.1" step="any" value="${pl.rate}" data-input="plrate" style="width:90px"><label>per minute</label>
+      <span style="margin-left:auto" class="row"><button class="${pl.view === 'chart' ? 'go' : ''}" data-act="plview:chart">Flow chart</button><button class="${pl.view === 'table' ? 'go' : ''}" data-act="plview:table">Table</button></span></div>`;
     const p = plan(pl.item, pl.rate);
+    if (pl.view === 'chart') {
+      h += `<div class="flowwrap">${flowChart(p, pl.item, ic)}</div>`;
+      h += `<div class="row wrap" style="gap:14px;margin-top:8px"><span>⚡ <b>${fmtR(p.power)} MW</b> for machines</span><span class="dim">Raw: ${Object.keys(p.raw).map(k => `${ic(k, 14)} ${fmtR(p.raw[k])}/min`).join(' · ')}</span></div>`;
+      h += '<p class="sm dim">Standard recipes, normal nodes, 100% clock. Line thickness shows how much flows; a Mk1 belt carries 240/min. Scroll the chart to see all of it.</p>';
+      return ['📐 Production Planner', h];
+    }
     h += '<h3 class="ch">Machines</h3><table class="st"><tr><th>Item</th><th>Recipe</th><th>Machines</th><th>Rate</th><th>Power</th></tr>';
     for (const s of p.steps) {
       const full = Math.ceil(s.count - 1e-6), frac = s.count - Math.floor(s.count);
@@ -168,6 +177,7 @@ export const LIVE_MODALS = new Set(['vehicles', 'research', 'ach', 'scan']);
 
 /** extra actions; returns true if handled */
 export function extraAct(cmd: string, a: string, b: string): boolean {
+  if (cmd === 'plview') { pl.view = a; rerender(); return true; }
   const S = G.S, e = view.inspect as Ent | null, k = view.inspectTruck as Truck | null;
   switch (cmd) {
     case 'vview': {

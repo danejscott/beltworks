@@ -536,6 +536,9 @@ export function rotatePairs(pairs: number, r: number) {
   for (let i = 0; i < 6; i++) if (pairs & (1 << i)) o |= pairBit((PAIRS[i][0] + r) & 3, (PAIRS[i][1] + r) & 3);
   return o;
 }
+/** the signal head a train meets moving into rail piece r in direction d: 0 none, 1 block, 2 path. (rail.sg packs one
+ *  head per direction, 2 bits each; signals from older worlds have no sg and face both ways.) */
+export function sigType(r: Ent, d: number): number { return r.sg != null ? (r.sg >> (2 * d)) & 3 : (r.sig || 0); }
 export function railAt(idx: number): Ent | null {
   const id = G.grid[idx];
   if (!id) return null;

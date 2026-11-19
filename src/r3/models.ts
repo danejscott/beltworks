@@ -216,56 +216,56 @@ export function buildTemplates(): Record<string, Template> {
       anims: [{ key: 'saw', model: one(b2 => { b2.cyl(0.38, 0.04, 0, -0.02, 0, M.steel, 20); for (let i = 0; i < 12; i++) { const a = i / 12 * TAU; b2.add(new THREE.ConeGeometry(0.05, 0.1, 4), M.steel, Math.cos(a) * 0.4, 0, Math.sin(a) * 0.4, 0, 0, -Math.PI / 2 + 0); } }), fn: (o, _e, t, _r, busy) => { o.x = 0.75; o.y = 1.05; o.ry = busy ? t * 14 : 0; } }],
     };
   }
-  // ---- Water extractor: a floating pump platform — pontoons, a grated deck, the pump house, an intake pipe dropping into
-  // the water behind a strainer cage, and the outlet riser with its valve
+  // ---- Water extractor: a compact vertical turbine pump on a small pontoon. The pump column drops into the water; the
+  // discharge head feeds a ring header at pipe height round the pontoon, so a pipe can join from any side (its socket
+  // meets the ring). Motor stands on top.
+  const header = (b: B, h: number, m: Mat = M.steel) => {
+    // square ring of pipe, half-size 0.5, at pipe height h, with flanged corners
+    for (const s of [-0.5, 0.5]) { b.hcyl(0.09, 1.0, 0, h, s, m, 'x', 12); b.hcyl(0.09, 1.0, s, h, 0, m, 'z', 12); }
+    for (const sx of [-0.5, 0.5]) for (const sz of [-0.5, 0.5]) b.sphere(0.12, sx, h, sz, M.steelDk, 10);
+  };
   {
-    const b = new B();
-    for (const z of [-0.62, 0.62]) { b.hcyl(0.26, 1.85, 0, -0.12, z, M.yellow, 'x', 14); b.hcyl(0.27, 0.12, -0.85, -0.12, z, M.steelDk, 'x', 14); b.hcyl(0.27, 0.12, 0.85, -0.12, z, M.steelDk, 'x', 14); }
-    b.box(1.95, 0.08, 1.75, 0, 0.12, 0, M.steelDk);
-    for (let k = 0; k < 9; k++) b.box(0.04, 0.01, 1.7, -0.88 + k * 0.22, 0.2, 0, M.grey);   // deck grating
-    // railings round the deck
-    for (const z of [-0.86, 0.86]) { b.box(1.9, 0.03, 0.03, 0, 0.62, z, M.yellow); for (let x = -0.9; x <= 0.91; x += 0.45) b.box(0.03, 0.42, 0.03, x, 0.2, z, M.yellow); }
-    // pump house with a door, vents and a roof
-    b.box(0.95, 0.85, 0.8, -0.42, 0.2, -0.3, M.blue); b.box(1.0, 0.08, 0.86, -0.42, 1.05, -0.3, M.steelDk);
-    b.box(0.3, 0.55, 0.01, -0.3, 0.2, 0.105, M.steelDk); for (let k = 0; k < 3; k++) b.box(0.25, 0.04, 0.01, -0.72, 0.6 + k * 0.1, 0.105, M.grey);
-    // intake: a fat pipe from the pump down into the water, a strainer cage at its foot
-    b.hcyl(0.14, 0.5, 0.25, 0.55, -0.3, M.steel, 'x', 12);
-    b.cyl(0.14, 1.3, 0.55, -0.9, -0.3, M.steel, 12);
-    b.cyl(0.22, 0.35, 0.55, -1.1, -0.3, M.steelDk, 10);
-    // outlet riser with a valve wheel and a flange (where the pipe connects)
-    b.cyl(0.12, 0.75, 0.55, 0.2, 0.42, M.steel, 12); b.hcyl(0.12, 0.45, 0.78, 0.82, 0.42, M.steel, 'x', 12);
-    b.torus(0.12, 0.02, 0.55, 0.78, 0.42, M.red, 0); b.hcyl(0.17, 0.05, 0.98, 0.82, 0.42, M.steelDk, 'x', 14);
-    // motor on top of the pump house
-    b.hcyl(0.16, 0.42, -0.42, 1.28, -0.3, M.greyLt, 'z', 14);
+    const b = new B(), H = 0.55;
+    b.box(1.36, 0.22, 1.36, 0, -0.14, 0, M.yellow);                                   // pontoon
+    b.box(1.4, 0.04, 1.4, 0, 0.08, 0, M.steelDk);                                     // deck plate
+    for (let k = 0; k < 6; k++) b.box(0.03, 0.01, 1.3, -0.56 + k * 0.224, 0.12, 0, M.grey);
+    for (const sx of [-0.66, 0.66]) for (const sz of [-0.66, 0.66]) b.cyl(0.05, 0.3, sx, 0.12, sz, M.yellow, 6);  // bollards
+    b.cyl(0.13, 1.1, 0, -1.0, 0, M.steel, 12); b.cyl(0.2, 0.25, 0, -1.15, 0, M.steelDk, 10);   // column + strainer
+    b.cyl(0.3, 0.38, 0, 0.12, 0, M.blue, 16);                                         // discharge head
+    b.cyl(0.33, 0.05, 0, 0.5, 0, M.steelDk, 16);
+    header(b, H);
+    for (const a of [0, 1, 2, 3]) { const dx = [1, 0, -1, 0][a] * 0.25, dz = [0, 1, 0, -1][a] * 0.25; b.hcyl(0.08, 0.5, dx, H - 0.12, dz, M.steel, a % 2 ? 'z' : 'x', 10); }
+    b.torus(0.1, 0.02, 0.32, H - 0.12, 0, M.red, 0);                                 // valve wheel
+    b.cyl(0.21, 0.42, 0, 0.55, 0, M.greyLt, 16);                                      // motor
+    for (let k = 0; k < 4; k++) b.torus(0.215, 0.015, 0, 0.62 + k * 0.09, 0, M.steelDk);
+    b.cyl(0.16, 0.06, 0, 0.97, 0, M.steelDk, 14);
+    b.box(0.18, 0.3, 0.1, -0.55, 0.12, 0.55, M.steelDk); b.box(0.14, 0.18, 0.02, -0.55, 0.22, 0.6, M.grey);   // control box
     T.water_extractor = {
-      stat: b.build(), height: 1.6, light: [-0.42, 1.3, 0.12],
-      anims: [{ key: 'fly', model: one(b2 => { b2.hcyl(0.26, 0.06, 0, 0, 0, M.steelDk, 'z', 16); b2.box(0.5, 0.06, 0.07, 0, -0.03, 0, M.red); }),
-        fn: (o, _e, t, real, busy) => { o.x = -0.42; o.y = 1.28; o.z = 0.0; o.rz = busy ? t * 6 : real * 0.2; } }],
+      stat: b.build(), height: 1.15, light: [-0.55, 0.5, 0.55],
+      anims: [{ key: 'fan', model: one(b2 => { b2.cyl(0.15, 0.03, 0, 0, 0, M.steelDk, 12); for (let i = 0; i < 4; i++) b2.add(new THREE.BoxGeometry(0.26, 0.015, 0.06), M.steel, 0, 0.03, 0, 0, i * Math.PI / 4, 0); }),
+        fn: (o, _e, t, real, busy) => { o.y = 1.03; o.ry = busy ? t * 12 : real * 0.3; } }],
     };
   }
-  // ---- Oil extractor: a pumpjack — skid, samson post, the walking beam with its horse head over the wellhead, the
-  // crank with counterweights, motor and gearbox, and a small stock tank
+  // ---- Oil extractor: a small pumpjack on a skid. The walking beam rocks over the wellhead; the flow line runs into a
+  // ring header at pipe height (as the water pump), so pipes join from any side.
   {
-    const b = new B(); pad(b, 2);
-    b.box(1.8, 0.12, 0.7, 0, 0.14, 0, M.steelDk);                                   // skid
-    for (const z of [-0.22, 0.22]) b.beam([-0.2, 0.26, z], [0.05, 1.55, 0], 0.07, M.purple);   // samson post (A-frame)
-    b.beam([0.35, 0.26, 0], [0.05, 1.55, 0], 0.07, M.purple);
-    b.box(0.5, 0.4, 0.4, -0.72, 0.26, 0, M.purple); b.box(0.3, 0.26, 0.3, -0.72, 0.66, 0, M.steelDk);   // gearbox
-    b.hcyl(0.15, 0.4, -0.72, 0.42, -0.42, M.greyLt, 'z', 12);                          // motor
-    // wellhead: casing, valve tree and a flow line to the tank
-    b.cyl(0.13, 0.35, 0.82, 0.14, 0, M.steelDk, 10); b.cyl(0.07, 0.4, 0.82, 0.49, 0, M.steel, 8);
-    b.torus(0.09, 0.02, 0.82, 0.62, 0, M.red, 0); b.hcyl(0.05, 0.4, 0.82, 0.4, 0.25, M.steel, 'z', 8);
-    b.cyl(0.32, 0.75, 0.55, 0.14, 0.72, M.greyLt, 16); b.cyl(0.33, 0.05, 0.55, 0.89, 0.72, M.steelDk, 16);   // stock tank
-    for (const z of [-0.36, 0.36]) b.box(1.6, 0.03, 0.03, 0.05, 0.55, z * 1.9, M.yellow);   // guard rails
+    const b = new B(), H = 0.55;
+    pad(b, 2, false);
+    b.box(1.5, 0.08, 0.5, -0.05, 0.14, 0, M.steelDk);                                 // skid
+    for (const z of [-0.16, 0.16]) b.beam([-0.15, 0.22, z], [0.0, 1.2, 0], 0.055, M.purple);  // samson post
+    b.beam([0.2, 0.22, 0], [0.0, 1.2, 0], 0.055, M.purple);
+    b.box(0.34, 0.28, 0.3, -0.55, 0.22, 0, M.purple); b.hcyl(0.11, 0.28, -0.55, 0.36, -0.28, M.greyLt, 'z', 12);  // gearbox + motor
+    b.cyl(0.1, 0.22, 0.55, 0.14, 0, M.steelDk, 10); b.cyl(0.05, 0.26, 0.55, 0.36, 0, M.steel, 8);   // wellhead
+    b.torus(0.07, 0.015, 0.55, 0.5, 0, M.red, 0);
+    header(b, H, M.steelDk);
+    b.hcyl(0.05, 0.42, 0.55, H, -0.25, M.steel, 'z', 8);                              // flow line to the header
     T.oil_extractor = {
-      stat: b.build(), height: 2.0, light: [-0.72, 0.95, 0.3],
+      stat: b.build(), height: 1.5, light: [-0.55, 0.62, 0.3],
       anims: [
-        // walking beam rocking on the samson post: horse head (+x) over the wellhead, the tail toward the crank
-        { key: 'beam', model: one(b2 => { b2.box(1.75, 0.12, 0.14, 0.0, -0.06, 0, M.purple); b2.box(0.16, 0.42, 0.18, 0.86, -0.3, 0, M.red); b2.cyl(0.015, 0.75, 0.86, -1.05, 0, M.steelDk, 4); b2.box(0.2, 0.2, 0.22, -0.82, -0.12, 0, M.steelDk); }),
-          fn: (o, _e, t, real, busy) => { o.x = 0.05; o.y = 1.62; o.z = 0; o.rz = busy ? Math.sin(t * 2.2) * 0.32 : Math.sin(real * 0.4) * 0.02; } },
-        // crank arms with counterweights turning on the gearbox
-        { key: 'crank', model: one(b2 => { for (const z of [-0.24, 0.24]) { b2.box(0.55, 0.08, 0.05, 0.12, -0.04, z, M.steelDk); b2.box(0.28, 0.34, 0.06, 0.32, -0.17, z, M.red); } }),
-          fn: (o, _e, t, real, busy) => { o.x = -0.72; o.y = 0.79; o.z = 0; o.rz = busy ? t * 2.2 : real * 0.05; } },
+        { key: 'beam', model: one(b2 => { b2.box(1.3, 0.09, 0.1, 0.0, -0.045, 0, M.purple); b2.box(0.12, 0.3, 0.14, 0.62, -0.22, 0, M.red); b2.cyl(0.012, 0.6, 0.62, -0.82, 0, M.steelDk, 4); b2.box(0.16, 0.16, 0.16, -0.6, -0.09, 0, M.steelDk); }),
+          fn: (o, _e, t, real, busy) => { o.x = -0.05; o.y = 1.25; o.z = 0; o.rz = busy ? Math.sin(t * 2.2) * 0.3 : Math.sin(real * 0.4) * 0.02; } },
+        { key: 'crank', model: one(b2 => { for (const z of [-0.2, 0.2]) { b2.box(0.4, 0.06, 0.04, 0.09, -0.03, z, M.steelDk); b2.box(0.2, 0.26, 0.05, 0.24, -0.13, z, M.red); } }),
+          fn: (o, _e, t, real, busy) => { o.x = -0.55; o.y = 0.56; o.z = 0; o.rz = busy ? t * 2.2 : real * 0.05; } },
       ],
     };
   }
@@ -945,6 +945,18 @@ export function portalModel(): Model {
   });
 }
 /** rail signal post in the tile corner (path signals get a blue band) */
+/** one signal head on its post (post at the origin; the lamp faces -x, toward the trains it controls) */
+export function signalHead(path: boolean): Model {
+  return one(b => {
+    b.cyl(0.11, 0.06, 0, 0, 0, M.concrete, 10); b.cyl(0.04, 1.15, 0, 0, 0, M.steelDk, 8);
+    b.box(0.16, 0.42, 0.2, 0, 1.0, 0, M.black); b.box(0.04, 0.44, 0.24, -0.09, 0.99, 0, path ? M.blue : M.yellow);
+    b.box(0.12, 0.04, 0.2, -0.12, 1.36, 0, M.black);   // hood
+  });
+}
+/** a direction arrow painted on the track (points +x), shown while placing signals */
+export function sigArrow(): Model {
+  return one(b => { b.add(new THREE.CylinderGeometry(0.42, 0.42, 0.03, 3), M.white, 0, 0.12, 0, 0, Math.PI / 2, 0, 1.2, 1, 0.8); });
+}
 export function signalModel(path: boolean): Model {
   return one(b => { b.cyl(0.04, 1.0, 0.4, 0, 0.4, M.steelDk, 6); b.box(0.16, 0.28, 0.14, 0.4, 0.92, 0.4, M.black); b.box(0.18, 0.05, 0.16, 0.4, 0.86, 0.4, path ? M.blue : M.red); b.cyl(0.1, 0.05, 0.4, 0, 0.4, M.concrete, 8); });
 }
@@ -976,6 +988,40 @@ export function railBridge(): Model {
   });
 }
 // Pipes
-export function pipeArm(): Model { return one(b => { b.hcyl(0.11, 0.5, 0.25, 0.55, 0, M.greyLt, 'x', 12); b.torus(0.13, 0.025, 0.47, 0.55, 0, M.steelDk, 0); }); }
+// ---- Pipework: one continuous pipe along straight runs, bent elbows on corners, a fitting where pipes branch, an
+// end cap on dead ends; stands every few tiles (piles out in water), and a colour band showing what's inside.
+const PY = 0.55, PR = 0.12;
+/** a straight piece across the whole tile (along x) */
+export function pipeStraight(): Model { return one(b => { b.hcyl(PR, 1.0, 0, PY, 0, M.greyLt, 'x', 14); }); }
+/** an elbow joining the north and west sides (rotate for the others) */
+export function pipeElbow(): Model {
+  return one(b => { b.add(new THREE.TorusGeometry(0.5, PR, 10, 14, Math.PI / 2), M.greyLt, -0.5, PY, -0.5, Math.PI / 2, 0, 0); });
+}
+/** a fitting where three or four pipes meet */
+export function pipeFitting(): Model { return one(b => { b.add(new THREE.SphereGeometry(PR * 1.55, 14, 10), M.steel, 0, PY, 0); b.cyl(PR * 1.25, 0.05, 0, PY - 0.03, 0, M.steelDk, 14); }); }
+/** the closed end of a pipe (dead end, at the tile centre) */
+export function pipeCap(): Model { return one(b => { b.add(new THREE.SphereGeometry(PR * 1.05, 12, 8), M.steelDk, 0, PY, 0); }); }
+/** bolted flanges where two lengths meet, and a stand underneath */
+export function pipeStand(): Model {
+  return one(b => {
+    for (const x of [-0.07, 0.07]) b.hcyl(PR * 1.45, 0.04, x, PY, 0, M.steelDk, 'x', 14);
+    b.box(0.1, 0.04, 0.34, 0, PY - PR - 0.04, 0, M.steelDk);          // saddle
+    for (const z of [-0.14, 0.14]) b.box(0.05, PY - PR - 0.04, 0.05, 0, 0, z, M.steelDk);
+    b.box(0.12, 0.03, 0.42, 0, 0, 0, M.concrete);                        // footing
+  });
+}
+/** a concrete pile for a pipe running over water */
+export function pipePile(): Model { return one(b => { b.cyl(0.09, 1.1, 0, -0.6, 0, M.concrete, 10); b.box(0.1, 0.05, 0.3, 0, PY - PR - 0.05, 0, M.steelDk); }); }
+/** the colour band (tinted to the fluid) */
+export function pipeBand(): Model { return one(b => { b.hcyl(PR * 1.08, 0.14, 0, PY, 0, M.white, 'x', 14); }); }
+/** where a pipe joins a building: a stub from the tile edge half a tile in, with flanges and a wall collar */
+export function pipeSocket(): Model {
+  return one(b => {
+    b.hcyl(PR, 0.5, 0.75, PY, 0, M.greyLt, 'x', 14);
+    b.hcyl(PR * 1.5, 0.05, 0.52, PY, 0, M.steelDk, 'x', 14); b.hcyl(PR * 1.5, 0.05, 0.6, PY, 0, M.steelDk, 'x', 14);
+    for (const a of [0, 1, 2, 3, 4, 5]) { const an = a / 6 * TAU; b.hcyl(0.015, 0.14, 0.56, PY + Math.cos(an) * PR * 1.25, Math.sin(an) * PR * 1.25, M.steel, 'x', 4); }
+  });
+}
+export function pipeArm(): Model { return one(b => { b.hcyl(PR, 0.5, 0.25, PY, 0, M.greyLt, 'x', 14); b.hcyl(PR * 1.4, 0.04, 0.46, PY, 0, M.steelDk, 'x', 14); }); }
 export function pipeHub(): Model { return one(b => { b.sphere(0.15, 0, 0.55, 0, M.greyLt, 12); b.cyl(0.04, 0.45, 0, 0, 0, M.steelDk, 6); b.cyl(0.1, 0.05, 0, 0, 0, M.concrete, 8); }); }
 export function ptunnelModel(): Model { return one(b => { b.box(0.7, 0.6, 0.7, 0, 0, 0, M.steelDk); b.box(0.72, 0.08, 0.72, 0, 0.6, 0, M.blue); b.hcyl(0.11, 0.3, -0.35, 0.55, 0, M.greyLt, 'x', 12); }); }

@@ -49,7 +49,7 @@ export async function showTitle(h: typeof handlers) {
       <button class="go" data-tact="play:${w.id}">▶ Play</button><button class="danger mini" data-tact="del:${w.id}" title="Delete world">🗑</button></div>`;
   }
   el.innerHTML = `<div class="tpanel">
-    <div class="tlogo">BELTWORKS</div><div class="ttag">Build it. Belt it. Automate everything.</div>
+    <div class="thead"><div class="tlogo">BELTWORKS</div><div class="ttag">Build it · Belt it · Automate everything</div></div><div class="hazard"></div>
     <div class="tcols">
       <div class="tcol"><h3>Your worlds</h3><div class="wlist">${list}</div>
         <div class="row" style="margin-top:10px"><button data-tact="import">⬆ Import a save file</button></div>${getGameHTML()}${folderHTML()}${bestsHTML()}</div>
@@ -71,7 +71,7 @@ export async function showTitle(h: typeof handlers) {
         <div class="opts two">${[['on', '🌗 On', 'A 12-minute day. Solar power only works in daylight.'], ['off', '☀️ Off', 'Always sunny. (You can change this later in the menu.)']].map(([k, l, d]) => `<div class="opt ${sel.dn === k ? 'sel' : ''}" data-tact="dn:${k}"><b>${l}</b><span>${d}</span></div>`).join('')}</div>
         <button class="go big" data-tact="create">Create world</button>`}
       </div>
-    </div></div>`;
+    </div>${versionHTML()}</div>`;
 }
 function onlineHTML() {
   const p = me();
@@ -111,6 +111,12 @@ function bestsHTML() {
   if (!keys.length) return '';
   const size = (n: number) => Object.values(SIZES).find(s => s.n === n)?.label || n;
   return `<h3 style="margin-top:14px">🏆 Personal bests</h3><div class="bests">${keys.map(k => { const [mode, sz] = k.split('|'); const r = rec[k]; const m = MODES[mode]; const h = Math.floor(r.t / 3600), mm = Math.floor(r.t / 60) % 60; return `<div>${m ? m.icon + ' ' + m.label : mode} · ${size(+sz)} <b>${h}h ${String(mm).padStart(2, '0')}m</b> <span class="dim">${esc(r.name)}</span></div>`; }).join('')}</div>`;
+}
+/** the previous build stays playable (same worlds) for anyone who prefers it */
+function versionHTML() {
+  const web = /^https?:/.test(location.protocol);
+  const href = web ? 'classic.html' : 'Play Beltworks (Classic).html';
+  return `<div class="tver"><span>Current build</span><span>Prefer the old look? <a href="${href}">Open the Classic build</a> — it plays the same saved worlds.</span></div>`;
 }
 export function hideTitle() { title.open = false; $('#title').classList.add('hidden'); }
 

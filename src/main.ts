@@ -27,6 +27,7 @@ import { ensureFresh, resetStats, update } from './sim';
 import { HX, HY } from './terrain';
 import * as UI from './ui';
 import { $ } from './util';
+import { initIcons } from './icons';
 import { parts, spawn, updParts, view, w2s } from './view';
 import { Ent, G, newWorld } from './world';
 import * as W_ from './world';
@@ -428,6 +429,7 @@ async function boot() {
   UI.setOnLoaded(() => { afterWorldReady(); });
   initInput(canvas);
   UI.initUI();
+  initIcons();
   initTitle();
   // opened from an invite link (…/beltworks/?join=K7QM2XRP)?
   try { const j = normCode(new URLSearchParams(location.search).get('join') || ''); if (j) { setInvite(j); history.replaceState(null, '', location.pathname); } } catch { }

@@ -8,12 +8,12 @@ import { hexCol, rgba } from '../gl';
 import { curPhase } from '../progress';
 import { ensureFresh, multiIn } from '../sim';
 import { H, W } from '../terrain';
-import { railUse, signalRed, trainAt, trainPoints, tripLegs, WAGON_CAP } from '../trains';
+import { headRed, railUse, signalReport, trainAt, trainPoints, tripLegs, WAGON_CAP } from '../trains';
 import { railCenter } from '../railcurves';
 import { nightness } from '../daynight';
 import { DX, DY, easeOutBack, hash2 } from '../util';
 import { parts, proj, spawn, view } from '../view';
-import { Ent, entAt, frontTiles, G, inPort, LH, PAIRS, platformPair, platformTiles, PORTED, railSides } from '../world';
+import { Ent, entAt, frontTiles, G, inPort, LH, PAIRS, platformPair, platformTiles, PORTED, railSides, sigType } from '../world';
 import { Billboards } from './bb';
 import { C, screenRay } from './core';
 import { B, M, Model, std } from './mat';
@@ -152,7 +152,10 @@ export function startLaunch() { launchPending = true; }
 const models: Record<string, Model> = Object.create(null);
 const mdl = (k: string, f: () => Model) => models[k] || (models[k] = f());
 let beltMats: Record<string, THREE.MeshStandardMaterial>;
-let covMat: THREE.Material, noPowMat: THREE.Material, routeMat: THREE.Material;
+let covMat: THREE.Material, noPowMat: THREE.Material, routeMat: THREE.Material, blockMat: THREE.Material;
+/** the signal view's block colours (cached briefly) */
+let sigView: any = null;
+const BLOCK_COLS = ['#4cc38a', '#4ea1ff', '#c77dff', '#f5a524', '#3ad6c8', '#ff7fb0', '#a8d84a', '#7f8cff', '#ffd04a', '#5ad0ff'];
 let ghostOK: THREE.Material, ghostBad: THREE.Material, areaMat: THREE.Material, lightMat: THREE.MeshBasicMaterial, fadeMat: THREE.Material, deckFade: THREE.Material;
 let SL: Layer, DL: Layer, GL: Layer, TL: Layer;
 let bbs: Billboards, bbAdd: Billboards;
@@ -193,6 +196,7 @@ export function init3D() {
   fadeMat = new THREE.MeshStandardMaterial({ color: '#c8d4e0', transparent: true, opacity: 0.16, depthWrite: false, roughness: 0.6 });
   deckFade = new THREE.MeshStandardMaterial({ color: '#b8c0c8', transparent: true, opacity: 0.1, depthWrite: false, roughness: 0.8 });
   lightMat = new THREE.MeshBasicMaterial({ color: '#ffffff', toneMapped: false });
+  blockMat = new THREE.MeshBasicMaterial({ color: '#ffffff', transparent: true, opacity: 0.55, depthWrite: false, toneMapped: false });
   routeMat = new THREE.MeshBasicMaterial({ color: '#ffffff', toneMapped: false, transparent: true, opacity: 0.9, depthTest: false, depthWrite: false });
   // gently swaying leaves (idle animation)
   MD.treeModels().forEach((t, i) => { models['tree' + i] = t; });
@@ -361,6 +365,42 @@ function pipeConn(e: Ent, d: number, lv = e.z || 0) {
   return k === 'machine' || k === 'extractor' || (k === 'gen' && (!!BLD[n.type].water || n.type === 'fuel_gen'));
 }
 
+/** is side d of pipe e joined to a building (not more pipe)? */
+function intoBuilding(e: Ent, d: number) {
+  const n = entAt(e.x + DX[d], e.y + DY[d], e.z || 0);
+  if (!n) return false;
+  const k = BLD[n.type].kind;
+  return k !== 'pipe' && k !== 'tank' && k !== 'ptunnel';
+}
+/** one tile of pipework, shaped by what it connects to (see the pipe models) */
+function pushPipe(L: LayerLike, e: Ent) {
+  const cx = e.x + 0.5, cy = e.y + 0.5;
+  const sides: number[] = [];
+  for (let dd = 0; dd < 4; dd++) if (pipeConn(e, dd)) sides.push(dd);
+  const n = sides.length, straight = n === 2 && ((sides[0] + 2) & 3) === sides[1];
+  if (n === 0) pushModel(L, 'pipeS', mdl('pipeS', MD.pipeStraight), compose(cx, 0, cy, 0));
+  else if (straight) pushModel(L, 'pipeS', mdl('pipeS', MD.pipeStraight), compose(cx, 0, cy, -sides[0] * HP));
+  else if (n === 2) {
+    // elbow: the model joins north (3) and west (2); turn it to fit
+    let k = 0; for (; k < 4; k++) { const a = (3 + k) & 3, b = (2 + k) & 3; if (sides.includes(a) && sides.includes(b)) break; }
+    pushModel(L, 'pipeL', mdl('pipeL', MD.pipeElbow), compose(cx, 0, cy, -k * HP));
+  } else {
+    for (const dd of sides) pushModel(L, 'pipeArm', mdl('pipeArm', MD.pipeArm), compose(cx, 0, cy, -dd * HP));
+    if (n === 1 && !intoBuilding(e, sides[0])) pushModel(L, 'pipeCap', mdl('pipeCap', MD.pipeCap), compose(cx, 0, cy, 0));
+    else pushModel(L, 'pipeFit', mdl('pipeFit', MD.pipeFitting), compose(cx, 0, cy, 0));
+  }
+  // sockets where the pipe joins a machine, pump or generator
+  for (const dd of sides) if (intoBuilding(e, dd)) pushModel(L, 'pipeSock', mdl('pipeSock', MD.pipeSocket), compose(cx, 0, cy, -dd * HP));
+  // stands every few tiles along straight runs (piles over water), and a band in the fluid's colour
+  const along = n === 0 || straight ? (sides[0] ?? 0) : -1;
+  if (along >= 0 && ((e.x + e.y) % 3 === 0)) {
+    const wet = G.tiles[e.y * W + e.x] === 4 || G.tiles[e.y * W + e.x] === 5;
+    pushModel(L, wet ? 'pipePile' : 'pipeStand', mdl(wet ? 'pipePile' : 'pipeStand', wet ? MD.pipePile : MD.pipeStand), compose(cx, 0, cy, -along * HP));
+    const fl = e.fnet && e.fnet.fluid ? ITEMS[e.fnet.fluid].c : '#8a96a6';
+    COL.set(fl);
+    L.get('pipeBand', mdl('pipeBand', MD.pipeBand).geo, mdl('pipeBand', MD.pipeBand).mats, true, true).push(compose(cx + DX[along] * 0.25, 0, cy + DY[along] * 0.25, -along * HP), COL);
+  }
+}
 /** tunnel mouths where a railway disappears into a mountain */
 /** a rail tile is 'inside' the mountain when all four of its corners are above the tunnel height */
 const inside = (x: number, y: number) => tunnelInside(x, y) && tunnelInside(x + 1, y) && tunnelInside(x, y + 1) && tunnelInside(x + 1, y + 1);
@@ -436,16 +476,7 @@ function recordChunks(keys: Set<number>, real: number) {
       if (rTiles(e.y * W + e.x).some(k => G.tiles[k] === 6)) pushPortals(L, e);
       continue;
     }
-    if (k === 'pipe') {
-      const cx = e.x + 0.5, cy = e.y + 0.5;
-      const fl = e.fnet && e.fnet.fluid ? ITEMS[e.fnet.fluid].c : '#d0d4da';
-      COL.set(fl).lerp(new THREE.Color('#ffffff'), 0.35);
-      L.get('pipeHub', mdl('pipeHub', MD.pipeHub).geo, mdl('pipeHub', MD.pipeHub).mats, true, true).push(compose(cx, 0, cy, 0), COL);
-      let any = false;
-      for (let dd = 0; dd < 4; dd++) if (pipeConn(e, dd)) { any = true; pushModel(L, 'pipeArm', mdl('pipeArm', MD.pipeArm), compose(cx, 0, cy, -dd * HP)); }
-      if (!any) pushModel(L, 'pipeArm', mdl('pipeArm', MD.pipeArm), compose(cx, 0, cy, 0));
-      continue;
-    }
+    if (k === 'pipe') { pushPipe(L, e); continue; }
     if (k === 'ptunnel') { pushModel(L, 'ptun', mdl('ptun', MD.ptunnelModel), compose(e.x + 0.5, 0, e.y + 0.5, -(e.isExit ? e.rot + 2 : e.rot) * HP)); continue; }
     const t = TPL[tk(e)];
     if (!t) continue;
@@ -782,14 +813,43 @@ export function update3D(time: number, real: number, dt: number, labels: Label3[
     if (close) labels.push({ x: sp.x, y: sp.y, z: 3.0, t: sp.name, c: '#bfe0ff' });
   }
   // rail signals: a post beside the track with a red or green lamp
+  // each head stands on the right-hand side of the track for the trains it controls, its lamp facing them
   for (const r of sigRails) {
     if (!G.ents.has(r.id) || !r.sig || Math.abs(r.x - tgx) > VR || Math.abs(r.y - tgy) > VR) continue;
-    const post = mdl('sigPost' + r.sig, () => MD.signalModel(r.sig === 2));
-    pushModel(DL, 'sigPost' + r.sig, post, compose(r.x + 1.5, 0, r.y + 1.5, 0));
-    const red = signalRed(r.y * W + r.x);
-    COL.set(red ? '#ff3a2a' : '#3aff6a');
-    DL.get('light', mdl('lightS', () => ({ geo: new THREE.SphereGeometry(0.07, 8, 6), mats: [] })).geo, lightMat, false, true).push(compose(r.x + 1.9, 1.05, r.y + 1.9, 0, 1.3, 1.3, 1.3), COL);
-    if (near) bbAdd.add(r.x + 1.9, r.y + 1.9, 1.05, 0.5, 0.5, SPR.glow, hexCol(red ? '#ff3a2a' : '#3aff6a', 0.6));
+    const i = r.y * W + r.x, cx = r.x + RS / 2, cy = r.y + RS / 2;
+    const axis = r.pairs & 1 ? [0, 2] : r.pairs & 2 ? [1, 3] : [0, 1, 2, 3];
+    for (const d of axis) {
+      const ty = sigType(r, d);
+      if (!ty) continue;
+      const rt = (d + 1) & 3, px = cx + DX[rt] * 1.25 - DX[d] * 0.4, py = cy + DY[rt] * 1.25 - DY[d] * 0.4;
+      pushModel(DL, 'sigHead' + ty, mdl('sigHead' + ty, () => MD.signalHead(ty === 2)), compose(px, 0, py, -(d + 2) * HP));
+      const red = headRed(i, d), lx = px - DX[d] * 0.14, ly = py - DY[d] * 0.14;
+      COL.set(red ? '#ff3a2a' : '#3aff6a');
+      DL.get('light', mdl('lightS', () => ({ geo: new THREE.SphereGeometry(0.07, 8, 6), mats: [] })).geo, lightMat, false, true).push(compose(lx, 1.15, ly, 0, 1.2, 1.2, 1.2), COL);
+      if (near) bbAdd.add(lx, ly, 1.15, 0.45, 0.45, SPR.glow, hexCol(red ? '#ff3a2a' : '#3aff6a', 0.6));
+      if (view.sigTool) { COL.set(ty === 2 ? '#5ab4ff' : '#ffc23a'); DL.get('sigArrow', mdl('sigArrow', MD.sigArrow).geo, routeMat, false, true).push(compose(cx, 0.2, cy, -d * HP), COL); }
+    }
+  }
+  // holding a signal: every block in its own colour, and anything that can't work flagged in red
+  if (view.sigTool) {
+    if (!sigView || real - sigView.t > 0.5 || sigView.rev !== G.railRev) { const rep = signalReport(); sigView = { t: real, rev: G.railRev, ...rep }; }
+    const plane = mdl('areaP', () => ({ geo: new THREE.PlaneGeometry(1, 1).rotateX(-Math.PI / 2), mats: [] })).geo;
+    const BL = DL.get('blockTint', plane, blockMat, false, true);
+    for (const r of G.L.rails) {
+      if (Math.abs(r.x - tgx) > VR || Math.abs(r.y - tgy) > VR) continue;
+      const i = r.y * W + r.x, id = sigView.blocks.get(i);
+      if (id === undefined) continue;
+      const info = sigView.report.get(id);
+      COL.set(info && info.errors.length ? '#ff3030' : BLOCK_COLS[id % BLOCK_COLS.length]);
+      BL.push(compose(r.x + RS / 2, 0.14, r.y + RS / 2, 0, RS * 0.92, 1, RS * 0.92), COL);
+    }
+    for (const info of sigView.report.values()) {
+      if (!info.errors.length) continue;
+      const t = info.tiles[Math.floor(info.tiles.length / 2)];
+      if (Math.abs(t % W - tgx) > VR || Math.abs(Math.floor(t / W) - tgy) > VR) continue;
+      labels.push({ x: t % W + RS / 2, y: Math.floor(t / W) + RS / 2, z: 2.2, t: '⚠ ' + info.errors[0], c: '#ff8a7a' });
+    }
+    for (const [t, msg] of sigView.sigErrors) labels.push({ x: t % W + RS / 2, y: Math.floor(t / W) + RS / 2, z: 2.6, t: '⚠ ' + msg, c: '#ff8a7a' });
   }
   // trucks
   for (const tk of G.trucks) {
@@ -1020,8 +1080,21 @@ function updateGhosts(real: number) {
     if (gh.type === 'pipe_lift') { pushModel(GL, pre + 'pipeLift', mdl('pipeLift', MD.pipeLiftModel), compose(gh.x + 0.5, 0, gh.y + 0.5, 0), mat, false); continue; }
     if (d.kind === 'belt' || d.kind === 'tunnel') { pushBelt(GL, { ...gh, curve: -1, isExit: gh.isExit } as any, mat, pre); continue; }
     if (d.kind === 'rail') { pushRail(GL, gh.x, gh.y, gh.pairs || 1, mat, pre); continue; }
+    if (d.kind === 'signal' && gh.sd !== undefined && gh.pairs) {
+      // ghost: the heads it will add, and arrows for the way they face
+      const cx = gh.x + RS / 2, cy = gh.y + RS / 2;
+      const dirs = gh.sd === 4 ? (gh.pairs & 1 ? [0, 2] : [1, 3]) : gh.sd >= 0 ? [gh.sd] : [];
+      for (const dd of dirs) {
+        const rt = (dd + 1) & 3;
+        pushModel(GL, pre + 'sigHead' + d.sig, mdl('sigHead' + d.sig, () => MD.signalHead(d.sig === 2)), compose(cx + DX[rt] * 1.25 - DX[dd] * 0.4, 0, cy + DY[rt] * 1.25 - DY[dd] * 0.4, -(dd + 2) * HP), mat, false);
+        COL.set(d.sig === 2 ? '#5ab4ff' : '#ffc23a');
+        GL.get('sigArrowG', mdl('sigArrow', MD.sigArrow).geo, routeMat, false, true).push(compose(cx, 0.25, cy, -dd * HP, 1.3, 1, 1.3), COL);
+      }
+      if (gh.sd === -1) pushModel(GL, pre + 'snapOK', mdl('sigArrow', MD.sigArrow), compose(cx, 0.25, cy, 0, 1.6, 1, 1.6), mat, false);
+      continue;
+    }
     if (d.kind === 'signal') { pushModel(GL, pre + 'sigPost' + d.sig, mdl('sigPost' + d.sig, () => MD.signalModel(d.sig === 2)), compose(gh.x + 0.5, 0, gh.y + 0.5, 0), mat, false); continue; }
-    if (d.kind === 'pipe') { pushModel(GL, pre + 'pipeHub', mdl('pipeHub', MD.pipeHub), compose(gh.x + 0.5, 0, gh.y + 0.5, 0), mat, false); pushModel(GL, pre + 'pipeArm', mdl('pipeArm', MD.pipeArm), compose(gh.x + 0.5, 0, gh.y + 0.5, 0), mat, false); pushModel(GL, pre + 'pipeArm', mdl('pipeArm', MD.pipeArm), compose(gh.x + 0.5, 0, gh.y + 0.5, Math.PI), mat, false); continue; }
+    if (d.kind === 'pipe') { pushModel(GL, pre + 'pipeS', mdl('pipeS', MD.pipeStraight), compose(gh.x + 0.5, 0, gh.y + 0.5, -(gh.rot || 0) * HP), mat, false); continue; }
     if (d.kind === 'ptunnel') { pushModel(GL, pre + 'ptun', mdl('ptun', MD.ptunnelModel), compose(gh.x + 0.5, 0, gh.y + 0.5, -(gh.isExit ? gh.rot + 2 : gh.rot) * HP), mat, false); continue; }
     const t = TPL[gh.type];
     if (!t) continue;

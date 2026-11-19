@@ -3,10 +3,11 @@ import { railPos } from './railcurves';
 import { BLD } from './data';
 import { H, W } from './terrain';
 import { DX, DY, opp } from './util';
-import { addInv, borderTiles, canAfford, Ent, entAt, G, Line, markDirty, missingText, pairBit, pay, place, platformTiles, railAt, railExits, railSides, refund, Train } from './world';
+import { addInv, borderTiles, canAfford, Ent, entAt, G, Line, markDirty, missingText, pairBit, pay, place, platformTiles, railAt, railExits, railSides, refund, sigType, Train } from './world';
 import { TT } from './terrain';
 import { railPairsForPath, smartJunction } from './cmd';
 import { RS, rOrigin, rStep, rTiles } from './railgrid';
+import { blockReport, planSignals } from './railsig';
 
 export const WAGON_CAP = 120;
 // speeds are in rail blocks (2 tiles) per second
@@ -164,6 +165,7 @@ function bfs(start: number, entry: number, goals: Set<number>, blocked: Set<numb
       if (!nr) continue;
       const ne = opp(ex);
       if (!(railSides(nr.pairs) & (1 << ne))) continue;
+      if (nr.sig && !sigType(nr, ex)) continue;   // signalled one way only: can't go through against it
       if (blocked && blocked.has(ni)) continue;
       const nk = key(ni, ne);
       if (prev.has(nk)) continue;
@@ -658,6 +660,25 @@ function computeBlocks() {
   }
 }
 export const blockAt = (i: number) => blocks.get(i);
+/** the head facing direction d on piece i: red if the block ahead is taken (or reserved by another train) */
+export function headRed(i: number, d: number): boolean {
+  const b = blocks.get(rStep(i, d));
+  return b !== undefined && (blockOcc.has(b) || blockRes.has(b));
+}
+/** the block layout and what's wrong with it (for the signal view); also the block ids */
+export function signalReport() {
+  if (G.railRev !== blocksRev && G.L) computeBlocks();
+  const goals = new Set<number>();
+  for (const st of G.L.stations) for (const g of stationGoals(st)) goals.add(g);
+  const rep = blockReport(blocks, goals);
+  return { blocks, report: rep.blocks, sigErrors: rep.sigErrors };
+}
+/** plan signals for the network around piece i (the signal assistant) */
+export function autoSignals(i: number) {
+  const goals = new Set<number>();
+  for (const st of G.L.stations) for (const g of stationGoals(st)) goals.add(g);
+  return planSignals(i, G.trains, (G.S.lines || []) as any, goals);
+}
 /** red if the track next to this signal is taken */
 export function signalRed(i: number): boolean {
   for (let s = 0; s < 4; s++) {
@@ -670,6 +691,8 @@ export function signalRed(i: number): boolean {
 function canEnter(t: Train): boolean {
   const tile = t.route[0], r = railAt(tile);
   if (!r || !r.sig) return true;
+  const head = sigType(r, sideToward(t.cells[0], tile));
+  if (!head) return false;            // the signal faces the other way: one-way track, no passing
   const after = t.route[1];
   if (after === undefined) return true;
   const B = blocks.get(after);
@@ -677,7 +700,7 @@ function canEnter(t: Train): boolean {
   const mine = (x?: { t: number }) => !x || x.t === t.id;
   const now = G.S.time;
   const otherIn = [...(blockOcc.get(B) || [])].some(id => id !== t.id);
-  if (r.sig === 1) {
+  if (head === 1) {
     if (otherIn || !mine(blockRes.get(B))) return false;
     for (const [ti, v] of tileRes) if (v.t !== t.id && blocks.get(ti) === B) return false;
     if (!blockRes.has(B)) blockRes.set(B, { t: t.id, entered: false, since: now });

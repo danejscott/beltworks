@@ -283,6 +283,7 @@ export const BLD: Record<string, BDef> = {
   station: { n: 'Train Station', w: 3, h: 24, cat: 'trans', kind: 'station', power: 20, cap: 4000, cost: { concrete: 150, cable: 60, iron_plate: 120 }, col: '#b58a4a', desc: 'A long platform station: its own track runs along the front (the arrow side), long enough for a 6-car train. Connect your railway to either end, or use Quick Route in its panel to build a loop and a train to another station. Belts go in and out at the back, like the Harbor. Set Load or Unload.' },
   rail_signal: { n: 'Block Signal', w: 1, h: 1, cat: 'trans', kind: 'signal', sig: 1, logistic: true, cost: { iron_plate: 5, cable: 5 }, col: '#e04a3a', desc: 'Click a railway tile to put a signal on it. Signals split track into blocks: a train only passes a block signal when the whole next block is empty. Use them to run many trains on your own networks.' },
   path_signal: { n: 'Path Signal', w: 1, h: 1, cat: 'trans', kind: 'signal', sig: 2, logistic: true, cost: { iron_plate: 5, cable: 10 }, col: '#4a8ae0', desc: 'A smarter signal for junctions: a train only reserves the tiles its route actually uses, so several trains can cross a junction at once. Put path signals in front of junctions and block signals elsewhere.' },
+  signal_auto: { n: 'Signal Assistant', w: 1, h: 1, cat: 'trans', kind: 'signal', sig: 3, logistic: true, cost: {}, col: '#e0b84a', desc: 'Click any piece of a rail network to signal all of it: path signals into every junction and crossing with block signals out of it ("path in, block out"), and block signals spaced along one-way lines. Replaces the signals already on that network; you pay for the new ones.' },
   locomotive: { n: 'Locomotive', w: 1, h: 1, cat: 'trans', kind: 'train', cost: { rotor: 10, reinforced_plate: 20, cable: 50 }, col: '#d0503a', desc: 'Click a railway to place a train. Click the train to add wagons and a schedule.', noRotate: false },
   wagon: { n: 'Freight Wagon', w: 1, h: 1, cat: 'trans', kind: 'wagon', hidden: true, cost: { iron_plate: 40, reinforced_plate: 10 }, col: '#8a7a6a', desc: 'Holds 120 items. Long trains (up to 20–30 cars, by map size) are the biggest haulers in the game.' },
   ship_port: { n: 'Ship Port', w: 3, h: 3, cat: 'trans', kind: 'port', power: 15, cap: 4000, cost: { concrete: 60, reinforced_plate: 20, cable: 30 }, col: '#3a7ab0', desc: 'Build it on the shore, touching a lake or the sea. Buy ships in its panel and choose which ports each ship sails between. Belt items into the blue input; set Load or Unload.' },
@@ -314,7 +315,7 @@ export const CATS = [
   { id: 'log', n: 'Logistics', types: [['belt4', 'belt3', 'belt2', 'belt1'], 'tunnel', 'splitter', 'merger', 'sorter', ['storage2', 'storage'], 'sink'] },
   { id: 'power', n: 'Power', types: ['pole1', 'pole2', 'tower', 'biomass_burner', 'coal_gen', 'fuel_gen', 'geothermal', 'solar', 'nuclear_plant', 'battery'] },
   { id: 'fluid', n: 'Fluids', types: [['pipe2', 'pipe1'], 'ptunnel', 'tank'] },
-  { id: 'trans', n: 'Transport', types: ['rail', 'station', 'locomotive', 'rail_signal', 'path_signal', 'truck_station', 'harbor', 'slab', 'outpost', 'drone_port'] },
+  { id: 'trans', n: 'Transport', types: ['rail', 'station', 'locomotive', 'rail_signal', 'path_signal', 'signal_auto', 'truck_station', 'harbor', 'slab', 'outpost', 'drone_port'] },
   { id: 'special', n: 'Special', types: ['elevator', 'statue', 'lamp'] },
 ] as { id: string; n: string; types: (string | string[])[] }[];
 
@@ -332,7 +333,7 @@ export const MILESTONES: Milestone[] = [
   { id: 't1b', tier: 1, n: 'Logistics Mk2', req: { reinforced_plate: 50, screw: 500 }, un: ['belt2', 'tunnel', 'sorter', 'truck_station', 'truck', 'outpost'], tip: 'Outposts give far-away regions free starter power and a fast-travel point (O). Build upward! Foundations (Floors tab, or press PageUp) let you build on up to three floors, and Conveyor Lifts move items between them. Trucks: place two Truck Stations and buy a truck in one of their panels. Belt Tunnels let belts cross each other. Blueprints (Ctrl+C / B) are always available — copy a line, paste it five times!' },
   { id: 't1c', tier: 1, n: 'Resource Sink', req: { reinforced_plate: 50, rotor: 25, cable: 100 }, un: ['sink'], tip: 'Anything fed into a Resource Sink earns Points → Coupons → Shop (K).' },
   { id: 't2a', tier: 2, n: 'Frameworks', req: { rotor: 50, reinforced_plate: 100 }, un: ['modular_frame', 'smart_plating', 'elevator'], tip: 'The Space Elevator (Special tab) is your big goal. Belt Smart Plating into it!' },
-  { id: 't2c', tier: 2, n: 'Railways', req: { reinforced_plate: 100, rotor: 40, cable: 200 }, un: ['rail', 'station', 'locomotive', 'wagon', 'tower', 'harbor', 'slab', 'ship_port', 'ship', 'rail_signal', 'path_signal'], tip: 'Ship Ports on lake shores let cargo ships carry goods across water. Place two Train Stations, click one and use Quick Route: it lays the track and builds a train for you. Great for far-away resources!' },
+  { id: 't2c', tier: 2, n: 'Railways', req: { reinforced_plate: 100, rotor: 40, cable: 200 }, un: ['rail', 'station', 'locomotive', 'wagon', 'tower', 'harbor', 'slab', 'ship_port', 'ship', 'rail_signal', 'path_signal', 'signal_auto'], tip: 'Ship Ports on lake shores let cargo ships carry goods across water. Place two Train Stations, click one and use Quick Route: it lays the track and builds a train for you. Great for far-away resources!' },
   { id: 't2b', tier: 2, n: 'Coal Power', req: { modular_frame: 20, cable: 300, rotor: 50 }, un: ['coal_gen', 'water_extractor', 'pipe1', 'ptunnel', 'tank', 'solar'], tip: 'Coal Generators need Coal by belt AND Water by pipe. Place a Water Extractor on a lake. Solar Panels are free power — but only while the sun is up.' },
   { id: 'p1', tier: 2, phase: 1, n: 'Elevator Phase 1', req: { smart_plating: 50 }, unlockTiers: [3, 4] },
 
@@ -425,7 +426,7 @@ export const primaryOut = (r: Recipe) => Object.keys(r.out)[0];
 // Visual heights (in tiles) for the isometric view
 export const HEIGHT: Record<string, number> = {
   miner1: 0.85, miner2: 0.95, miner3: 1.05, harvester: 0.7, smelter: 1.1, constructor: 0.9, assembler: 1.25, foundry: 1.45,
-  refinery: 1.7, manufacturer: 1.6, water_extractor: 0.55, oil_extractor: 1.0, storage: 0.9, storage2: 1.2, sink: 0.8,
+  refinery: 1.7, manufacturer: 1.6, water_extractor: 0.45, oil_extractor: 0.75, storage: 0.9, storage2: 1.2, sink: 0.8,
   tank: 1.3, biomass_burner: 0.9, coal_gen: 1.4, solar: 0.9, nuclear_plant: 3.0, ship_port: 0.4, harbor: 0.5, outpost: 1.0, packager: 1.6, blender: 2.2, particle_accelerator: 2.6, truck_station: 0.35, fuel_gen: 1.5, geothermal: 0.7, battery: 1.0, station: 0.35, drone_port: 0.4,
   hub: 1.15, elevator: 0.6, statue: 0.5, lamp: 0.25, splitter: 0.32, merger: 0.32, sorter: 0.32, tower: 0.3, pole1: 0, pole2: 0,
 };
