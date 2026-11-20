@@ -79,25 +79,30 @@ function renderInv() {
 
 // ---------------------------------------------------------------------------
 // Hotbar
+const MAX_SLOTS = Math.max(...CATS.map(c => c.types.length));
 export function renderHotbar() {
-  let h = '<div class="tabs">';
-  CATS.forEach((c, i) => { h += `<button class="tab ${i === curCat ? 'sel' : ''}" data-act="cat:${i}">${c.n}</button>`; });
-  h += '<span class="tabhint"><kbd>Tab</kbd> switch</span></div><div class="slots">';
-  CATS[curCat].types.forEach((entry, i) => {
+  const tk = tool.t && tool.t.k;
+  let h = '<div class="hbtop"><div class="tabs">';
+  CATS.forEach((c, i) => { h += `<button class="tab ${i === curCat ? 'sel' : ''}" data-act="cat:${i}" title="${c.n} (Tab cycles)">${c.n}</button>`; });
+  h += '</div><div class="tools">';
+  h += `<button class="tbtn ${tk === 'decon' ? 'sel' : ''}" data-act="decon" data-tip="tool:decon">✖</button>`;
+  h += `<button class="tbtn ${tk === 'bpsel' || tk === 'paste' ? 'sel' : ''}" data-act="copy" data-tip="tool:copy">⧉</button>`;
+  h += `<button class="tbtn ${tk === 'paint' ? 'sel' : ''}" data-act="paint" data-tip="tool:paint">🖌</button>`;
+  h += `<button class="tbtn ${tk === 'smooth' ? 'sel' : ''}" data-act="smooth" data-tip="tool:smooth">〰</button>`;
+  h += `<button class="tbtn" data-act="open:bp" data-tip="tool:bp">▦</button>`;
+  h += '</div></div><div class="slots">';
+  const types = CATS[curCat].types;
+  types.forEach((entry, i) => {
     const type = bestOf(entry), d = BLD[type];
     const locked = !G.S.unlocked.has(type);
     const sel = tool.t && tool.t.k === 'build' && tool.t.type === type;
     const cant = !locked && !canAfford(d.cost);
     h += `<div class="slot ${locked ? 'locked' : ''} ${sel ? 'sel' : ''} ${cant ? 'cant' : ''}" data-act="slot:${i}" data-tip="bld:${type}"><span class="k">${i === 9 ? 0 : i + 1}</span><img src="${buildingIconURL(type)}" width="44" height="44" alt="">${locked ? '<span class="lk">🔒</span>' : ''}</div>`;
   });
-  const tk = tool.t && tool.t.k;
-  h += `<div class="sep"></div><div class="slot tool ${tk === 'decon' ? 'sel' : ''}" data-act="decon" data-tip="tool:decon"><span class="k">X</span><span class="big" style="color:#ef5b5b">✖</span></div>`;
-  h += `<div class="slot tool ${tk === 'smooth' ? 'sel' : ''}" data-act="smooth" data-tip="tool:smooth"><span class="k"></span><span class="big" style="color:#9fd2ff">〰</span></div>`;
-  h += `<div class="slot tool ${tk === 'paint' ? 'sel' : ''}" data-act="paint" data-tip="tool:paint"><span class="k">⇧Q</span><span class="big" style="color:#b48cff">🖌</span></div>`;
-  h += `<div class="slot tool ${tk === 'bpsel' || tk === 'paste' ? 'sel' : ''}" data-act="copy" data-tip="tool:copy"><span class="k">^C</span><span class="big" style="color:#8ad0ff">⧉</span></div>`;
-  h += `<div class="slot tool" data-act="open:bp" data-tip="tool:bp"><span class="k">B</span><span class="big" style="color:#8ad0ff">▦</span></div>`;
-  h += '</div>';
-  const el = $('#hotbar'); if (el.dataset.h !== h) { el.innerHTML = h; el.dataset.h = h; }
+  for (let i = types.length; i < MAX_SLOTS; i++) h += '<div class="slot empty"></div>';
+  h += '</div><div class="hbline" id="hbline"></div>';
+  const el = $('#hotbar');
+  if (el.dataset.h !== h) { const line = document.getElementById('hbline')?.innerHTML || ''; el.innerHTML = h; el.dataset.h = h; const nl = document.getElementById('hbline'); if (nl) nl.innerHTML = line; }
 }
 function bldTip(type: string) {
   const d = BLD[type];
@@ -111,7 +116,7 @@ function bldTip(type: string) {
 export function updateHint() {
   const t = tool.t;
   let h: string;
-  if (!t) h = '<b>Drag</b> pan · <b>Wheel</b> zoom · <b>Click</b> ore to mine, trees to chop, buildings to inspect · <b>1–0</b> build · <b>F</b> belt · <b>Q</b> copy building · <b>M</b> map · <b>[ ]</b> rotate view';
+  if (!t) h = '<b>Click</b> a building to inspect it, ore to mine, trees to chop · <b>Drag</b> to pan · <b>1–0</b> pick from the bar · <b>?</b> all controls';
   else if (t.k === 'decon') h = '<b>Deconstruct:</b> click one thing, or drag a box (also clears trees). 100% refund · <b>X</b>/<b>Right-click</b> exit';
   else if (t.k === 'paint') h = t.src ? `<b>Copy settings</b> of a ${esc(BLD[t.src.type].n)}${t.src.r ? ` (${esc(RECIPES[t.src.r]?.n || t.src.r)})` : ''}: click or drag over others of the same kind · <b>Esc</b>/<b>Right-click</b> done` : '<b>Copy settings:</b> click the building to copy from (recipe, clock speed, filters) · <b>Esc</b> cancel';
   else if (t.k === 'bpsel') h = '<b>Blueprint:</b> drag a box around what you want to copy · <b>Esc</b> cancel';
@@ -147,7 +152,7 @@ export function updateHint() {
     }
   }
   if (view.level > 0) h = `<b style="color:#f5a524">Floor ${view.level}</b> · ` + h;
-  const el = $('#hint'); if (el.dataset.h !== h) { el.innerHTML = h; el.dataset.h = h; }
+  const el = document.getElementById('hbline'); if (el && el.dataset.h !== h) { el.innerHTML = h; el.dataset.h = h; el.title = el.textContent || ''; }
 }
 function coveredByPower(x: number, y: number, d: any) {
   ensureFresh();
@@ -197,6 +202,7 @@ function reqRows(req: Cost, have: (k: string) => number) {
   }
   return h;
 }
+const goalsOpen = () => { try { return localStorage.getItem('bw-goals') === '1'; } catch { return false; } };
 function renderTracker() {
   const S = G.S;
   let h = '';
@@ -215,16 +221,18 @@ function renderTracker() {
   }
   const goals = MILESTONES.filter(m => m.tier <= S.maxTier && !S.done.has(m.id));
   if (goals.length) {
-    h += `<div class="tbox"><div class="th"><span>Goals · Tier ${S.maxTier}</span><button class="mini" data-act="open:hub">All <kbd>H</kbd></button></div>`;
-    for (const m of goals.slice(0, 4)) {
+    const open = goalsOpen(), shown = open ? goals.slice(0, 3) : goals.slice(0, 1);
+    h += `<div class="tbox"><div class="th"><span>Goals · Tier ${S.maxTier}</span><button class="mini" data-act="open:hub" title="All milestones (H)">All</button></div>`;
+    for (const m of shown) {
       const ready = milestoneReady(m);
       h += `<div class="goal"><div class="gname"><span>${m.phase ? '🚀 ' : ''}${m.n} <span class="dim">T${m.tier}</span></span>`;
       h += m.phase ? `<button class="mini" data-act="submit:${m.id}">Load</button>` : `<button class="mini ${ready ? 'go' : ''}" data-act="submit:${m.id}" ${ready ? '' : 'disabled'}>Submit</button>`;
       h += '</div>' + reqRows(m.req, k => m.phase ? (S.elev[k] || 0) : (S.inv[k] || 0));
       if (m.phase) h += `<div class="sm">Belt these into the Space Elevator${count('elevator') ? '' : ' (build it first — Special tab)'}.</div>`;
-      else if (m.un) h += `<div class="sm">Unlocks: ${m.un.slice(0, 5).map(unlockName).join(', ')}${m.un.length > 5 ? '…' : ''}</div>`;
+      else if (m.un && open) h += `<div class="sm">Unlocks: ${m.un.slice(0, 4).map(unlockName).join(', ')}${m.un.length > 4 ? '…' : ''}</div>`;
       h += '</div>';
     }
+    if (goals.length > 1) h += `<button class="mini gmore" data-act="goalsToggle">${open ? 'Show less' : `+ ${goals.length - 1} more goal${goals.length > 2 ? 's' : ''}`}</button>`;
     h += '</div>';
   } else if (S.won) h += '<div class="tbox"><div class="th">🏆 Space Station complete!</div><div class="sm">Everything is unlocked. Keep building — the factory must grow.</div></div>';
   const craft = myCraft();
@@ -249,19 +257,21 @@ export function closeInspect() { view.inspect = null; view.inspectTrain = null; 
 export function flyTo(x: number, y: number) { if (markerFlyTo) markerFlyTo(x, y); }
 function stationList() { return G.L ? G.L.stations : []; }
 
+let recipeOpen = 0;
 function inspStatic(e: Ent): string {
   const d = def(e);
   let h = `<div class="ih"><div class="it">${d.n}</div><button class="x" data-act="closeInsp">✕</button></div><div id="idyn"></div>`;
   const clockable = d.kind === 'machine' || d.kind === 'miner' || d.kind === 'extractor' || (d.kind === 'gen' && e.type !== 'biomass_burner');
   if (d.kind === 'machine') {
     const rs = Object.values(RECIPES).filter(r => r.m === d.machine), un = rs.filter(r => G.S.unlocked.has(r.id));
-    h += '<div class="sec">Recipe</div><div class="rlist">';
-    for (const r of un) {
+    const showAll = !e.recipe || recipeOpen === e.id;
+    h += `<div class="sec" style="display:flex;justify-content:space-between;align-items:center">Recipe${e.recipe && un.length > 1 ? `<button class="mini" data-act="recipeList">${showAll ? 'Done' : 'Change'}</button>` : ''}</div><div class="rlist">`;
+    for (const r of showAll ? un : un.filter(r => r.id === e.recipe)) {
       const outs = Object.keys(r.out);
       h += `<div class="rbtn ${e.recipe === r.id ? 'sel' : ''}" data-act="recipe:${r.id}">${ic(outs[0], 28)}<div><b>${r.n}</b>${outs.length > 1 ? ` <span class="dim">+ ${ITEMS[outs[1]].n}</span>` : ''}<div class="sm">${Object.keys(r.in).map(i => `${ic(i, 14)}${fmtR(r.in[i] * 60 / r.t)}`).join(' + ')} → ${outs.map(o => `${ic(o, 14)}${fmtR(r.out[o] * 60 / r.t)}`).join(' + ')} /min</div></div></div>`;
     }
     if (!un.length) h += '<div class="sm">No recipes unlocked yet.</div>';
-    if (rs.length > un.length) h += `<div class="sm">🔒 ${rs.length - un.length} more recipe${rs.length - un.length > 1 ? 's' : ''} unlock later</div>`;
+    if (showAll && rs.length > un.length) h += `<div class="sm">🔒 ${rs.length - un.length} more recipe${rs.length - un.length > 1 ? 's' : ''} unlock later</div>`;
     h += '</div>';
   }
   if (clockable) {
@@ -1079,12 +1089,14 @@ function act(cmd: string, a: string, b: string) {
     case 'closeModal': closeModal(); break;
     case 'closeInsp': closeInspect(); break;
     case 'cat': setCat(+a); break;
+    case 'recipeList': if (e) { recipeOpen = recipeOpen === e.id ? 0 : e.id; inspKey = ''; } break;
+    case 'goalsToggle': try { localStorage.setItem('bw-goals', goalsOpen() ? '0' : '1'); } catch { } break;
     case 'slot': selectSlot(+a); break;
     case 'decon': setTool(tool.t && tool.t.k === 'decon' ? null : { k: 'decon' }); sfx('click'); break;
     case 'copy': setTool({ k: 'bpsel', quick: true }); sfx('click'); break;
     case 'paint': setTool(tool.t && tool.t.k === 'paint' ? null : { k: 'paint', src: null }); sfx('click'); break;
     case 'smooth': setTool(tool.t && tool.t.k === 'smooth' ? null : { k: 'smooth', a: null }); sfx('click'); break;
-    case 'recipe': if (e) { run({ k: 'recipe', id: e.id, r: a || null }); inspKey = ''; } break;
+    case 'recipe': if (e) { run({ k: 'recipe', id: e.id, r: a || null }); recipeOpen = 0; inspKey = ''; } break;
     case 'rot': if (e) run({ k: 'rot', id: e.id, dir: 1 }); break;
     case 'copyEnt': if (e) { setTool({ k: 'build', type: e.type, recipe: e.recipe || null, clock: e.clock, filt: e.filt, mode: e.mode }); closeInspect(); } break;
     case 'del': if (e) run({ k: 'rm', id: e.id }); break;

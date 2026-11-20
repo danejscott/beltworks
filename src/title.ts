@@ -58,17 +58,17 @@ export async function showTitle(h: typeof handlers) {
         <label class="flabel">World name</label>
         <div class="row"><input id="wname" type="text" maxlength="28" value="${esc(randName())}" style="flex:1;font-size:15px"><button class="mini" data-tact="dice" title="Random name">🎲</button></div>
         <label class="flabel">Map size</label>
-        <div class="opts">${Object.entries(SIZES).map(([k, s]) => `<div class="opt ${sel.size === k ? 'sel' : ''}" data-tact="size:${k}"><b>${s.label}</b><span>${s.desc}</span></div>`).join('')}</div>
+        <div class="seg">${Object.entries(SIZES).map(([k, s]) => `<button class="${sel.size === k ? 'sel' : ''}" data-tact="size:${k}">${s.label}</button>`).join('')}</div><div class="segd">${(SIZES as any)[sel.size]?.desc || ''}</div>
         <label class="flabel">Difficulty</label>
-        <div class="opts two">${Object.entries(MODES).map(([k, m]) => `<div class="opt ${sel.mode === k ? 'sel' : ''}" data-tact="mode:${k}"><b>${m.icon} ${m.label} <span class="hrs">${m.hours}</span></b><span>${m.desc}</span></div>`).join('')}</div>
+        <div class="seg">${Object.entries(MODES).map(([k, m]) => `<button class="${sel.mode === k ? 'sel' : ''}" data-tact="mode:${k}">${m.label}</button>`).join('')}</div><div class="segd"><b>${MODES[sel.mode].hours}</b> · ${MODES[sel.mode].desc}</div>
         ${sel.mode === 'creative' ? `<label class="flabel">Resource layout</label>
-        <div class="opts">${[['easy', '🌱 Easy', 'Plenty of nodes, many pure ones.'], ['normal', '⚙️ Normal', 'Scarce nodes, few pure.'], ['hard', '⛏️ Hard', 'Very scarce, almost all impure.']].map(([k, l, d]) => `<div class="opt ${sel.res === k ? 'sel' : ''}" data-tact="res:${k}"><b>${l}</b><span>${d}</span></div>`).join('')}</div>` : ''}
-        <label class="flabel">Your colour <span class="dim">(vehicles and building trim — pick one, or mix your own)</span></label>
+        <div class="seg">${[['easy', 'Plenty'], ['normal', 'Scarce'], ['hard', 'Very scarce']].map(([k, l]) => `<button class="${sel.res === k ? 'sel' : ''}" data-tact="res:${k}">${l}</button>`).join('')}</div>` : ''}
+        <label class="flabel">Your colour</label>
         <div class="swatches" style="align-items:center">${['#f39c12', ...PLAYER_COLS].map(c => `<span class="swatch ${c === sel.wcol ? 'sel' : ''}" data-tact="wcol:${c}" style="background:${c}"></span>`).join('')}
           <label class="swatch mix" title="Mix your own colour" style="background:conic-gradient(red,yellow,lime,cyan,blue,magenta,red);position:relative;overflow:hidden"><input id="wcolor" type="color" value="${sel.wcol}" style="opacity:0;position:absolute;inset:0;width:100%;height:100%;cursor:pointer;border:0;padding:0"></label>
           <span id="wcolshow" style="display:inline-block;width:46px;height:22px;border-radius:6px;margin-left:6px;border:1px solid #ffffff44;background:${sel.wcol}"></span></div>
         <label class="flabel">Day / night cycle</label>
-        <div class="opts two">${[['on', '🌗 On', 'A 12-minute day. Solar power only works in daylight.'], ['off', '☀️ Off', 'Always sunny. (You can change this later in the menu.)']].map(([k, l, d]) => `<div class="opt ${sel.dn === k ? 'sel' : ''}" data-tact="dn:${k}"><b>${l}</b><span>${d}</span></div>`).join('')}</div>
+        <div class="seg">${[['on', 'On — 12-minute days'], ['off', 'Off — always day']].map(([k, l]) => `<button class="${sel.dn === k ? 'sel' : ''}" data-tact="dn:${k}">${l}</button>`).join('')}</div>
         <button class="go big" data-tact="create">Create world</button>`}
       </div>
     </div>${versionHTML()}</div>`;
@@ -125,8 +125,8 @@ export function hideTitle() { title.open = false; $('#title').classList.add('hid
 function getGameHTML() {
   if (isFileCopy()) return `<div class="sm dim" style="margin-top:10px">💻 You're playing the downloaded copy. <a href="${GAME_URL}" target="_blank" rel="noopener">Get the newest version</a> · <a href="#" data-tact="gginfo">How to install</a></div>`;
   if (isInstalled()) return `<div class="sm dim" style="margin-top:10px">📲 Installed as an app — it updates itself whenever you're online. <a href="#" data-tact="gginfo">Share with a friend</a></div>`;
-  const inst = canPromptInstall() || isIOS() ? `<button class="go" data-tact="install" title="Adds Beltworks to your computer or phone as an app: its own window, works offline">📲 Install app</button>` : '';
-  return `<div class="row" style="margin-top:8px;gap:8px;flex-wrap:wrap">${inst}<button class="${inst ? '' : 'go'}" data-tact="dlgame" title="Saves the whole game as one file you can double-click to play offline">⬇ Download the game</button><button class="mini" data-tact="gginfo">How to install / share</button></div>`;
+  const inst = canPromptInstall() || isIOS() ? `<button data-tact="install" title="Adds Beltworks to your computer or phone as an app: its own window, works offline">📲 Install app</button>` : '';
+  return `<div class="row" style="margin-top:8px;gap:8px;flex-wrap:wrap">${inst}<button data-tact="dlgame" title="Saves the whole game as one file you can double-click to play offline">⬇ Download the game</button><button class="mini" data-tact="gginfo">How to install / share</button></div>`;
 }
 function showGuide(started: boolean) {
   document.querySelector('.getgame-back')?.remove();
@@ -134,8 +134,8 @@ function showGuide(started: boolean) {
 }
 function folderHTML() {
   if (!FS.supported) return `<div class="sm dim" style="margin-top:10px">💾 Worlds are saved in this browser. Clearing browsing data deletes them — use Menu → Export save for a backup file.</div>`;
-  if (!FS.dir) return `<div class="savebox" style="margin-top:10px;padding:8px 10px;border:1px solid #f5a52466;border-radius:8px;background:#2b261633"><div class="sm">⚠ Worlds are only saved <b>inside this browser</b> — clearing browsing data deletes them.</div><button class="go" style="margin-top:6px" data-tact="folder">📁 Also save to a folder on this computer</button></div>`;
-  if (FS.perm !== 'granted') return `<div class="savebox" style="margin-top:10px;padding:8px 10px;border:1px solid #f5a52466;border-radius:8px"><div class="sm">📁 Save folder <b>${esc(FS.name)}</b> needs your OK again (the browser asks after a restart). Choose "Allow on every visit" so it won't ask again.</div><button class="go" style="margin-top:6px" data-tact="reconnect">🔓 Reconnect save folder</button></div>`;
+  if (!FS.dir) return `<div class="savebox" style="margin-top:10px;padding:8px 10px;border-left:3px solid #6d5520;background:#1f1c16"><div class="sm">Worlds are saved <b>inside this browser</b> — clearing browsing data deletes them.</div><button style="margin-top:6px" data-tact="folder">📁 Also save to a folder on this computer</button></div>`;
+  if (FS.perm !== 'granted') return `<div class="savebox" style="margin-top:10px;padding:8px 10px;border:1px solid #f5a52466;border-radius:8px"><div class="sm">📁 Save folder <b>${esc(FS.name)}</b> needs your OK again (the browser asks after a restart). Choose "Allow on every visit" so it won't ask again.</div><button style="margin-top:6px" data-tact="reconnect">🔓 Reconnect save folder</button></div>`;
   return `<div class="sm" style="margin-top:10px">📁 Also saving to folder <b>${esc(FS.name)}</b> — your worlds are safe even if browser data is cleared. <button class="mini" data-tact="folder">Change…</button></div>`;
 }
 export function initTitle() {

@@ -1206,7 +1206,8 @@ export function icon3D(type: string): string | null {
   if (iconCache[type]) return iconCache[type];
   const d = BLD[type];
   let model: Model | null = null;
-  if (TPL[type]) model = TPL[type].stat;
+  if (type === 'elevator') model = TPL.elev1.stat;   // (the finished one's tether is far too tall for an icon)
+  else if (TPL[type]) model = TPL[type].stat;
   else if (d.kind === 'foundation') model = mdl('deck', MD.deckModel);
   else if (d.kind === 'signal') model = mdl('sigPost' + d.sig, () => MD.signalModel(d.sig === 2));
   else if (d.kind === 'lift') model = mdl('lift' + d.dz, () => MD.liftModel(d.dz! > 0));
