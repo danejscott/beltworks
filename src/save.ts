@@ -1,13 +1,13 @@
 import { ensureFresh, hist, rebuildFluids, resetStats, syncFluidMembers } from './sim';
 import { W, H, TT } from './terrain';
 import { view } from './view';
-import { BLD } from './data';
+import { BLD, ITEMS, RECIPES } from './data';
 import { G, place, PORTED, refund, remove, resetWorld, State } from './world';
 import { clearTeams, MP, makeTeamState, teamFields, useTeam, WORLD_KEYS } from './teams';
 import { convertOldRails } from './railconvert';
 import { deleteWorldFile, folderReady, listFolderWorlds, readWorldFile, writeWorldFile } from './filesaves';
 
-const KEYS = ['o', 'items', 'pair', 'isExit', 'recipe', 'ib', 'ob', 'prog', 'work', 'clock', 'shards', 'amp', 'tm', 'store', 'tot', 'mode', 'name', 'buf', 'filt', 'slot', 'famt', 'ffluid', 'fuelT', 'fbuf', 'water', 'stored', 'pairs', 'target', 'outbox', 'obTot', 'inbox', 'ibTot', 'dr', 'drs', 'sunk', 'anyIn', 'sig', 'plat', 'big', 'sv2', 'drop', 'dtot', 'sg'];
+const KEYS = ['o', 'items', 'pair', 'isExit', 'recipe', 'ib', 'ob', 'prog', 'work', 'clock', 'shards', 'amp', 'tm', 'store', 'tot', 'mode', 'name', 'buf', 'filt', 'slot', 'famt', 'ffluid', 'fuelT', 'fbuf', 'water', 'stored', 'pairs', 'target', 'outbox', 'obTot', 'inbox', 'ibTot', 'dr', 'drs', 'sunk', 'anyIn', 'sig', 'plat', 'big', 'sv2', 'drop', 'dtot', 'sg', 'pay', 'ptot', 'fuel', 'ph', 'lt', 'auto'];
 
 const treeCache = { arr: null as any, rev: -1, list: [] as number[] };
 const floorCache = { arr: null as any, rev: -1, list: [] as number[] };
@@ -78,7 +78,7 @@ export function deserialize(o: any, keepTerrain = false) {
     S = MP.teams.get(first)!; MP.cur = first;
   } else clearTeams();
   resetWorld(S.seed, S, keepTerrain);
-  for (const t of MP.teams ? MP.teams.values() : [S]) { if (t.unlocked.has('ship_port')) t.unlocked.add('harbor'); if (t.unlocked.has('harbor')) t.unlocked.add('slab'); if (t.unlocked.has('path_signal')) t.unlocked.add('signal_auto'); }
+  for (const t of MP.teams ? MP.teams.values() : [S]) { if (t.unlocked.has('ship_port')) t.unlocked.add('harbor'); if (t.unlocked.has('harbor')) t.unlocked.add('slab'); if (t.unlocked.has('path_signal')) t.unlocked.add('signal_auto'); if (t.done.has('p4') && t.maxTier < 8) t.maxTier = 8; if (t.mode === 'creative' || S.mode === 'creative') { t.maxTier = 8; for (const k in RECIPES) t.unlocked.add(k); for (const k in ITEMS) if (t.inv[k] === undefined) t.inv[k] = 999999; } }
   G.slabs = new Map();
   for (const [i, t] of o.slabs || []) { G.slabs.set(i, t); G.tiles[i] = TT.DIRT; }
   for (const i of o.removed || []) G.trees[i] = 0;

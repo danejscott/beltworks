@@ -22,7 +22,7 @@ import { s2w, view } from './view';
 import { pickAt } from './r3/world3d';
 import { addInv, canAfford, count, def, Ent, entAt, G, hasFloor, missingText, nodeAt, PAIRS, remove, rotateEnt, Train, Truck } from './world';
 import { portDyn, portStatic, shipDyn, shipStatic } from './ui2';
-import { fmtTime, recapHTML, showTimer, startTimelapse } from './ui2';
+import { fmtTime, padDyn, padStatic, recapHTML, showTimer, startTimelapse } from './ui2';
 import { EXTRA_MODALS, extraAct, extraInput, LIVE_MODALS, outpostStatic, plannerAllowed, setRerender, stationExtra, tradeDyn, travelPoints, truckDyn, truckStatic, tstationDyn, tstationStatic } from './ui2';
 import { clockText, cycleOn, solarFactor } from './daynight';
 import { locateHome, scanCol } from './explore';
@@ -222,7 +222,7 @@ function renderTracker() {
       h += '</div>';
     }
     h += '</div>';
-  } else if (S.won) h += '<div class="tbox"><div class="th">🏆 Project Assembly launched!</div><div class="sm">Everything is unlocked. Keep building — the factory must grow.</div></div>';
+  } else if (S.won) h += '<div class="tbox"><div class="th">🏆 Space Station complete!</div><div class="sm">Everything is unlocked. Keep building — the factory must grow.</div></div>';
   const craft = myCraft();
   if (craft.q.length) {
     const r = RECIPES[craft.q[0]], p = craft.active ? craft.t / handTime(r) * 100 : 0;
@@ -299,6 +299,7 @@ function inspStatic(e: Ent): string {
   }
   if (d.kind === 'storage') h += '<div class="ibtns"><button class="go" data-act="collect">Move all to inventory</button></div>';
   if (d.kind === 'elevator') h += '<div class="ibtns"><button class="go" data-act="loadElev">Load parts from inventory</button></div>';
+  if (d.kind === 'launchpad') h += padStatic(e);
   if (d.kind === 'gen' && d.fuels && !Object.keys(d.fuels).some(isFluid)) h += `<div class="ibtns"><button class="go" data-act="fuel">Load fuel from inventory</button></div>`;
   if (d.kind === 'pipe' || d.kind === 'tank' || d.kind === 'ptunnel') h += '<div class="ibtns"><button class="danger" data-act="flush">Flush network (empty it)</button></div>';
   h += `<div class="ibtns">${!d.noRotate && d.kind !== 'pipe' && d.kind !== 'ptunnel' && e.w === e.h ? '<button data-act="rot">Rotate <kbd>R</kbd></button>' : ''}${d.kind !== 'hub' ? '<button data-act="copyEnt">Copy <kbd>Q</kbd></button><button class="danger" data-act="del">Deconstruct</button>' : ''}</div>`;
@@ -422,9 +423,10 @@ function inspDyn(e: Ent): string {
       break;
     }
     case 'sink': h += `<div>Items sunk: <b>${fmt(e.sunk)}</b></div><div>Points: <b>${fmt(G.S.points)}</b> / ${fmt(couponCost())} for the next coupon</div><div class="bar"><i style="width:${G.S.points / couponCost() * 100}%"></i></div><div class="sm">Coupons: ${G.S.coupons} — spend them in the Shop (<kbd>K</kbd>).</div>`; break;
+    case 'launchpad': h += padDyn(e); break;
     case 'elevator': {
       const ph = curPhase();
-      h += ph ? `<div class="sec">${ph.n}</div>` + reqRows(ph.req, k => G.S.elev[k] || 0) : (G.S.won ? '<div>🏆 Project Assembly launched!</div>' : '<div class="dim">No phase available yet — finish this tier\'s milestones.</div>');
+      h += ph ? `<div class="sec">${ph.n}</div>` + reqRows(ph.req, k => G.S.elev[k] || 0) : (G.S.won ? '<div>🏆 Space Station complete!</div>' : '<div class="dim">No phase available yet — finish this tier\'s milestones.</div>');
       break;
     }
     case 'splitter': h += '<div class="sm">Items in from the back → split evenly out front / left / right (only to sides that can take them).</div>'; break;
@@ -638,7 +640,7 @@ function renderModal() {
     t = `Welcome to ${esc(S.name || 'your world')}`;
     const mode = S.mode || 'easy';
     h = `<div class="intro"><div class="ibig">🏭</div>
-      <p class="lead">You have landed on an uncharted planet with a <b>HUB</b>, a few starter materials and one job: <b>build an automated factory</b> big enough to launch <b>Project Assembly</b> from the Space Elevator.</p>
+      <p class="lead">You have landed on an uncharted planet with a <b>HUB</b>, a few starter materials and one job: <b>build an automated factory</b> big enough to finish the Space Elevator and put a <b>Space Station</b> in orbit with your own rockets.</p>
       <div class="icards">
         <div class="icard"><b>1 · Extract</b><span>Miners on ore nodes, pumps on lakes and oil, harvesters in forests.</span></div>
         <div class="icard"><b>2 · Process</b><span>Smelters, constructors and assemblers turn raw resources into parts.</span></div>
@@ -789,7 +791,7 @@ function drawHistory() {
 
 const HELP = `<div class="help cols"><div>
 <h3>🌐 Playing online</h3><p>Title screen → <b>🌐 Play online</b>: pick a name and colour, then <b>Create server</b> (you get an 8-character code) or type a friend's code into <b>Join a world</b>. In a world, the badge at the top shows the code: <b>📋 Invite</b> copies the code, a link and instructions for friends; <b>👥 Players</b> (<kbd>Y</kbd>) shows everyone, the leaderboard and team buttons. <kbd>Enter</kbd> chats. You can't change other players' buildings or build next to their HUB, but you <i>can</i> belt items out of their machines' open outputs. Teams share inventory, research, power and colour. Your base pauses while you're offline. <b>☰ → ⬇ Download a copy to this device</b> saves the online world as a file; import it from the title screen to keep playing it offline as your own world.</p>
-<h3>The loop</h3><p>Mine ore → smelt → build parts → belt them into the <b>HUB</b> → submit <b>Milestones</b> → unlock new machines → build bigger. Finish four <b>Space Elevator</b> phases to win.</p>
+<h3>The loop</h3><p>Mine ore → smelt → build parts → belt them into the <b>HUB</b> → submit <b>Milestones</b> → unlock new machines → build bigger. Finish four <b>Space Elevator</b> phases, then build rockets: launch Orbital Truss, Solar Arrays and Habitat Modules from <b>Launch Pads</b> to finish the <b>Space Station</b> and win. Rocket Fuel comes from the Blender (Turbofuel + Sulfuric Acid); boosters are caught by the tower and reused.</p>
 <h3>Machine ports</h3><p>Every machine has one <b style="color:#6ec8ff">blue input arrow</b> (behind it) and one <b style="color:#ffb347">orange output arrow</b> (in front). Machines that need two or more ingredients take them all through the one input — use a <b>Merger</b> to combine belts first, and keep the ratios roughly balanced. Pipes attach on any side. The HUB and Space Elevator accept belts on every side.</p>
 <h3>Power</h3><p>Everything near the HUB gets free power (30 MW). Elsewhere, place <b>Power Poles</b> — anything inside a pole's area is powered, and poles auto-wire to each other. Build <b>Biomass Burners</b> (wood), then <b>Coal Generators</b> (coal + water), <b>Fuel Generators</b>, and <b>Geothermal</b> on geysers. Overloaded grids run everything slower. Press <kbd>V</kbd> to see power areas. While placing a pole, <b>yellow rings</b> show where it can connect to existing poles; the ring turns green and a preview wire appears when it will connect.</p>
 <h3>Fluids</h3><p>Water Extractors go on lakes; Oil Extractors on oil nodes. Pipes connect to neighbours automatically — one fluid per network. Refineries make <b>byproducts</b>: if a byproduct has nowhere to go, the refinery stops. Sink it, burn it or reuse it!</p>
@@ -1040,6 +1042,9 @@ function act(cmd: string, a: string, b: string) {
     case 'mode': if (e) { run({ k: 'mode', id: e.id, m: a }); inspKey = ''; } break;
     case 'collect': if (e) run({ k: 'collect', id: e.id }); break;
     case 'loadElev': run({ k: 'loadElev' }); break;
+    case 'padload': if (e) run({ k: 'padload', id: e.id }); break;
+    case 'padlaunch': if (e) run({ k: 'padlaunch', id: e.id }); break;
+    case 'padauto': if (e) { run({ k: 'padauto', id: e.id }); inspKey = ''; } break;
     case 'fuel': if (e) run({ k: 'fuel', id: e.id }); break;
     case 'flush': if (e) run({ k: 'flush', id: e.id }); break;
     case 'submit': run({ k: 'submit', m: a }); break;

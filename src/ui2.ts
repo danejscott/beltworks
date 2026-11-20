@@ -10,6 +10,7 @@ import { altMachineOK, altPool, analyseDrive, CRYSTAL_NAMES, discoveredCount, lo
 import { Feat } from './features';
 import { machineName, plan, plannableItems } from './planner';
 import { flowChart, FLOW_CSS } from './flowchart';
+import { FUEL_PER_LAUNCH, initPad, orbitPhase, PAYLOAD_CAP, T_CATCH, T_RETURN, T_SEP } from './rockets';
 let flowCss = false;
 import { addTrainToLine, lineOf, lineTrains, MAX_LINE_TRAINS, maxCars, trainCap } from './trains';
 import { buyTruck, removeTruck, tradeVal, TRUCK_CAP, truckStations } from './trucks';
@@ -21,7 +22,7 @@ import { Ent, G, Truck } from './world';
 import { ACHS as ACH_LIST } from './achievements';
 import { loadRecords } from './progress';
 import { getFrames, slot } from './save';
-import { TIER_NAMES } from './data';
+import { MAX_TIER, TIER_NAMES } from './data';
 import { closeModal, costHTML, flyTo, ic, openModal, openShip, openTrain, openTruck, status, toast } from './ui';
 
 export const plannerAllowed = () => true;
@@ -395,7 +396,7 @@ export function recapHTML(win: boolean): [string, string] {
   if (top.length) h += `<h3 class="ch">Most made</h3><div class="chips">${top.slice(0, 6).map(([k, n]) => `<span class="chip">${ic(k, 16)} ${fmt(n)}</span>`).join('')}</div>`;
   const tt = S.tierT || {};
   h += '<h3 class="ch">Timeline</h3><div class="tline">';
-  for (let t = 1; t <= 7; t++) h += `<div class="${tt[t] !== undefined || t <= 2 && S.maxTier >= t ? 'got' : ''}"><b>T${t}</b><span>${tt[t] !== undefined ? fmtTime(tt[t]) : S.maxTier >= t ? '✔' : '—'}</span><em>${TIER_NAMES[t]}</em></div>`;
+  for (let t = 1; t <= MAX_TIER; t++) h += `<div class="${tt[t] !== undefined || t <= 2 && S.maxTier >= t ? 'got' : ''}"><b>T${t}</b><span>${tt[t] !== undefined ? fmtTime(tt[t]) : S.maxTier >= t ? '✔' : '—'}</span><em>${TIER_NAMES[t]}</em></div>`;
   h += `<div class="${S.won ? 'got' : ''}"><b>🚀</b><span>${S.wonT ? fmtTime(S.wonT) : '—'}</span><em>Launch</em></div></div>`;
   h += `</div></div>${win ? '<button class="go big" data-act="closeModal">Keep building</button>' : ''}`;
   return [win ? '🏆 Victory!' : '📊 Run recap', h];
@@ -432,4 +433,44 @@ export function startTimelapse(base: HTMLCanvasElement | null) {
     };
     draw(); tlTimer = setInterval(draw, 140) as any;
   });
+}
+
+// ---------------------------------------------------------------------------
+// Launch Pad panel
+export function padStatic(e: Ent) {
+  let h = '<div class="sec">Payload</div><div class="row wrap"><button class="go" data-act="padload">Load parts from inventory</button><button data-act="padlaunch">Launch now</button></div>';
+  h += `<label class="row sm" style="cursor:pointer"><input type="checkbox" data-act="padauto" ${e.auto === 0 ? '' : 'checked'}> Launch by itself when the bay is full (${PAYLOAD_CAP} parts)</label>`;
+  h += '<div class="sm dim">Pipe Rocket Fuel into any side; belt Orbital Truss, Solar Arrays or Habitat Modules into any side. Each launch needs ' + FUEL_PER_LAUNCH + ' m³ of fuel. The booster lands back on the tower and flies again.</div>';
+  return h;
+}
+export function padDyn(e: Ent) {
+  initPad(e);
+  const st = e.ph === 'count' && e.lt < 0 ? `Countdown T−${Math.ceil(-e.lt)}` : e.ph ? (e.lt < T_SEP ? 'Ascent' : e.lt < T_RETURN ? 'Stage separation · boostback' : e.lt < T_CATCH ? 'Booster returning' : 'Booster caught · restacking') : e.ptot > 0 && e.fuel < FUEL_PER_LAUNCH ? 'Waiting for fuel' : e.ptot === 0 ? 'Waiting for parts' : 'Ready';
+  let h = status(e.ph ? 'work' : e.st === 'nofuel' ? 'block' : 'idle', st);
+  h += `<div class="req">${ic('rocket_fuel', 16)}<div class="bar ${e.fuel >= FUEL_PER_LAUNCH ? 'full' : ''}"><i style="width:${Math.min(100, e.fuel / FUEL_PER_LAUNCH * 100)}%"></i></div><span class="num">${fmt(e.fuel)} / ${FUEL_PER_LAUNCH}</span></div>`;
+  h += `<div class="req">${ic('truss_segment', 16)}<div class="bar ${e.ptot >= PAYLOAD_CAP ? 'full' : ''}"><i style="width:${e.ptot / PAYLOAD_CAP * 100}%"></i></div><span class="num">${e.ptot} / ${PAYLOAD_CAP}</span></div>`;
+  const items = Object.keys(e.pay || {}).filter(k => e.pay[k] > 0);
+  if (items.length) h += `<div class="chips">${items.map(k => `<span class="chip">${ic(k, 16)}${e.pay[k]}</span>`).join('')}</div>`;
+  h += '<div class="sec">Space Station</div>' + stationSVG();
+  const ph = orbitPhase();
+  if (ph) h += Object.keys(ph.req).map(k => `<div class="req">${ic(k, 16)}<div class="bar ${(G.S.elev[k] || 0) >= ph.req[k] || G.S.done.has(ph.id) ? 'full' : ''}"><i style="width:${G.S.done.has(ph.id) ? 100 : Math.min(100, (G.S.elev[k] || 0) / ph.req[k] * 100)}%"></i></div><span class="num">${G.S.done.has(ph.id) ? ph.req[k] : fmt(G.S.elev[k] || 0)} / ${ph.req[k]}</span></div>`).join('');
+  h += `<div class="sm dim">Launches so far: ${G.S.launches || 0}</div>`;
+  return h;
+}
+/** the station as it grows: a truss spine, solar wings and habitat modules, drawn by how much is in orbit */
+function stationSVG() {
+  const ph = orbitPhase(); if (!ph) return '';
+  const done = G.S.done.has(ph.id), f = (k: string) => done ? 1 : Math.min(1, (G.S.elev[k] || 0) / ph.req[k]);
+  const tr = f('truss_segment'), so = f('solar_array'), hb = f('habitat_module');
+  let s = '<svg viewBox="0 0 300 120" style="width:100%;height:auto;background:#0b0d14;border:1px solid var(--line)">';
+  for (let i = 0; i < 40; i++) s += `<circle cx="${(i * 73) % 300}" cy="${(i * 37) % 120}" r="${i % 5 ? 0.6 : 1}" fill="#cfd8ff" opacity=".6"/>`;
+  s += '<path d="M10 60 H290" stroke="#2a2d38" stroke-dasharray="3 3"/>';
+  const segs = 12, nT = Math.round(tr * segs);
+  for (let i = 0; i < nT; i++) { const x = 40 + i * 18; s += `<rect x="${x}" y="56" width="17" height="8" fill="none" stroke="#d8dce4" stroke-width="1.2"/><path d="M${x} 56 L${x + 17} 64 M${x} 64 L${x + 17} 56" stroke="#9aa0ac" stroke-width=".7"/>`; }
+  const nS = Math.round(so * 8);
+  for (let i = 0; i < nS; i++) { const x = 46 + (i >> 1) * 54, up = i % 2 === 0; s += `<rect x="${x}" y="${up ? 14 : 70}" width="26" height="36" fill="#22345e" stroke="#5a7ad8" stroke-width="1"/><path d="M${x + 13} ${up ? 50 : 70} V${up ? 56 : 64}" stroke="#9aa0ac"/>`; for (let r = 1; r < 4; r++) s += `<path d="M${x} ${(up ? 14 : 70) + r * 9} h26" stroke="#3a5ab8" stroke-width=".6"/>`; }
+  const nH = Math.round(hb * 6);
+  for (let i = 0; i < nH; i++) { const x = 70 + i * 30; s += `<rect x="${x}" y="${i % 2 ? 64 : 44}" width="22" height="12" rx="6" fill="#eef0f4" stroke="#8a90a0"/><circle cx="${x + 6}" cy="${(i % 2 ? 64 : 44) + 6}" r="1.6" fill="#5ab4ff"/>`; }
+  if (!nT && !nS && !nH) s += '<text x="150" y="64" text-anchor="middle" fill="#6a7080" font-size="11">Nothing in orbit yet</text>';
+  return s + '</svg>';
 }

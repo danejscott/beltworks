@@ -11,6 +11,7 @@ import { buyTruck, removeTruck } from './trucks';
 import { buyShip, removeShip } from './ships';
 import { analyseDrive, collectCrystal, lootSite, pickAlt } from './explore';
 import { buyShop, loadElevator, submitMilestone } from './progress';
+import { loadPadFromInv, startCountdown } from './rockets';
 import { flushNet, fluidsTouching, myCraft, setRecipe } from './sim';
 import { asTeam, MP } from './teams';
 import { joinTeam, leaveTeam, nearRivalBase, newSeason, spawnTeam } from './online';
@@ -512,6 +513,9 @@ function exec(c: Cmd): any {
     // ---- progress
     case 'submit': return submitMilestone(c.m);
     case 'loadElev': return loadElevator();
+    case 'padload': { const e = ent(c.id); if (!e || e.type !== 'launch_pad' || !mine(e)) return; const n = loadPadFromInv(e); toast(n ? `Loaded ${n} station parts onto the rocket` : 'Nothing in your inventory the station still needs', n ? 'good' : 'bad'); return; }
+    case 'padlaunch': { const e = ent(c.id); if (!e || e.type !== 'launch_pad' || !mine(e)) return; if (!startCountdown(e)) toast('Needs a full fuel load and at least one part aboard', 'bad'); else sfx('click'); return; }
+    case 'padauto': { const e = ent(c.id); if (!e || e.type !== 'launch_pad' || !mine(e)) return; e.auto = e.auto === 0 ? 1 : 0; return; }
     case 'craft': {
       const r = RECIPES[c.r];
       if (!r || !HANDCRAFT.has(r.m) || !S.unlocked.has(r.id)) return;

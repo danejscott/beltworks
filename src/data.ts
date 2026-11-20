@@ -96,6 +96,12 @@ export const ITEMS: Record<string, ItemDef> = {
   control_rod: { n: 'Electromagnetic Control Rod', c: '#b8a0e0', s: 'rod' },
   uranium_fuel_rod: { n: 'Uranium Fuel Rod', c: '#4ae07a', s: 'rod' },
   uranium_waste: { n: 'Uranium Waste', c: '#8aa040', s: 'pellet' },
+  // orbital program
+  rocket_fuel: { n: 'Rocket Fuel', c: '#e8508a', s: 'drop', fluid: true },
+  rocket_engine: { n: 'Rocket Engine', c: '#c8ccd4', s: 'engine' },
+  truss_segment: { n: 'Orbital Truss', c: '#d8dce4', s: 'vframe' },
+  solar_array: { n: 'Solar Array', c: '#3a5ab8', s: 'board' },
+  habitat_module: { n: 'Habitat Module', c: '#eef0f4', s: 'super' },
 };
 export const ITEM_KEYS = Object.keys(ITEMS);
 export const isFluid = (k: string) => !!ITEMS[k]?.fluid;
@@ -171,6 +177,11 @@ R('heat_sink', 'assembler', 8, { alclad_sheet: 5, copper_sheet: 3 }, { heat_sink
 R('cooling_system', 'blender', 10, { heat_sink: 2, rubber: 2, water: 5 }, { cooling_system: 1 });
 R('turbofuel', 'blender', 8, { fuel: 6, compacted_coal: 4 }, { turbofuel: 5 });
 R('turbo_motor', 'manufacturer', 32, { cooling_system: 4, radio_control_unit: 2, motor: 4, rubber: 24 }, { turbo_motor: 1 });
+R('rocket_fuel', 'blender', 6, { turbofuel: 6, sulfuric_acid: 2 }, { rocket_fuel: 10 });
+R('rocket_engine', 'manufacturer', 30, { turbo_motor: 1, heat_sink: 4, alclad_sheet: 10, steel_pipe: 20 }, { rocket_engine: 1 });
+R('truss_segment', 'assembler', 12, { alclad_sheet: 6, steel_beam: 6 }, { truss_segment: 2 });
+R('solar_array', 'manufacturer', 20, { alclad_sheet: 8, quickwire: 40, crystal_oscillator: 1 }, { solar_array: 1 });
+R('habitat_module', 'manufacturer', 40, { heavy_modular_frame: 2, alu_casing: 12, cooling_system: 4, computer: 2 }, { habitat_module: 1 });
 R('quantum_core', 'particle', 60, { cooling_system: 2, crystal_oscillator: 1, alclad_sheet: 10 }, { quantum_core: 1 });
 // Nuclear: uranium -> encased cells -> fuel rods -> power (and waste you have to store)
 R('sulfuric_acid', 'refinery', 6, { sulfur: 5, water: 5 }, { sulfuric_acid: 5 });
@@ -305,6 +316,8 @@ export const BLD: Record<string, BDef> = {
   hub: { n: 'HUB', w: 4, h: 4, cat: 'special', kind: 'hub', area: 14, reach: 16, mw: 30, cost: {}, col: '#f5a524', desc: 'Your base. Belt anything in from any side to add it to your inventory. Supplies 30 MW to a large area.', noRotate: true, hidden: true },
   elevator: { n: 'Space Elevator', w: 9, h: 9, cat: 'special', kind: 'elevator', cost: { concrete: 300, iron_plate: 100, iron_rod: 100 }, col: '#dcdcf0', desc: 'Belt Project Parts in to complete Phases and unlock new Tiers. Other items go to your inventory.', noRotate: true },
   trade_post: { n: 'Trade Post', w: 4, h: 4, cat: 'special', kind: 'trade', cap: 30000, cost: {}, col: '#d9a531', desc: 'The one market of an online world. Any team can send trucks here: they drop off what they carry (you earn credits worth the items) and pick up the item you want (paid in credits).', noRotate: true, hidden: true },
+  launch_pad: { n: 'Launch Pad', w: 10, h: 10, cat: 'special', kind: 'launchpad', cost: { rocket_engine: 9, concrete: 1500, steel_beam: 300, heavy_modular_frame: 40 }, col: '#d8dce4', noRotate: true,
+    desc: 'A reusable rocket with a catch tower. Pipe Rocket Fuel in and belt station parts (Orbital Truss, Solar Arrays, Habitat Modules) into any side. When it has a full tank it launches, puts the parts in orbit, and the tower catches the booster when it flies back.' },
   statue: { n: 'Golden Nut Statue', w: 2, h: 2, cat: 'special', kind: 'decor', cost: { iron_plate: 10 }, col: '#f0c040', desc: 'Purely decorative. Very shiny.', noRotate: true },
   lamp: { n: 'Flood Light', w: 1, h: 1, cat: 'special', kind: 'decor', logistic: true, cost: { iron_rod: 2, wire: 4 }, col: '#fff2b0', desc: 'Decorative light.', noRotate: true },
 };
@@ -316,11 +329,11 @@ export const CATS = [
   { id: 'power', n: 'Power', types: ['pole1', 'pole2', 'tower', 'biomass_burner', 'coal_gen', 'fuel_gen', 'geothermal', 'solar', 'nuclear_plant', 'battery'] },
   { id: 'fluid', n: 'Fluids', types: [['pipe2', 'pipe1'], 'ptunnel', 'tank'] },
   { id: 'trans', n: 'Transport', types: ['rail', 'station', 'locomotive', 'rail_signal', 'path_signal', 'signal_auto', 'truck_station', 'harbor', 'slab', 'outpost', 'drone_port'] },
-  { id: 'special', n: 'Special', types: ['elevator', 'statue', 'lamp'] },
+  { id: 'special', n: 'Special', types: ['elevator', 'launch_pad', 'statue', 'lamp'] },
 ] as { id: string; n: string; types: (string | string[])[] }[];
 
 // ---------------------------------------------------------------------------
-export interface Milestone { id: string; tier: number; n: string; req: Cost; un?: string[]; phase?: number; unlockTiers?: number[]; win?: boolean; tip?: string }
+export interface Milestone { id: string; tier: number; n: string; req: Cost; un?: string[]; phase?: number; unlockTiers?: number[]; win?: boolean; tip?: string; orbit?: boolean }
 
 export const START_UNLOCKS = ['belt1', 'miner1', 'smelter', 'pole1', 'iron_ingot', 'iron_plate', 'iron_rod'];
 
@@ -353,9 +366,14 @@ export const MILESTONES: Milestone[] = [
   { id: 't7a', tier: 7, n: 'Aluminum', req: { crystal_oscillator: 50, high_speed_connector: 50 }, un: ['alumina_solution', 'aluminum_scrap', 'aluminum_ingot', 'alclad_sheet', 'alu_casing', 'radio_control_unit', 'heat_sink', 'blender', 'cooling_system', 'turbofuel'], tip: 'Bauxite sits near the edges of the map. The Blender makes Cooling Systems and Turbofuel (3× longer burn in Fuel Generators).' },
   { id: 't7b', tier: 7, n: 'Supercomputing', req: { adaptive_control_unit: 50, high_speed_connector: 100 }, un: ['supercomputer', 'assembly_director', 'drone_port', 'turbo_motor', 'particle_accelerator', 'quantum_core'], tip: 'The Particle Accelerator makes Quantum Cores for the final launch. It needs 400 MW, so plan your power grid.' },
   { id: 't7c', tier: 7, n: 'Nuclear Power', req: { supercomputer: 15, heavy_modular_frame: 50, radio_control_unit: 15 }, un: ['nuclear_plant', 'sulfuric_acid', 'encased_uranium_cell', 'control_rod', 'uranium_fuel_rod'], tip: 'Uranium glows green near the edges of the map (Scanner, N). A Nuclear Power Plant makes 2500 MW — enough for several Particle Accelerators — but its waste has to be stored.' },
-  { id: 'p4', tier: 7, phase: 4, n: 'Launch Project Assembly', req: { assembly_director: 40, turbo_motor: 25, quantum_core: 20, supercomputer: 80 }, win: true },
+  { id: 'p4', tier: 7, phase: 4, n: 'Launch Project Assembly', req: { assembly_director: 40, turbo_motor: 25, quantum_core: 20, supercomputer: 80 }, unlockTiers: [8] },
+
+  { id: 't8a', tier: 8, n: 'Rocketry', req: { turbo_motor: 20, alclad_sheet: 300, heat_sink: 100 }, un: ['rocket_fuel', 'rocket_engine', 'launch_pad', 'truss_segment'],
+    tip: 'Rockets! Blend Turbofuel with Sulfuric Acid into Rocket Fuel, build Rocket Engines, then a Launch Pad (Special tab). Pipe the fuel in and belt Orbital Truss into it: every launch puts a load in orbit, and the tower catches the booster so it flies again.' },
+  { id: 't8b', tier: 8, n: 'Orbital Habitation', req: { heavy_modular_frame: 60, cooling_system: 100, computer: 50 }, un: ['solar_array', 'habitat_module'], tip: 'Solar Arrays and Habitat Modules finish the station. Several Launch Pads launch in turn — more pads, more launches.' },
+  { id: 'p5', tier: 8, phase: 5, orbit: true, n: 'Space Station', req: { truss_segment: 300, solar_array: 120, habitat_module: 60 }, win: true },
 ];
-export const MAX_TIER = 7;
+export const MAX_TIER = 8;
 /** the original final phase, kept for worlds created before the endgame update */
 const P4_LEGACY: Cost = { assembly_director: 50, radio_control_unit: 100, supercomputer: 100, heavy_modular_frame: 200 };
 const BASE_REQ = new Map<string, Cost>(MILESTONES.map(m => [m.id, { ...m.req }]));
@@ -375,7 +393,7 @@ export function applyGameLength(mult: (tier: number) => number, legacy: boolean)
     m.req = r;
   }
 }
-export const TIER_NAMES = ['Onboarding', 'Field Research', 'Base Building', 'Steel & Motors', 'Rail & Caterium', 'Oil & Industry', 'Quartz & Engines', 'Space Race'];
+export const TIER_NAMES = ['Onboarding', 'Field Research', 'Base Building', 'Steel & Motors', 'Rail & Caterium', 'Oil & Industry', 'Quartz & Engines', 'Space Race', 'Orbital'];
 
 // ---------------------------------------------------------------------------
 export interface ShopItem { id: string; n: string; desc: string; cost: number; repeat?: boolean; give?: Cost; unlock?: string }

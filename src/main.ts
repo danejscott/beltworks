@@ -156,13 +156,19 @@ function setupFx() {
       for (let i = 0; i < (m.phase ? 180 : 90); i++) { const a = Math.random() * Math.PI * 2, v = 2 + Math.random() * 8; spawn(src.x + src.w / 2, src.y + src.h / 2, { vx: Math.cos(a) * v, vy: Math.sin(a) * v, z: 1.5, vz: 5 + Math.random() * 6, life: 1.6 + Math.random(), col: cols[i % cols.length], size: 0.14, grav: 9 }); }
     }
     if (m.phase) W_.markDirty('elevator');   // the elevator grows a stage
-    if (m.win) {
-      // the launch: look at the elevator, let the capsule ride up and the fireworks go, then the victory screen
+    if (m.id === 'p4') {
+      // Project Assembly: look at the elevator, let the capsule ride up and the fireworks go. The orbital tier opens.
       const el = G.L.elevator;
       if (el) { view.cam.x = el.x + el.w / 2; view.cam.y = el.y + el.h / 2 + 6; view.cam.s = Math.min(view.cam.s, 9); }
       DR.startLaunch();
+    }
+    if (m.win) {
+      // the Space Station is complete: fireworks over the launch pads, then the victory screen
+      const pad = (G.L.pads || [])[0] || G.L.elevator;
+      if (pad) { view.cam.x = pad.x + pad.w / 2; view.cam.y = pad.y + pad.h / 2 + 6; view.cam.s = Math.min(view.cam.s, 9); }
+      if (G.L.elevator) DR.startLaunch();
       if (slot.id) addFrame(slot.id, UI.snapshotOverlay());
-      setTimeout(() => UI.openModal('win'), 16000);
+      setTimeout(() => UI.openModal('win'), 12000);
     }
     UI.renderHotbar();
     saveGame();

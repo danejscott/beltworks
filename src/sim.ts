@@ -1,4 +1,5 @@
 import { BLD, isFluid, ITEMS, RECIPES, Recipe } from './data';
+import { padAccept, tickPads } from './rockets';
 import { H, W } from './terrain';
 import { DX, DY, opp } from './util';
 import { addInv, borderTiles, canAfford, chopTree, def, Ent, entAt, frontTiles, G, inPort, missingText, pay, PORTED, tickRegrow } from './world';
@@ -57,7 +58,7 @@ export function ensureFresh() {
 }
 
 export function rebuildLinks() {
-  const L: any = { hubs: [], outposts: [], ports: [], belts: [], order: [], machines: [], miners: [], extractors: [], harvesters: [], logi: [], gens: [], bats: [], poles: [], stations: [], tstations: [], trades: [], drones: [], sinks: [], pipes: [], rails: [], cnt: Object.create(null), powered: [] };
+  const L: any = { hubs: [], outposts: [], ports: [], belts: [], order: [], machines: [], miners: [], extractors: [], harvesters: [], logi: [], gens: [], bats: [], poles: [], stations: [], tstations: [], trades: [], drones: [], sinks: [], pipes: [], rails: [], pads: [], cnt: Object.create(null), powered: [] };
   for (const e of G.ents.values()) {
     const d = BLD[e.type];
     L.cnt[e.type] = (L.cnt[e.type] || 0) + 1;
@@ -83,6 +84,7 @@ export function rebuildLinks() {
       case 'pipe': case 'ptunnel': case 'tank': L.pipes.push(e); break;
       case 'rail': L.rails.push(e); break;
       case 'elevator': if ((e.o || 0) === MP.myTeam) L.elevator = e; break;
+      case 'launchpad': L.pads.push(e); break;
     }
     if (d.kind !== 'belt' && d.kind !== 'tunnel' && d.kind !== 'rail' && d.kind !== 'lift') { e.ft = frontTiles(e); e.ip = inPort(e); if (d.pier || e.plat) e.outDir = (e.rot + 2) & 3; }
   }
@@ -109,7 +111,7 @@ export function rebuildLinks() {
   }
   for (const e of G.ents.values()) {
     const d = BLD[e.type];
-    if (!e.ft || d.kind === 'hub' || d.kind === 'elevator' || d.kind === 'pipe' || d.kind === 'pole' || d.kind === 'decor') continue;
+    if (!e.ft || d.kind === 'hub' || d.kind === 'elevator' || d.kind === 'launchpad' || d.kind === 'pipe' || d.kind === 'pole' || d.kind === 'decor') continue;
     if (d.kind === 'splitter' || d.kind === 'sorter') {
       for (const dd of [e.rot, (e.rot + 3) & 3, (e.rot + 1) & 3]) { const t = entAt(e.x + DX[dd], e.y + DY[dd], e.z || 0); if (t && (t.type.startsWith('belt'))) feed(t, dd); }
     } else for (const [x, y] of e.ft) { const t = entAt(x, y, e.z || 0); if (t && t.type.startsWith('belt')) feed(t, e.rot); }
@@ -340,7 +342,7 @@ export function rebuildFluids() {
   }
   G.fnets = nets;
   // attach machines / extractors / generators
-  const users = [...G.L.machines, ...G.L.extractors, ...G.L.gens];
+  const users = [...G.L.machines, ...G.L.extractors, ...G.L.gens, ...(G.L.pads || [])];
   for (const e of users) {
     e.fnets = [];
     for (const [x, y] of borderTiles(e)) {
@@ -423,6 +425,7 @@ export function acceptInto(e: Ent, item: string, dir: number, fx?: number, fy?: 
   switch (d.kind) {
     case 'hub': addInv(item, 1); delivered(e, item); return true;
     case 'elevator': elevatorAccept(item); delivered(e, item); return true;
+    case 'launchpad': return padAccept(e, item);
     case 'machine': {
       if (!e.recipe) { const k = autoRecipe(e, item); if (!k) { e.wrongItem = item; return false; } setRecipe(e, k); }
       let r = RECIPES[e.recipe];
@@ -642,6 +645,7 @@ export function update(dt: number) {
       }
     }
   }
+  tickPads(dt, pullFluid);
   for (const e of L.sinks) {
     if (T && !T(e)) continue;
     if (e.sinkT > 0) e.sinkT -= dt;

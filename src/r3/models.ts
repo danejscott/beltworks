@@ -3,6 +3,7 @@
 import * as THREE from 'three';
 import { ITEMS } from '../data';
 import { B, M, Mat, Model, rockGeo, std } from './mat';
+import { MOUNT_X, padPose, TOWER_X } from '../rockets';
 
 export interface AnimOut { x: number; y: number; z: number; rx: number; ry: number; rz: number; s: number }
 export interface Anim { key: string; model: Model; fn: (o: AnimOut, e: any, t: number, real: number, busy: boolean) => void }
@@ -610,7 +611,53 @@ export function buildTemplates(): Record<string, Template> {
       b.box(7.5, 0.3, 0.3, 1.2, ch + 0.6, -3.4, M.yellow); b.box(0.9, 0.6, 0.6, -1.9, ch + 0.3, -3.4, M.concrete);
       b.box(0.5, 0.45, 0.45, 3.4, ch + 0.9, -3.4, M.steelDk); b.cyl(0.012, 3.5, 4.6, ch - 2.9, -3.4, M.steelDk, 4);
     }
+    // ---- extra detail as it grows
+    // the docks feed the core on inclined conveyor bridges; pipe and cable risers climb the core
+    for (let k = 0; k < 4; k++) {
+      const a = k * Math.PI / 2, ox = Math.cos(a), oz = Math.sin(a);
+      b.beam([ox * 3.0, 1.7, oz * 3.0], [ox * 1.45, 3.4, oz * 1.45], 0.28, M.steelDk);
+      b.beam([ox * 3.0 - oz * 0.18, 1.95, oz * 3.0 + ox * 0.18], [ox * 1.45 - oz * 0.18, 3.65, oz * 1.45 + ox * 0.18], 0.04, M.yellow);
+      b.beam([ox * 3.0 + oz * 0.18, 1.95, oz * 3.0 - ox * 0.18], [ox * 1.45 + oz * 0.18, 3.65, oz * 1.45 - ox * 0.18], 0.04, M.yellow);
+      b.cyl(0.32, 0.5, ox * 3.55 - oz * 0.4, 1.7, oz * 3.55 + ox * 0.4, M.white, 12);   // dock silo caps
+    }
+    for (let k = 0; k < 6; k++) { const a = k / 6 * TAU + 0.2; b.cyl(0.07, Math.max(1, top - 2.2), Math.cos(a) * 1.45, 1.6, Math.sin(a) * 1.45, k % 2 ? M.steel : M.orangeDk, 6); }
+    if (stage >= 1) {
+      // service platforms with railings every few metres up the core
+      for (let h = 5; h < top - 1; h += 4.5) { b.torus(1.75, 0.04, 0, h + 0.5, 0, M.yellow); b.add(new THREE.CylinderGeometry(1.8, 1.8, 0.08, 24, 1, false), M.steelDk, 0, h, 0); }
+      // guy cables from the corners of the foundation
+      for (const sx of [-1, 1]) for (const sz of [-1, 1]) b.beam([sx * 3.9, 0.6, sz * 3.9], [sx * 0.9, Math.min(top - 0.5, 14), sz * 0.9], 0.025, M.steelDk);
+      // radar dishes on two docks
+      for (const [x, z] of [[3.55, 0], [-3.55, 0]]) { b.cyl(0.06, 0.6, x, 1.7, z + 0.45, M.steelDk, 6); b.add(new THREE.SphereGeometry(0.45, 14, 6, 0, TAU, 0, 0.9), M.white, x, 2.5, z + 0.45, Math.PI * 0.3); }
+    }
+    if (stage >= 2) {
+      // docking arms and pods on the station ring
+      for (let k = 0; k < 4; k++) { const a = k * Math.PI / 2 + Math.PI / 4; b.hcyl(0.22, 1.1, Math.cos(a) * 4.1, 15, Math.sin(a) * 4.1, M.white, 'x', 12); b.box(0.5, 0.5, 0.5, Math.cos(a) * 4.7, 14.75, Math.sin(a) * 4.7, M.greyLt); }
+      // radiator fins under the ring
+      for (let k = 0; k < 8; k++) { const a = k / 8 * TAU; b.box(0.04, 1.6, 0.9, Math.cos(a) * 2.2, 13.0, Math.sin(a) * 2.2, M.white, -a); }
+    }
+    if (stage >= 3) {
+      // a helical truss wrapping the upper core, and comms masts
+      for (let i = 0; i < 40; i++) {
+        const a0 = i * 0.42, a1 = (i + 1) * 0.42, y0 = 16 + i * 0.26, y1 = 16 + (i + 1) * 0.26;
+        b.beam([Math.cos(a0) * 1.2, y0, Math.sin(a0) * 1.2], [Math.cos(a1) * 1.2, y1, Math.sin(a1) * 1.2], 0.06, M.orange);
+      }
+      for (const a of [0.6, 2.5, 4.4]) { b.cyl(0.04, 3.0, Math.cos(a) * 1.9, 27.2, Math.sin(a) * 1.9, M.steelDk, 4); b.box(0.05, 0.05, 0.05, Math.cos(a) * 1.9, 30.2, Math.sin(a) * 1.9, M.red); }
+    }
+    if (stage >= 4) {
+      // the counterweight station far up the tether: a hub with solar wings
+      b.cyl(1.4, 2.2, 0, 72, 0, M.greyLt, 20); b.torus(1.42, 0.08, 0, 73.1, 0, M.glowBlue);
+      for (const s of [-1, 1]) { b.box(5.5, 0.06, 1.5, s * 4.3, 73, 0, M.solar); b.box(1.6, 0.12, 0.12, s * 2.1, 73, 0, M.steelDk); }
+      b.box(0.9, 0.9, 0.9, 0, 74.2, 0, M.white);
+    }
     const anims: any[] = [{ key: 'ering', model: one(b2 => b2.torus(1.5, 0.08, 0, 0, 0, M.glowBlue)), fn: (o: any, _e: any, _t: any, real: number) => { const span = Math.max(1, top - 3); o.y = 1.8 + (real * 1.2) % span; o.s = 1 - ((real * 1.2) % span) / span * 0.4; } }];
+    // beacons blinking on top of the tower (and the crane while it's still being built)
+    anims.push({ key: 'beacon', model: one(b2 => b2.sphere(0.16, 0, 0, 0, M.glowOrange, 8)), fn: (o: any, _e: any, _t: any, real: number) => { o.y = top + 0.6; o.s = Math.sin(real * 3) > 0.3 ? 1 : 0.01; } });
+    if (stage >= 2) anims.push({ key: 'hab', model: one(b2 => { for (let k = 0; k < 3; k++) { const a = k / 3 * TAU; b2.box(0.8, 0.45, 0.6, Math.cos(a) * 3.3, 0, Math.sin(a) * 3.3, M.white, -a); b2.box(0.06, 0.06, 0.06, Math.cos(a) * 3.75, 0.1, Math.sin(a) * 3.75, M.glowWhite); } }),
+      fn: (o: any, _e: any, _t: any, real: number) => { o.y = 15.2; o.ry = real * 0.12; } });
+    if (stage >= 1) anims.push({ key: 'radar', model: one(b2 => { b2.box(0.9, 0.3, 0.06, 0, 0, 0, M.white); b2.cyl(0.04, 0.3, 0, -0.3, 0, M.steelDk, 6); }),
+      fn: (o: any, _e: any, _t: any, real: number) => { o.x = 0; o.y = Math.min(top, 13) + 0.4; o.z = 0; o.ry = real * 1.5; } });
+    if (stage >= 4) anims.push({ key: 'climber2', model: one(b2 => { b2.cyl(0.4, 0.9, 0, -0.45, 0, M.greyLt, 12); b2.torus(0.42, 0.05, 0, 0, 0, M.glowOrange); }),
+      fn: (o: any, _e: any, _t: any, real: number) => { o.y = 118 - (real * 5 + 40) % 84; } });
     if (stage >= 4) anims.push({ key: 'climber', model: one(b2 => { b2.cyl(0.45, 1.1, 0, -0.55, 0, M.white, 12); b2.torus(0.48, 0.06, 0, 0, 0, M.glowBlue); b2.cone(0.45, 0.5, 0, 0.55, 0, M.greyLt, 12); }),
       fn: (o: any, _e: any, _t: any, real: number) => { o.y = 34 + (real * 7) % 85; } });
     return { stat: b.build(), height: Math.min(top + 2, 36), light: [0, Math.min(top, 33), 0], anims } as Template;
@@ -623,6 +670,24 @@ export function buildTemplates(): Record<string, Template> {
     T['elev' + st + 's'] = { stat: { geo: g, mats: t.stat.mats }, height: t.height * k, light: t.light ? [t.light[0] * k, t.light[1] * k, t.light[2] * k] : null, anims: t.anims.map((a: any) => ({ key: a.key + 's', model: (() => { const gg = a.model.geo.clone(); gg.scale(k, k, k); return { geo: gg, mats: a.model.mats }; })(), fn: (o: any, e: any, tt: any, real: number, busy: boolean) => { a.fn(o, e, tt, real, busy); o.x = (o.x || 0) * k; o.y = (o.y || 0) * k; o.z = (o.z || 0) * k; } })) } as Template;
   }
   T.elevator = T.elev4;
+  // ---- Launch Pad: the rocket, its plumes and the tower's arms are placed by padPose()
+  {
+    const bst = boosterModel(), shp = upperStageModel(), plume = plumeModel(), arm = chopstickModel(), car = carriageModel();
+    const hide = (o: AnimOut) => { o.s = 0; o.y = -50; };
+    const flick = (real: number, k: number) => 0.9 + 0.12 * Math.sin(real * 37 + k) + 0.06 * Math.sin(real * 61);
+    T.launch_pad = {
+      stat: launchPadStatic(), height: 22, light: [-3.7, 1.1, -3.3],
+      anims: [
+        { key: 'booster', model: bst, fn: (o, e) => { const P = padPose(e); if (P.by < -100) return hide(o); o.x = P.bx; o.y = P.by; o.rz = P.tilt; } },
+        { key: 'ship', model: shp, fn: (o, e) => { const P = padPose(e); if (P.ship < -100) return hide(o); o.x = e.ph && e.lt > 28 ? MOUNT_X : P.bx; o.y = P.ship; o.rz = e.ph && e.lt < 28 ? P.tilt : 0; } },
+        { key: 'plumeB', model: plume, fn: (o, e, _t, real) => { const P = padPose(e); if (!P.bFlame || P.by < -100) return hide(o); o.x = P.bx; o.y = P.by - 0.3; o.rz = P.tilt; o.s = P.bFlame * flick(real, 0) * 1.25; } },
+        { key: 'plumeS', model: plume, fn: (o, e, _t, real) => { const P = padPose(e); if (!P.sFlame || P.ship < -100) return hide(o); o.x = MOUNT_X; o.y = P.ship - 0.3; o.s = 0.8 * flick(real, 2); } },
+        { key: 'carriage', model: car, fn: (o, e) => { const P = padPose(e); o.x = TOWER_X - 1.15; o.y = P.armY; } },
+        { key: 'armL', model: arm, fn: (o, e) => { const P = padPose(e); o.x = TOWER_X - 1.2; o.y = P.armY; o.z = -1.22; o.ry = -P.arms * 0.95; } },
+        { key: 'armR', model: arm, fn: (o, e) => { const P = padPose(e); o.x = TOWER_X - 1.2; o.y = P.armY; o.z = 1.22; o.ry = P.arms * 0.95; } },
+      ],
+    };
+  }
   T.statue = { stat: one(b => { b.box(1.6, 0.4, 1.6, 0, 0, 0, M.concrete); b.add(new THREE.CylinderGeometry(0.55, 0.55, 0.35, 6), M.gold, 0, 1.2, 0, Math.PI / 2); b.cyl(0.12, 0.45, 0, 0.4, 0, M.gold, 8); }), height: 1.8, light: null, anims: [] };
   T.slab = { stat: one(b => { b.box(0.96, 0.12, 0.96, 0, -0.08, 0, M.concrete); b.box(0.97, 0.02, 0.97, 0, 0.0, 0, M.greyLt); }), height: 0.1, light: null, anims: [] };
   T.lamp = { stat: one(b => { b.cyl(0.06, 1.6, 0, 0, 0, M.steelDk, 8); b.box(0.35, 0.08, 0.2, 0.1, 1.6, 0, M.steelDk); b.box(0.28, 0.03, 0.16, 0.1, 1.58, 0, M.glowWhite); }), height: 1.7, light: null, anims: [] };
@@ -1025,3 +1090,114 @@ export function pipeSocket(): Model {
 export function pipeArm(): Model { return one(b => { b.hcyl(PR, 0.5, 0.25, PY, 0, M.greyLt, 'x', 14); b.hcyl(PR * 1.4, 0.04, 0.46, PY, 0, M.steelDk, 'x', 14); }); }
 export function pipeHub(): Model { return one(b => { b.sphere(0.15, 0, 0.55, 0, M.greyLt, 12); b.cyl(0.04, 0.45, 0, 0, 0, M.steelDk, 6); b.cyl(0.1, 0.05, 0, 0, 0, M.concrete, 8); }); }
 export function ptunnelModel(): Model { return one(b => { b.box(0.7, 0.6, 0.7, 0, 0, 0, M.steelDk); b.box(0.72, 0.08, 0.72, 0, 0.6, 0, M.blue); b.hcyl(0.11, 0.3, -0.35, 0.55, 0, M.greyLt, 'x', 12); }); }
+
+// ---------------------------------------------------------------------------
+// Rockets. Launch Pad (10 x 10): the launch mount, the catch tower with its chopstick arms, the tank farm. The rocket
+// (booster + upper stage), the arms and the flames are animated parts placed by padPose() in rockets.ts.
+const RR = 0.9;
+export function boosterModel(): Model {
+  return one(b => {
+    b.cyl(RR, 9, 0, 0, 0, M.greyLt, 28);
+    for (const y of [1.2, 3.4, 5.6, 7.6]) b.cyl(RR + 0.012, 0.05, 0, y, 0, M.steel, 28);         // weld seams
+    b.cyl(RR + 0.01, 0.55, 0, 0, 0, M.steelDk, 28);                                             // aft skirt
+    b.cyl(RR + 0.02, 0.5, 0, 8.5, 0, M.black, 28);                                              // hot-staging ring
+    for (let k = 0; k < 12; k++) { const a = k / 12 * TAU; b.box(0.18, 0.3, 0.03, Math.cos(a) * (RR + 0.03), 8.6, Math.sin(a) * (RR + 0.03), M.steelDk, -a + Math.PI / 2); }
+    // grid fins
+    for (let k = 0; k < 4; k++) {
+      const a = k / 4 * TAU + Math.PI / 4, cx = Math.cos(a), cz = Math.sin(a);
+      b.add(new THREE.BoxGeometry(0.62, 0.5, 0.06), M.steelDk, cx * (RR + 0.32), 8.15, cz * (RR + 0.32), 0, -a + Math.PI / 2, 0);
+      for (let i = 0; i < 4; i++) b.add(new THREE.BoxGeometry(0.1, 0.5, 0.02), M.grey, cx * (RR + 0.32) - Math.sin(a) * (-0.24 + i * 0.16), 8.15, cz * (RR + 0.32) + Math.cos(a) * (-0.24 + i * 0.16), 0, -a + Math.PI / 2, 0);
+    }
+    // catch pins the arms grip
+    for (const z of [-1, 1]) b.hcyl(0.08, 0.32, 0, 7.6, z * (RR + 0.12), M.steelDk, 'z', 8);
+    // engines: an outer ring and an inner cluster of bells
+    b.cyl(RR * 0.92, 0.12, 0, -0.1, 0, M.steelDk, 24);
+    for (let k = 0; k < 13; k++) { const a = k / 13 * TAU; b.add(new THREE.CylinderGeometry(0.07, 0.13, 0.3, 10, 1, true), M.steelDk, Math.cos(a) * 0.68, -0.15, Math.sin(a) * 0.68); }
+    for (let k = 0; k < 7; k++) { const a = k / 7 * TAU, r = k ? 0.34 : 0; b.add(new THREE.CylinderGeometry(0.07, 0.14, 0.32, 10, 1, true), M.steelDk, Math.cos(a) * r, -0.16, Math.sin(a) * r); }
+    // chines and stringers
+    for (const a of [0.3, Math.PI + 0.3]) b.box(0.08, 7.6, 0.08, Math.cos(a) * RR, 0.5, Math.sin(a) * RR, M.steel, -a);
+  });
+}
+export function upperStageModel(): Model {
+  return one(b => {
+    b.cyl(RR, 4.6, 0, 0, 0, M.greyLt, 28);
+    // heat shield tiles down one side
+    b.add(new THREE.CylinderGeometry(RR + 0.015, RR + 0.015, 4.6, 24, 1, true, Math.PI * 0.5, Math.PI), M.black, 0, 2.3, 0);
+    // ogive nose
+    b.add(new THREE.SphereGeometry(RR, 24, 12, 0, TAU, 0, Math.PI / 2), M.greyLt, 0, 4.6, 0, 0, 0, 0, 1, 1.8, 1);
+    b.add(new THREE.SphereGeometry(RR + 0.015, 24, 12, Math.PI * 0.5, Math.PI, 0, Math.PI / 2), M.black, 0, 4.6, 0, 0, 0, 0, 1, 1.8, 1);
+    // flaps: two small forward, two large aft
+    for (const z of [-1, 1]) {
+      b.add(new THREE.BoxGeometry(0.55, 1.0, 0.06), M.steelDk, 0.15, 5.1, z * (RR + 0.25), 0, 0, z * 0.12);
+      b.add(new THREE.BoxGeometry(0.7, 1.7, 0.07), M.steelDk, 0.15, 1.1, z * (RR + 0.32));
+    }
+    for (let k = 0; k < 6; k++) { const a = k / 6 * TAU, r = k % 2 ? 0.55 : 0.28; b.add(new THREE.CylinderGeometry(0.09, 0.2, 0.36, 10, 1, true), M.steelDk, Math.cos(a) * r, -0.18, Math.sin(a) * r); }
+    b.cyl(RR + 0.01, 0.06, 0, 3.0, 0, M.steel, 28);
+    b.box(0.25, 0.12, 0.02, 0, 3.6, -(RR + 0.01), M.glass);
+  });
+}
+/** engine plume: hangs down from y=0; scaled by thrust */
+export function plumeModel(): Model {
+  return one(b => {
+    b.add(new THREE.ConeGeometry(0.85, 4.2, 18, 1, true), M.glowOrange, 0, -2.1, 0, Math.PI);
+    b.add(new THREE.ConeGeometry(0.55, 2.4, 14, 1, true), M.glowYellow, 0, -1.2, 0, Math.PI);
+    b.add(new THREE.ConeGeometry(0.3, 1.2, 12, 1, true), M.glowWhite, 0, -0.6, 0, Math.PI);
+  });
+}
+/** one chopstick: pivots at the origin, reaches out along -x */
+export function chopstickModel(): Model {
+  return one(b => {
+    b.box(4.2, 0.36, 0.28, -2.1, -0.18, 0, M.steelDk);
+    for (let i = 0; i < 7; i++) b.box(0.04, 0.3, 0.3, -0.3 - i * 0.6, -0.15, 0, M.yellow);
+    b.box(0.6, 0.12, 0.34, -2.9, 0.18, 0, M.grey);
+    b.cyl(0.2, 0.5, 0, -0.25, 0, M.steel, 12);
+    b.hcyl(0.05, 4.0, -2.0, 0.05, 0.12, M.steel, 'x', 6);
+  });
+}
+/** the carriage the arms ride up and down the tower on */
+export function carriageModel(): Model {
+  return one(b => { b.box(0.5, 1.0, 2.2, 0, -0.5, 0, M.steelDk); b.box(0.52, 0.12, 2.24, 0, 0.45, 0, M.yellow); for (const z of [-0.9, 0.9]) b.box(0.3, 0.3, 0.3, -0.3, -0.15, z, M.steel); });
+}
+export function launchPadStatic(): Model {
+  return one(b => {
+    // pad: concrete apron, hazard edging, scorched flame trench under the mount
+    b.box(9.92, 0.2, 9.92, 0, 0, 0, M.concrete);
+    b.box(9.94, 0.02, 0.12, 0, 0.2, -4.9, M.yellow); b.box(9.94, 0.02, 0.12, 0, 0.2, 4.9, M.yellow); b.box(0.12, 0.02, 9.94, -4.9, 0.2, 0, M.yellow); b.box(0.12, 0.02, 9.94, 4.9, 0.2, 0, M.yellow);
+    b.box(3.8, 0.03, 3.8, -1.2, 0.2, 0, M.scorch);
+    b.box(1.4, 0.04, 6.4, -1.2, 0.21, 0, M.black);
+    // orbital launch mount: a ring table on six legs, with clamps and a quick-disconnect arm
+    for (let k = 0; k < 6; k++) { const a = k / 6 * TAU + 0.2; b.beam([-1.2 + Math.cos(a) * 1.9, 0.2, Math.sin(a) * 1.9], [-1.2 + Math.cos(a) * 1.25, 1.75, Math.sin(a) * 1.25], 0.22, M.steel); }
+    b.add(new THREE.CylinderGeometry(1.45, 1.45, 0.38, 32, 1, true), M.steelDk, -1.2, 1.9, 0);
+    b.torus(1.2, 0.22, -1.2, 1.95, 0, M.steel);
+    b.torus(1.45, 0.08, -1.2, 2.08, 0, M.steelDk);
+    for (let k = 0; k < 12; k++) { const a = k / 12 * TAU; b.box(0.2, 0.25, 0.14, -1.2 + Math.cos(a) * 1.0, 2.0, Math.sin(a) * 1.0, M.grey, -a); }
+    b.cyl(0.95, 0.06, -1.2, 1.7, 0, M.black, 24);
+    b.beam([-0.1, 1.9, 0.2], [1.9, 3.2, 0.2], 0.16, M.steelDk);
+    // the catch tower: a square lattice, 20 high, with a crane on top
+    const TX = 2.6, H = 20, S = 0.8;
+    for (const sx of [-S, S]) for (const sz of [-S, S]) b.box(0.16, H, 0.16, TX + sx, 0.2, sz, M.steelDk);
+    for (let y = 0.8; y < H; y += 1.2) {
+      for (const [ax, az, bx, bz] of [[-S, -S, S, -S], [S, -S, S, S], [S, S, -S, S], [-S, S, -S, -S]]) b.beam([TX + ax, y, az], [TX + bx, y + 1.2, bz], 0.045, M.steel);
+      b.box(1.7, 0.06, 0.06, TX, y, -S, M.steel); b.box(1.7, 0.06, 0.06, TX, y, S, M.steel);
+      b.box(0.06, 0.06, 1.7, TX - S, y, 0, M.steel); b.box(0.06, 0.06, 1.7, TX + S, y, 0, M.steel);
+    }
+    b.box(0.1, H - 1, 0.24, TX - S - 0.1, 0.4, -0.5, M.grey); b.box(0.1, H - 1, 0.24, TX - S - 0.1, 0.4, 0.5, M.grey);
+    b.box(2.1, 0.3, 2.1, TX, H + 0.2, 0, M.steelDk);
+    b.box(0.3, 1.8, 0.3, TX, H + 0.5, 0, M.yellow); b.box(4.6, 0.25, 0.25, TX - 1.2, H + 2.3, 0, M.yellow); b.box(0.7, 0.5, 0.5, TX + 1.0, H + 2.0, 0, M.concrete);
+    b.cyl(0.03, 2.5, TX + 0.6, H + 0.5, 0.6, M.steelDk, 4);
+    for (let y = 3; y < H; y += 4) b.box(0.12, 0.12, 0.12, TX + S + 0.05, y, S + 0.05, M.red);
+    // the upper stage's quick-disconnect arm, swung away
+    b.box(3.0, 0.3, 0.5, TX - 1.9, 12.2, 1.4, M.steelDk, 0.5);
+    // tank farm: tall vertical tanks, a sphere, and the pipe rack to the mount
+    for (const [x, z, r, h] of [[3.9, -3.9, 0.55, 3.8], [3.9, -2.6, 0.55, 3.8], [2.6, -3.9, 0.55, 3.8], [3.9, 3.8, 0.5, 3.2], [2.7, 3.8, 0.5, 3.2]]) {
+      b.cyl(r, h, x, 0.2, z, M.white, 18); b.add(new THREE.SphereGeometry(r, 18, 8, 0, TAU, 0, Math.PI / 2), M.white, x, 0.2 + h, z); b.torus(r + 0.02, 0.03, x, 0.2 + h * 0.6, z, M.orange);
+    }
+    b.sphere(1.0, -3.6, 1.35, 3.6, M.white, 20); for (let k = 0; k < 4; k++) { const a = k / 4 * TAU; b.cyl(0.07, 0.6, -3.6 + Math.cos(a) * 0.7, 0.2, 3.6 + Math.sin(a) * 0.7, M.steelDk, 6); }
+    b.box(0.2, 0.9, 6.4, 3.25, 0.2, 0, M.steelDk);
+    for (const y of [0.85, 1.05]) b.hcyl(0.1, 6.4, 3.25, y, 0, M.greyLt, 'z', 10);
+    b.hcyl(0.1, 3.5, 1.2, 0.5, -2.6, M.greyLt, 'x', 10); b.hcyl(0.1, 2.6, -1.2, 0.5, -1.4, M.greyLt, 'z', 10);
+    // control bunker and the deluge water tower
+    b.box(1.8, 0.8, 1.2, -3.7, 0.2, -3.9, M.concrete); b.box(1.2, 0.2, 0.05, -3.7, 0.55, -3.28, M.glass);
+    b.cyl(0.45, 2.4, -4.2, 0.2, -1.6, M.blue, 14);
+  });
+}

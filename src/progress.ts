@@ -16,8 +16,16 @@ export function setDeliverFx(f: (e: Ent, item: string) => void) { deliverFx = f;
 
 export function elevatorAccept(item: string) {
   const S = G.S, ph = curPhase();
-  if (ph && ph.req[item] && (S.elev[item] || 0) < ph.req[item]) { S.elev[item] = (S.elev[item] || 0) + 1; checkPhase(ph); }
+  if (ph && !ph.orbit && ph.req[item] && (S.elev[item] || 0) < ph.req[item]) { S.elev[item] = (S.elev[item] || 0) + 1; checkPhase(ph); }
   else addInv(item, 1);
+}
+/** parts a rocket put in orbit count toward the Space Station */
+export function orbitDeliver(item: string, n: number) {
+  const S = G.S, ph = curPhase();
+  if (!ph || !ph.orbit || !ph.req[item]) return;
+  S.elev[item] = Math.min(ph.req[item], (S.elev[item] || 0) + n);
+  (S.orbit = S.orbit || {})[item] = (S.orbit[item] || 0) + n;
+  checkPhase(ph);
 }
 function checkPhase(ph: Milestone) {
   for (const k in ph.req) if ((G.S.elev[k] || 0) < ph.req[k]) return;
@@ -27,6 +35,7 @@ function checkPhase(ph: Milestone) {
 export function loadElevator() {
   const S = G.S, ph = curPhase();
   if (!ph) return;
+  if (ph.orbit) { G.fx.toast('Station parts go up by rocket: load them into a Launch Pad (click the pad)', 'bad'); G.fx.sfx('err'); return; }
   if (!count('elevator')) { G.fx.toast('Build the Space Elevator first (Special tab)', 'bad'); G.fx.sfx('err'); return; }
   let moved = 0;
   for (const k in ph.req) {

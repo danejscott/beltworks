@@ -18,6 +18,9 @@ import { Billboards } from './bb';
 import { C, screenRay } from './core';
 import { B, M, Model, std } from './mat';
 import * as MD from './models';
+import { MOUNT_X, padPose } from '../rockets';
+/** cargo ships are drawn half again as big, so they sit at a believable scale next to trucks and harbors */
+const SHIP_K = 1.5;
 import { T3, tunnelInside, updateCuts } from './terrain3d';
 import { MP } from '../teams';
 import { previewLine, railChains } from '../railcurves';
@@ -362,7 +365,7 @@ function pipeConn(e: Ent, d: number, lv = e.z || 0) {
   const k = BLD[n.type].kind;
   if (k === 'pipe' || k === 'tank') return true;
   if (k === 'ptunnel') { const s = n.isExit ? n.rot : (n.rot + 2) & 3; return n.x + DX[s] === e.x && n.y + DY[s] === e.y; }
-  return k === 'machine' || k === 'extractor' || (k === 'gen' && (!!BLD[n.type].water || n.type === 'fuel_gen'));
+  return k === 'machine' || k === 'extractor' || k === 'launchpad' || (k === 'gen' && (!!BLD[n.type].water || n.type === 'fuel_gen'));
 }
 
 /** is side d of pipe e joined to a building (not more pipe)? */
@@ -399,6 +402,26 @@ function pushPipe(L: LayerLike, e: Ent) {
     const fl = e.fnet && e.fnet.fluid ? ITEMS[e.fnet.fluid].c : '#8a96a6';
     COL.set(fl);
     L.get('pipeBand', mdl('pipeBand', MD.pipeBand).geo, mdl('pipeBand', MD.pipeBand).mats, true, true).push(compose(cx + DX[along] * 0.25, 0, cy + DY[along] * 0.25, -along * HP), COL);
+  }
+}
+/** launch effects: plume glow, exhaust and a contrail, and the clouds the plume throws up off the pad */
+const R1 = () => Math.random() - 0.5;
+function padFx(e: Ent, cx: number, cy: number) {
+  const P = padPose(e);
+  if (P.bFlame > 0 && P.by > -100) {
+    const bx = cx + P.bx, z = P.by - 1.2;
+    bbAdd.add(bx, cy, z - 1.5, 2.6 * P.bFlame, 2.6 * P.bFlame, SPR.glow, hexCol('#ffb050', 0.55));
+    if (parts.length < 1300) for (let q = 0; q < 2; q++) spawn(bx + R1() * 1.2, cy + R1() * 1.2, { z: z - 2.5, vz: -7 - Math.random() * 5, vx: R1() * 2, vy: R1() * 2, life: 0.9, spr: 'glow', size: 1.1, col: rgba(1, 0.55 + Math.random() * 0.3, 0.25, 0.45), grow: 1.8, vr: 0 });
+    if (P.by > 6 && parts.length < 1300 && Math.random() < 0.35) spawn(bx + R1() * 0.6, cy + R1() * 0.6, { z: z - 3, vz: -0.4, vx: R1() * 0.3, vy: R1() * 0.3, life: 7, spr: 'glow', size: 1.2, col: rgba(0.9, 0.9, 0.9, 0.16), grow: 1.6, vr: 0 });
+    if (P.by < 30 && parts.length < 1400) {
+      const n = Math.random() < (P.smoke ? 0.6 : (1 - P.by / 30) * 0.4) ? 1 : 0;
+      for (let q = 0; q < n; q++) { const a = Math.random() * Math.PI * 2, v = 3 + Math.random() * 6; spawn(cx + P.bx + Math.cos(a) * 1.5, cy + Math.sin(a) * 1.5, { z: 0.5, vx: Math.cos(a) * v, vy: Math.sin(a) * v, vz: 0.5 + Math.random() * 1.5, life: 3.5 + Math.random() * 2.5, spr: 'glow', size: 1.6, col: rgba(0.86, 0.85, 0.82, 0.13), grow: 2.2, vr: 0 }); }
+    }
+  }
+  if (P.sFlame > 0 && P.ship > -100 && P.ship < 600) {
+    const sx = cx + MOUNT_X, z = P.ship - 1.2;
+    bbAdd.add(sx, cy, z - 1, 2, 2, SPR.glow, hexCol('#ffd8a0', 0.5));
+    if (parts.length < 1300) spawn(sx + R1() * 0.5, cy + R1() * 0.5, { z: z - 2, vz: -1, life: 5, spr: 'glow', size: 1.0, col: rgba(0.9, 0.9, 0.9, 0.16), grow: 1.4, vr: 0 });
   }
 }
 /** tunnel mouths where a railway disappears into a mountain */
@@ -708,6 +731,7 @@ export function update3D(time: number, real: number, dt: number, labels: Label3[
         spawn(sx, sy, { z: sz, vz: 1 + Math.random() * 0.4, vx: 0.3, vy: -0.1, life: 2.6, spr: 'glow', size: 0.5, col: e.type === 'foundry' || e.type === 'fuel_gen' || e.type === 'biomass_burner' ? SMOKE_D : SMOKE_L, grow: 1.1, vr: 0 });
       }
     }
+    if (e.type === 'launch_pad' && e.ph) padFx(e, cx, cy);
     if (d.kind === 'miner' && busy && Math.random() < 0.04 && close) spawn(cx + (Math.random() - 0.5) * 1.2, cy + (Math.random() - 0.5) * 1.2, { z: 0.2, vz: 2, vx: (Math.random() - 0.5) * 2, vy: (Math.random() - 0.5) * 2, life: 0.7, col: hexCol(ITEMS[e.node.res].c), size: 0.1, grav: 12 });
     if (close && d.kind === 'machine' && e.recipe) {
       const out = Object.keys(RECIPES[e.recipe].out)[0];
@@ -808,9 +832,9 @@ export function update3D(time: number, real: number, dt: number, labels: Label3[
   for (const sp of G.ships) {
     if (Math.abs(sp.x - tgx) > VR * 1.5 || Math.abs(sp.y - tgy) > VR * 1.5) continue;
     const bob = Math.sin(real * 1.3 + sp.id % 7) * 0.04;
-    pushModel(DL, 'ship', mdl('ship', MD.shipModel), compose(sp.x, -0.32 + bob, sp.y, -sp.a), undefined, true, sp.o);
-    if (sp.v > 0.5 && near && Math.random() < 0.3) spawn(sp.x - Math.cos(sp.a) * 2.8, sp.y - Math.sin(sp.a) * 2.8, { z: -0.1, vz: 0.2, life: 1.6, spr: 'glow', size: 0.6, col: rgba(0.9, 0.95, 1, 0.5), grow: 0.8, vr: 0 });
-    if (close) labels.push({ x: sp.x, y: sp.y, z: 3.0, t: sp.name, c: '#bfe0ff' });
+    pushModel(DL, 'ship', mdl('ship', MD.shipModel), compose(sp.x, -0.5 + bob, sp.y, -sp.a, SHIP_K, SHIP_K, SHIP_K), undefined, true, sp.o);
+    if (sp.v > 0.5 && near && Math.random() < 0.3) spawn(sp.x - Math.cos(sp.a) * 2.8 * SHIP_K, sp.y - Math.sin(sp.a) * 2.8 * SHIP_K, { z: -0.1, vz: 0.2, life: 1.6, spr: 'glow', size: 0.6, col: rgba(0.9, 0.95, 1, 0.5), grow: 0.8, vr: 0 });
+    if (close) labels.push({ x: sp.x, y: sp.y, z: 4.2, t: sp.name, c: '#bfe0ff' });
   }
   // rail signals: a post beside the track with a red or green lamp
   // each head stands on the right-hand side of the track for the trains it controls, its lamp facing them

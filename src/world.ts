@@ -12,7 +12,7 @@ export interface Ent { id: number; type: string; x: number; y: number; rot: numb
 
 export interface State {
   seed: number; inv: Record<string, number>; unlocked: Set<string>; done: Set<string>; maxTier: number;
-  elev: Cost; time: number; won: boolean; flags: Record<string, any>; delivered: Record<string, number>;
+  elev: Cost; orbit?: Cost; launches?: number; time: number; won: boolean; flags: Record<string, any>; delivered: Record<string, number>;
   speed: number; points: number; coupons: number; couponsEarned: number; shop: Record<string, number>;
   stationSeq: number; trainSeq: number;
   name: string; mode: string; size: number; regrow: number[]; // regrow: flat [tileIndex, dueTime, ...]
@@ -56,7 +56,7 @@ export interface TOrder { u?: string[] | null; l?: string[] | null }
 /** floors: 0 = ground, 1..3 = on foundations; LH = height of one floor in world units */
 export const NL = 4, LH = 4;
 const TALL: Record<string, number> = Object.assign(Object.create(null), { elevator: 13, tower: 5, hub: 4.5 });
-const GROUND_ONLY = new Set(['miner', 'extractor', 'harvester', 'rail', 'train', 'wagon', 'station', 'tstation', 'hub', 'elevator', 'drone', 'foundation', 'outpost', 'port']);
+const GROUND_ONLY = new Set(['launchpad', 'miner', 'extractor', 'harvester', 'rail', 'train', 'wagon', 'station', 'tstation', 'hub', 'elevator', 'drone', 'foundation', 'outpost', 'port']);
 export const groundOnly = (type: string) => { const d = BLD[type]; return GROUND_ONLY.has(d.kind) || !!(d.on && d.on !== 'water'); };
 export const G = {
   S: null as State,
@@ -562,7 +562,7 @@ export function newState(seed: number, o: { name?: string; mode?: string; size?:
     for (const k in BLD) S.unlocked.add(k);
     for (const k in RECIPES) S.unlocked.add(k);
     for (const k in ITEMS) S.inv[k] = 999999;
-    S.maxTier = 7; S.flags.tutDone = 1;
+    S.maxTier = 8; S.flags.tutDone = 1;
   }
   return S;
 }
