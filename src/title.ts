@@ -188,8 +188,7 @@ export function initTitle() {
       if (confirm('Delete this world forever? (Export it from the in-game menu first if you want a backup.)')) { await deleteWorld(arg); showTitle(handlers); }
     } else if (cmd === 'size' || cmd === 'mode' || cmd === 'dn' || cmd === 'res') {
       (sel as any)[cmd] = arg; sfx('click');
-      a.parentElement!.querySelectorAll('.opt').forEach(o => o.classList.toggle('sel', o === a));
-      if (cmd === 'mode') { const n = ($('#wname') as HTMLInputElement)?.value; showTitle(handlers).then(() => { const i = $('#wname') as HTMLInputElement; if (i && n) i.value = n; }); }
+      { const n = ($('#wname') as HTMLInputElement)?.value; showTitle(handlers).then(() => { const i = $('#wname') as HTMLInputElement; if (i && n) i.value = n; }); }
     } else if (cmd === 'dice') { ($('#wname') as HTMLInputElement).value = randName(); sfx('click'); }
     else if (cmd === 'create') {
       const name = (($('#wname') as HTMLInputElement).value || '').trim() || randName();

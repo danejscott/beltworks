@@ -78,7 +78,7 @@ export function deserialize(o: any, keepTerrain = false) {
     S = MP.teams.get(first)!; MP.cur = first;
   } else clearTeams();
   resetWorld(S.seed, S, keepTerrain);
-  for (const t of MP.teams ? MP.teams.values() : [S]) { if (t.unlocked.has('ship_port')) t.unlocked.add('harbor'); if (t.unlocked.has('harbor')) t.unlocked.add('slab'); if (t.unlocked.has('path_signal')) t.unlocked.add('signal_auto'); if (t.done.has('p4') && t.maxTier < 8) t.maxTier = 8; if (t.mode === 'creative' || S.mode === 'creative') { t.maxTier = 8; for (const k in RECIPES) t.unlocked.add(k); for (const k in ITEMS) if (t.inv[k] === undefined) t.inv[k] = 999999; } }
+  for (const t of MP.teams ? MP.teams.values() : [S]) { if (t.unlocked.has('ship_port')) t.unlocked.add('harbor'); if (t.unlocked.has('harbor')) t.unlocked.add('slab'); if (t.unlocked.has('path_signal')) t.unlocked.add('signal_auto'); if (t.done.has('p4') && t.maxTier < 8) t.maxTier = 8; if (t.mode === 'creative' || S.mode === 'creative') { t.maxTier = 8; for (const k in RECIPES) t.unlocked.add(k); for (const k in BLD) t.unlocked.add(k); for (const k in ITEMS) if (t.inv[k] === undefined) t.inv[k] = 999999; } }
   G.slabs = new Map();
   for (const [i, t] of o.slabs || []) { G.slabs.set(i, t); G.tiles[i] = TT.DIRT; }
   for (const i of o.removed || []) G.trees[i] = 0;
