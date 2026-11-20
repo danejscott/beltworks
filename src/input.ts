@@ -615,6 +615,7 @@ export function initInput(canvas: HTMLCanvasElement) {
     if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k) && !ev.ctrlKey) { keys.add(k); ev.preventDefault(); return; }
     if (ev.repeat) return;
     audioInit();
+    if (ev.key === 'F1') { ev.preventDefault(); document.body.classList.toggle('nohud'); if (document.body.classList.contains('nohud')) UI.toast('HUD hidden · F1 to show it', ''); return; }
     if (k === 'escape') { if (UI.modalOpen()) UI.closeModal(); else cancel(); return; }
     if (ev.ctrlKey && k === 'c') { ev.preventDefault(); setTool({ k: 'bpsel', quick: true }); UI.toast('Drag a box around what you want to copy', ''); return; }
     if (ev.ctrlKey && k === 'v') { ev.preventDefault(); if (clipboard) setTool({ k: 'paste', bp: clipboard, prot: 0 }); else UI.toast('Clipboard is empty — Ctrl+C first', 'bad'); return; }

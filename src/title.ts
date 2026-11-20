@@ -52,7 +52,7 @@ export async function showTitle(h: typeof handlers) {
     <div class="thead"><div class="tlogo">BELTWORKS</div><div class="ttag">Build it · Belt it · Automate everything</div></div><div class="hazard"></div>
     <div class="tcols">
       <div class="tcol"><h3>Your worlds</h3><div class="wlist">${list}</div>
-        <div class="row" style="margin-top:10px"><button data-tact="import">⬆ Import a save file</button></div>${getGameHTML()}${folderHTML()}${bestsHTML()}</div>
+        <div class="trow">${getGameHTML()}</div>${folderHTML()}${bestsHTML()}</div>
       <div class="tcol"><div class="ttabs"><button class="${sel.tab === 'new' ? 'sel' : ''}" data-tact="tab:new">🌱 New world</button><button class="${sel.tab === 'online' ? 'sel' : ''}" data-tact="tab:online">🌐 Play online</button></div>
       ${sel.tab === 'online' ? onlineHTML() : `
         <label class="flabel">World name</label>
@@ -123,10 +123,11 @@ export function hideTitle() { title.open = false; $('#title').classList.add('hid
 /** where worlds are kept: just this browser (wiped with browsing data) or also a folder of save files */
 /** website: download/install the game; downloaded copy: a link back to the newest version */
 function getGameHTML() {
-  if (isFileCopy()) return `<div class="sm dim" style="margin-top:10px">💻 You're playing the downloaded copy. <a href="${GAME_URL}" target="_blank" rel="noopener">Get the newest version</a> · <a href="#" data-tact="gginfo">How to install</a></div>`;
-  if (isInstalled()) return `<div class="sm dim" style="margin-top:10px">📲 Installed as an app — it updates itself whenever you're online. <a href="#" data-tact="gginfo">Share with a friend</a></div>`;
+  const imp = `<button data-tact="import" title="Load a world from a .json save file">⬆ Import save</button>`;
+  if (isFileCopy()) return `${imp}<div class="sm dim" style="margin-top:10px;flex-basis:100%">💻 You're playing the downloaded copy. <a href="${GAME_URL}" target="_blank" rel="noopener">Get the newest version</a> · <a href="#" data-tact="gginfo">How to install</a></div>`;
+  if (isInstalled()) return `${imp}<div class="sm dim" style="margin-top:10px;flex-basis:100%">📲 Installed as an app — it updates itself whenever you're online. <a href="#" data-tact="gginfo">Share with a friend</a></div>`;
   const inst = canPromptInstall() || isIOS() ? `<button data-tact="install" title="Adds Beltworks to your computer or phone as an app: its own window, works offline">📲 Install app</button>` : '';
-  return `<div class="row" style="margin-top:8px;gap:8px;flex-wrap:wrap">${inst}<button data-tact="dlgame" title="Saves the whole game as one file you can double-click to play offline">⬇ Download the game</button><button class="mini" data-tact="gginfo">How to install / share</button></div>`;
+  return `${imp}${inst}<button data-tact="dlgame" title="Saves the whole game as one file you can double-click to play offline">⬇ Download game</button><button data-tact="gginfo" title="How to install, play offline and share with friends">? Install / share</button>`;
 }
 function showGuide(started: boolean) {
   document.querySelector('.getgame-back')?.remove();

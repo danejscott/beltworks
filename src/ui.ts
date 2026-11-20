@@ -116,7 +116,7 @@ function bldTip(type: string) {
 export function updateHint() {
   const t = tool.t;
   let h: string;
-  if (!t) h = '<b>Click</b> a building to inspect it, ore to mine, trees to chop · <b>Drag</b> to pan · <b>1–0</b> pick from the bar · <b>?</b> all controls';
+  if (!t) h = '';
   else if (t.k === 'decon') h = '<b>Deconstruct:</b> click one thing, or drag a box (also clears trees). 100% refund · <b>X</b>/<b>Right-click</b> exit';
   else if (t.k === 'paint') h = t.src ? `<b>Copy settings</b> of a ${esc(BLD[t.src.type].n)}${t.src.r ? ` (${esc(RECIPES[t.src.r]?.n || t.src.r)})` : ''}: click or drag over others of the same kind · <b>Esc</b>/<b>Right-click</b> done` : '<b>Copy settings:</b> click the building to copy from (recipe, clock speed, filters) · <b>Esc</b> cancel';
   else if (t.k === 'bpsel') h = '<b>Blueprint:</b> drag a box around what you want to copy · <b>Esc</b> cancel';
@@ -624,7 +624,7 @@ export function renderModal() {
         if (m.un) h += `<div class="unl">${m.un.map(u => `<span class="tag">${BLD[u] ? `<img class="ic" src="${buildingIconURL(u)}" width="16" height="16">` : ic(Object.keys(RECIPES[u].out)[0], 14)} ${unlockName(u)}</span>`).join('')}</div>`;
         if (m.unlockTiers) h += `<div class="unl"><span class="tag">⬆ Unlocks Tier ${m.unlockTiers.join(' & ')}</span></div>`;
         if (m.win) h += '<div class="unl"><span class="tag">🏆 Win the game</span></div>';
-        if (!done && !locked) h += m.phase ? `<div class="sm">Belt parts into the Space Elevator, or</div><button data-act="submit:${m.id}">Load from inventory</button>` : `<button class="${ready ? 'go' : ''}" data-act="submit:${m.id}" ${ready ? '' : 'disabled'}>Submit</button>`;
+        if (!done && !locked) h += m.phase ? `<div class="sm">Belt parts into the Space Elevator, or</div><button data-act="submit:${m.id}">Load from inventory</button>` : `<button class="${ready ? 'rdy' : ''}" data-act="submit:${m.id}" ${ready ? '' : 'disabled'}>Submit</button>`;
         h += '</div>';
       }
       h += '</div></div>';
@@ -869,7 +869,7 @@ const HELP = `<div class="help cols"><div>
 <li><kbd>O</kbd> fast travel between your HUB and Outposts (not in Hard) · <kbd>G</kbd> go home</li>
 <li><kbd>T</kbd> vehicles · <kbd>N</kbd> scanner · <kbd>U</kbd> research · <kbd>J</kbd> achievements · <kbd>L</kbd> production planner</li>
 <li>Click ore to hand-mine (hold to keep going). Click or drag across trees to chop them.</li>
-<li>Right-click / <kbd>Esc</kbd> cancel</li></ul>
+<li>Right-click / <kbd>Esc</kbd> cancel</li><li><kbd>F1</kbd> hide / show the HUD</li></ul>
 <h3>Difficulty & game length</h3><p>Easy (~10–15 h), Normal (~15–30 h) and Hard (~30–50 h) differ in resource richness, starting kit and how much each later milestone and Space Elevator phase asks for. Tier 0 is the same everywhere.</p>
 <h3>Machine lights</h3><p>${status('work')}<br>${status('starve')}<br>${status('block')}<br>${status('lowpower')}<br>${status('nopower', 'No power')}</p>
 <h3>Overclocking & Shop</h3><p>Feed anything into a <b>Resource Sink</b> for points → coupons. Spend them (<kbd>K</kbd>) on Power Shards (overclock to 250%), Output Amplifiers and upgrades.</p>
