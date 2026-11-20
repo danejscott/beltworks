@@ -68,7 +68,9 @@ export function tickPads(dt: number, pullFluid: (e: Ent, k: string, want: number
     const before = e.lt;
     e.lt += dt;
     e.st = 'work';
-    if (before < 0 && e.lt >= 0) G.fx.toast(`${e.name || 'Launch Pad'}: ignition — liftoff!`, 'good');
+    if (before < 0 && e.lt >= 0) { G.fx.toast(`${e.name || 'Launch Pad'}: ignition — liftoff!`, 'good'); G.fx.sfx('liftoff'); }
+    if (before < T_RETURN + 4 && e.lt >= T_RETURN + 4) G.fx.sfx('boom');
+    if (before < T_CATCH - 6 && e.lt >= T_CATCH - 6) G.fx.sfx('landing');
     if (before < T_SEP && e.lt >= T_SEP) {
       // stage separation: the parts are on their way to orbit
       const got = Object.keys(e.pay).filter(k => e.pay[k] > 0).map(k => `${e.pay[k]} ${ITEMS[k].n}`).join(', ');
@@ -77,7 +79,7 @@ export function tickPads(dt: number, pullFluid: (e: Ent, k: string, want: number
       G.S.launches = (G.S.launches || 0) + 1;
       if (got) G.fx.toast(`Stage separation: ${got} heading for orbit. Booster coming home.`, 'good');
     }
-    if (before < T_CATCH && e.lt >= T_CATCH) G.fx.toast('Booster caught by the tower!', 'good');
+    if (before < T_CATCH && e.lt >= T_CATCH) { G.fx.toast('Booster caught by the tower!', 'good'); G.fx.sfx('clank'); }
     if (e.lt >= T_DONE) { e.ph = undefined; e.lt = 0; }
   }
 }

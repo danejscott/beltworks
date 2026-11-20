@@ -31,19 +31,23 @@ export function berths(p: Ent): number[] {
   // along the pier, only where the whole hull (about 5 tiles) floats in open water with a tile to spare outside it:
   // a ship never moors where it would sit on the beach
   const ax = p.rot & 1 ? 0 : 1, ay = p.rot & 1 ? 1 : 0;   // along the pier
-  return borderTiles(p).filter(([x, y]) => {
-    if (pierAlong(p, x, y) < 3) return false;
+  // ships are drawn about 8 tiles long and 2.5 wide, so they moor a tile off the pier's edge
+  const out: number[] = [];
+  for (const [x, y] of borderTiles(p)) {
+    if (pierAlong(p, x, y) < 4) continue;
     const ox = x < p.x ? -1 : x >= p.x + p.w ? 1 : 0, oy = y < p.y ? -1 : y >= p.y + p.h ? 1 : 0;   // away from the pier
-    for (let k = -2; k <= 2; k++) for (let o = 0; o <= 1; o++) if (!ok(x + ax * k + ox * o, y + ay * k + oy * o)) return false;
-    return true;
-  }).map(([x, y]) => y * W + x);
+    let good = true;
+    for (let k = -4; k <= 4 && good; k++) for (let o = 0; o <= 2; o++) if (!ok(x + ax * k + ox * o, y + ay * k + oy * o)) { good = false; break; }
+    if (good) out.push((y + oy) * W + x + ox);
+  }
+  return out;
 }
 /** berths no other ship has claimed */
 function freeBerths(p: Ent, me: Ship): number[] {
   const taken = new Set<number>();
   for (const o of G.ships) if (o !== me && (o as any).bay >= 0 && o.sched[o.si] === p.id) taken.add((o as any).bay);
   // ships are about 5 tiles long: keep moored ships a hull's length apart
-  const near = (i: number) => { for (const t of taken) if (Math.abs(t % W - i % W) + Math.abs(Math.floor(t / W) - Math.floor(i / W)) < 6) return true; return false; };
+  const near = (i: number) => { for (const t of taken) if (Math.abs(t % W - i % W) + Math.abs(Math.floor(t / W) - Math.floor(i / W)) < 9) return true; return false; };
   return berths(p).filter(i => !near(i));
 }
 /** where to wait at anchor when every berth is busy */

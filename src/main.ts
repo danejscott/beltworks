@@ -27,7 +27,8 @@ import { ensureFresh, resetStats, update } from './sim';
 import { HX, HY } from './terrain';
 import * as UI from './ui';
 import { $ } from './util';
-import { initIcons } from './icons';
+import { initIcons, noEmoji } from './icons';
+import { applySettings } from './settings';
 import { parts, spawn, updParts, view, w2s } from './view';
 import { Ent, G, newWorld } from './world';
 import * as W_ from './world';
@@ -366,10 +367,10 @@ function frame(ms: number) {
   octx.setTransform(view.dpr, 0, 0, view.dpr, 0, 0);
   octx.clearRect(0, 0, view.cw, view.ch);
   for (const L of labels) {
-    const [sx, sy] = w2s(L.x, L.y, L.z), t = L.t, c = L.c;
+    const [sx, sy] = w2s(L.x, L.y, L.z), t = noEmoji(L.t), c = L.c;
     if (sx < -200 || sy < -50 || sx > view.cw + 200 || sy > view.ch + 50) continue;
     const size = 13;
-    octx.font = `600 ${size}px Segoe UI, system-ui, sans-serif`;
+    octx.font = `600 ${size}px Bahnschrift, Segoe UI, system-ui, sans-serif`;
     octx.textAlign = 'center';
     octx.textBaseline = 'bottom';
     octx.fillStyle = 'rgba(0,0,0,.7)'; octx.fillText(t, sx + 1, sy + 1);
@@ -436,6 +437,7 @@ async function boot() {
   initInput(canvas);
   UI.initUI();
   initIcons();
+  applySettings();
   initTitle();
   // opened from an invite link (…/beltworks/?join=K7QM2XRP)?
   try { const j = normCode(new URLSearchParams(location.search).get('join') || ''); if (j) { setInvite(j); history.replaceState(null, '', location.pathname); } } catch { }

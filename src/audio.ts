@@ -26,6 +26,14 @@ function hiss(dur: number, vol: number, freq: number, delay = 0) {
   g.gain.setValueAtTime(vol, t); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
   s.connect(f); f.connect(g); g.connect(sfxBus || master); s.start(t); s.stop(t + dur);
 }
+/** a long low roar: looped noise through a low-pass, swelling up then fading */
+function rumble(dur: number, vol: number, freq: number, rise = 0.6) {
+  if (!AC || !audio.on) return;
+  const t = AC.currentTime, s = AC.createBufferSource(), f = AC.createBiquadFilter(), g = AC.createGain();
+  s.buffer = noiseBuf; s.loop = true; f.type = 'lowpass'; f.frequency.setValueAtTime(freq, t); f.frequency.linearRampToValueAtTime(freq * 0.5, t + dur);
+  g.gain.setValueAtTime(0.0001, t); g.gain.exponentialRampToValueAtTime(vol, t + dur * rise * 0.3); g.gain.setValueAtTime(vol, t + dur * rise); g.gain.exponentialRampToValueAtTime(0.0001, t + dur);
+  s.connect(f); f.connect(g); g.connect(sfxBus || master); s.start(t); s.stop(t + dur + 0.05);
+}
 const last: Record<string, number> = {};
 function throttle(k: string, ms: number) { const n = performance.now(); if (n - (last[k] || 0) < ms) return true; last[k] = n; return false; }
 
@@ -43,6 +51,10 @@ const S: Record<string, () => void> = {
   milestone() { [523, 659, 784, 1047, 1319].forEach((f, i) => tone(f, 0.4, 'triangle', 0.16, 0, i * 0.08)); hiss(0.4, 0.05, 6000); },
   tier() { [392, 523, 659, 784, 1047, 1319, 1568].forEach((f, i) => { tone(f, 0.5, 'triangle', 0.15, 0, i * 0.09); tone(f / 2, 0.5, 'sine', 0.1, 0, i * 0.09); }); },
   train() { if (throttle('train', 800)) return; tone(420, 0.35, 'sawtooth', 0.03, 400); tone(530, 0.35, 'sawtooth', 0.025, 520); },
+  liftoff() { rumble(16, 0.9, 260, 0.35); rumble(10, 0.5, 900, 0.2); tone(48, 3, 'sine', 0.3, 40); },
+  boom() { tone(60, 0.5, 'sine', 0.5, 30); hiss(0.25, 0.6, 300); tone(55, 0.5, 'sine', 0.45, 28, 0.22); hiss(0.25, 0.5, 280, 0.22); },
+  landing() { rumble(6.5, 0.7, 320, 0.8); },
+  clank() { tone(140, 0.5, 'square', 0.08, 70); hiss(0.3, 0.35, 1200); tone(900, 0.4, 'triangle', 0.05, 600, 0.05); },
   paste() { [440, 660, 880].forEach((f, i) => tone(f, 0.08, 'triangle', 0.1, 0, i * 0.04)); hiss(0.1, 0.1, 2000); },
 };
 export function sfx(name: string) { if (!AC || !audio.on) return; const f = S[name]; if (f) f(); }

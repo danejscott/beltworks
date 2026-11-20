@@ -1,4 +1,5 @@
 import { buildingIconURL, itemIconURL } from './atlas';
+import { onSettings, palette } from './settings';
 import { isDepleted, nodeCap, remaining } from './deplete';
 import { NET } from './net';
 import { fmtCode } from './online';
@@ -8,7 +9,7 @@ import { fetchBP, fmtBPCode, shareBP } from './bpshare';
 import { audio, setVolume, sfx, setSound, vol } from './audio';
 import { BLD, CATS, Cost, HANDCRAFT, isFluid, ITEM_KEYS, ITEMS, MACHINE_NAMES, MAX_TIER, MILESTONES, RECIPES, SHOP, TIER_NAMES } from './data';
 import { DRONE_COST, DRONE_LOAD, DRONE_SLOTS, dronesOf } from './drones';
-import { BP, bestOf, bpCost, bpFloors, captureBP, clipboard, curCat, dragInfo, selectSlot, setCat, setLevel, setTool, tool } from './input';
+import { BP, bestOf, bpCost, bpFloors, captureBP, clipboard, curCat, dragInfo, selectSlot, setCat, setLevel, setTool, sigAim, tool } from './input';
 import { buyShop, couponCost, curPhase, loadElevator, milestoneReady, submitMilestone, unlockName } from './progress';
 import { copyAllToFolder, exportSave, importSave, loadBlueprints, saveGame, storeBlueprints } from './save';
 import { chooseFolder, FS, reconnectFolder } from './filesaves';
@@ -20,7 +21,7 @@ import { openEnd } from './railplan';
 import { $, clamp, DX, DY, esc, fmt, fmtR } from './util';
 import { s2w, view } from './view';
 import { pickAt } from './r3/world3d';
-import { addInv, canAfford, count, def, Ent, entAt, G, hasFloor, missingText, nodeAt, PAIRS, remove, rotateEnt, Train, Truck } from './world';
+import { addInv, canAfford, count, def, Ent, entAt, G, hasFloor, missingText, nodeAt, PAIRS, remove, rotateEnt, sigType, Train, Truck } from './world';
 import { portDyn, portStatic, shipDyn, shipStatic } from './ui2';
 import { fmtTime, padDyn, padStatic, recapHTML, showTimer, startTimelapse } from './ui2';
 import { EXTRA_MODALS, extraAct, extraInput, LIVE_MODALS, outpostStatic, plannerAllowed, setRerender, stationExtra, tradeDyn, travelPoints, truckDyn, truckStatic, tstationDyn, tstationStatic } from './ui2';
@@ -30,7 +31,8 @@ import { locateHome, scanCol } from './explore';
 export const ic = (k: string, s = 18) => `<img class="ic" src="${itemIconURL(k)}" width="${s}" height="${s}" alt="">`;
 export const costHTML = (c: Cost, mult = 1) => Object.keys(c).map(k => { const have = G.S.inv[k] || 0, need = c[k] * mult; return `<span class="cost ${have >= need ? '' : 'short'}">${ic(k, 16)}${fmt(need)}</span>`; }).join(' ');
 const ST_TXT: Record<string, string> = { work: 'Working', starve: 'Waiting for input', block: 'Output backed up', idle: 'Idle', nopower: 'No power — build a Power Pole nearby', lowpower: 'Not enough power (running slow)', noout: 'Connect a pipe!', depleted: 'Node ran dry — move this to a new node' };
-const ST_HEX: Record<string, string> = { work: '#4cc38a', starve: '#f2c94c', block: '#ef5b5b', idle: '#6b7482', nopower: '#9a7aff', lowpower: '#ff9a3a', noout: '#ef5b5b', depleted: '#8a8f99' };
+const ST_HEX: Record<string, string> = {};
+onSettings(() => Object.assign(ST_HEX, palette()));
 export const status = (st: string, txt?: string) => `<span class="stat"><span class="led" style="background:${ST_HEX[st]};color:${ST_HEX[st]}"></span>${txt || ST_TXT[st] || st}</span>`;
 
 // ---------------------------------------------------------------------------
@@ -128,6 +130,8 @@ export function updateHint() {
     else if (d.kind === 'rail') h = '<b>Railway</b> · drag from a <b>track end</b> (green marker) to extend it, or from open ground · drop near another end to <b>join</b> it (snaps) · start or end on a straight piece to make a <b>junction</b> (it splits both ways, so trains can turn left or right) · curves stay gentle (45° at a time) · <b>〰</b> smooths old track';
     else if (di) h = `Laying <b>${di.n}</b> × ${d.n} · ${costHTML(di.cost) || 'free'} · <b>R</b> flip corner · release to build`;
     else if (d.kind === 'belt' || d.kind === 'pipe' || d.kind === 'rail') h = `<b>${d.n}</b> · click-drag to lay a line · <b>R</b> rotate · ${d.kind === 'rail' ? 'drag off an existing track to make a junction' : 'drag over old ones to upgrade'} · <b>Right-click</b> cancel`;
+    else if (d.kind === 'signal' && d.sig === 3) h = '<b>Signal Assistant</b> · click any piece of a network to signal all of it: <span style="color:#5ab4ff">path</span> signals into junctions, <span style="color:#ffc23a">block</span> signals out and along one-way lines · the coloured areas are <b>blocks</b> — one train per block · red <b>⚠</b> labels mark setups that can deadlock';
+    else if (d.kind === 'signal') h = `<b>${d.n}</b> · ${sigAim.both ? '<b>two-way</b>: trains both ways obey it' : 'aim at the <b>half of the track the train drives toward</b> — the arrow shows the direction; a signal one way only makes that track <b>one-way</b>'} · <b>R</b> ${sigAim.both ? 'one-way' : 'two-way'} · ${d.sig === 2 ? 'path signals go <b>into</b> junctions' : 'block signals go <b>out of</b> junctions and along straight track'} · coloured areas = blocks · straight pieces only`;
     else if (d.kind === 'train') h = '<b>Locomotive</b> · click a railway (needs 4 connected pieces of track) · <b>R</b> flip direction';
     else {
       const gh = view.ghosts[0];
@@ -456,6 +460,44 @@ function orderRow(t: Train, i: number, w: 'u' | 'l', s: Ent) {
   return h + '</div>';
 }
 /** hovering track: what this piece is (end, junction, level crossing) and which way trains may go through it now */
+// ---------------------------------------------------------------------------
+// Bottleneck finder: every machine that isn't working, grouped by what it makes and why, with the cause
+const bnGroups = new Map<string, number[]>(), bnCycle = new Map<string, number>();
+function bnCause(e: Ent): string {
+  const r = e.recipe ? RECIPES[e.recipe] : null;
+  if (e.st === 'nopower') return 'no power — connect a pole';
+  if (e.st === 'lowpower') return 'not enough power — build generators';
+  if (!r) return e.st === 'block' ? 'output full' : 'no input';
+  if (e.st === 'starve') {
+    const miss = Object.keys(r.in).filter(k => (isFluid(k) ? 0 : (e.ib[k] || 0)) < r.in[k] && !(isFluid(k) && e.fnets && e.fnets.some((n: any) => n.fluid === k && n.amount > 0)));
+    return miss.length ? 'waiting for ' + miss.map(k => ITEMS[k].n).join(', ') : 'starved';
+  }
+  const full = Object.keys(r.out).filter(k => (e.ob[k] || 0) >= outCap(r, k));
+  return full.length ? `${full.map(k => ITEMS[k].n).join(', ')} has nowhere to go` : 'output backed up';
+}
+function bottleneckHTML() {
+  bnGroups.clear();
+  const rows = new Map<string, { n: number; st: string; label: string; cause: string; item?: string }>();
+  for (const e of [...G.L.machines, ...G.L.miners, ...G.L.extractors, ...G.L.gens] as Ent[]) {
+    if (!['starve', 'block', 'nopower', 'lowpower'].includes(e.st)) continue;
+    if (BLD[e.type].kind === 'gen' && e.st === 'starve' && !e.pnet) continue;
+    const cause = bnCause(e), key = `${e.type}|${e.recipe || ''}|${e.st}|${cause}`;
+    let r = rows.get(key);
+    const out = e.recipe ? Object.keys(RECIPES[e.recipe].out)[0] : e.node ? e.node.res : undefined;
+    if (!r) rows.set(key, r = { n: 0, st: e.st, label: BLD[e.type].n + (e.recipe ? ' · ' + RECIPES[e.recipe].n : ''), cause, item: out });
+    r.n++; (bnGroups.get(key) || bnGroups.set(key, []).get(key)!).push(e.id);
+  }
+  // shortages: items used faster than they're made
+  const short = ITEM_KEYS.map(k => ({ k, p: rate(stats.P, k), c: rate(stats.C, k) })).filter(x => x.c > 0.5 && x.c > x.p * 1.02 && (G.S.inv[x.k] || 0) < x.c * 5).sort((a, b) => (b.c - b.p) - (a.c - a.p)).slice(0, 6);
+  let h = `<h3 class="ch">Bottlenecks <button class="mini ${view.showProblems ? 'go' : ''}" data-act="bnmap">${view.showProblems ? 'Hide' : 'Show'} on map</button></h3>`;
+  if (short.length) h += `<div class="sm" style="margin-bottom:6px">Short on: ${short.map(x => `${ic(x.k, 14)} <b>${ITEMS[x.k].n}</b> <span class="neg">−${fmtR(x.c - x.p)}/min</span>`).join(' · ')}</div>`;
+  if (!rows.size) return h + '<p class="pos">Every machine is running. Nice.</p>';
+  const order = { nopower: 0, lowpower: 1, starve: 2, block: 3 } as Record<string, number>;
+  h += '<table class="st"><tr><th>Machines</th><th>Problem</th><th>Count</th><th></th></tr>';
+  for (const [key, r] of [...rows].sort((a, b) => order[a[1].st] - order[b[1].st] || b[1].n - a[1].n).slice(0, 14))
+    h += `<tr><td>${r.item ? ic(r.item, 16) + ' ' : ''}${esc(r.label)}</td><td style="text-align:left">${status(r.st, r.cause)}</td><td>${r.n}</td><td><button class="mini" data-act="bnshow:${key}">Show${r.n > 1 ? ' next' : ''}</button></td></tr>`;
+  return h + '</table>';
+}
 function railHoverText(e: Ent) {
   let routes = 0, sides = 0;
   for (let k = 0; k < 6; k++) if (e.pairs & (1 << k)) { routes++; sides |= (1 << PAIRS[k][0]) | (1 << PAIRS[k][1]); }
@@ -468,7 +510,11 @@ function railHoverText(e: Ent) {
   const u = railUse(e.y * W + e.x);
   if (u && routes > 1) h += `<div class="sm" style="margin-top:4px"><span style="color:#ffb030">■</span> ${esc(u.t.name)} ${u.state === 'on' ? 'is going through' : 'is coming through'} — <span style="color:#ff5a4a">■</span> other routes wait</div>`;
   else if (routes > 1) h += '<div class="sm" style="margin-top:4px"><span style="color:#5aff8a">■</span> Clear — every route is free</div>';
-  if (e.sig) h += `<div class="sm">${e.sig === 2 ? 'Path signal' : 'Block signal'} on this piece.</div>`;
+  if (e.sig) {
+    const dirs = ['east', 'south', 'west', 'north'], hs: string[] = [];
+    if (e.sg == null) hs.push(`${e.sig === 2 ? 'Path' : 'Block'} signal for trains both ways`); else for (let d = 0; d < 4; d++) { const ty = sigType(e, d); if (ty) hs.push(`${ty === 2 ? 'Path' : 'Block'} signal for trains heading ${dirs[d]}`); }
+    h += `<div class="sm" style="margin-top:4px">${hs.length ? hs.join('; ') : 'Signal'}.${e.sg != null && hs.length === 1 ? ' <b>One-way</b>: trains can only pass this way.' : ''}</div>`;
+  }
   return h;
 }
 function trainStatic(t: Train) {
@@ -553,7 +599,7 @@ export function closeModal() { modalKind = null; $('#modal').classList.add('hidd
 export function toggleModal(k: string) { if (modalKind === k) closeModal(); else openModal(k); }
 export function nameBlueprint(bp: BP) { bpPending = bp; openModal('bpname'); setTimeout(() => (document.getElementById('bpn') as HTMLInputElement)?.focus(), 50); }
 
-function renderModal() {
+export function renderModal() {
   const k = modalKind, S = G.S;
   let t = '', h = '';
   if (k === 'hub') {
@@ -592,6 +638,7 @@ function renderModal() {
     for (const e of [...G.L.machines, ...G.L.miners, ...G.L.extractors]) cnt[e.st] = (cnt[e.st] || 0) + 1;
     h = `<div class="row wrap" style="gap:16px;margin-bottom:8px">${['work', 'starve', 'block', 'lowpower', 'nopower', 'idle'].map(s => `${status(s, ST_TXT[s].split(' —')[0])} <b>${cnt[s] || 0}</b>`).join(' ')}</div>`;
     h += '<p class="sm">Yellow = starved (upstream too slow). Red = backed up (downstream too slow or nothing takes the output). Balancing these is the whole game.</p>';
+    h += bottleneckHTML();
     let cap = 0, dem = 0; for (const n of G.pnets) { cap += n.cap; dem += n.lastDemand; }
     h += `<p>⚡ Power: <b>${fmtR(dem)}</b> MW used of <b>${fmtR(cap)}</b> MW across ${G.pnets.length} grid${G.pnets.length === 1 ? '' : 's'}. 🎟 Sink points: ${fmt(S.points)}.</p>`;
     h += `<h3 class="ch">📈 Last hour <span class="sm dim">(click items in the table below to add or remove them)</span></h3><canvas class="histg" id="gItems" width="900" height="190"></canvas><div class="glegend" id="gLegend"></div><canvas class="histg" id="gPower" width="900" height="110"></canvas><div class="sm"><span style="color:#f5a524">■</span> power capacity <span style="color:#4ea1ff">■</span> power used · <span class="pos">solid</span> = produced, <span class="neg">dashed</span> = used, per minute</div>`;
@@ -635,7 +682,7 @@ function renderModal() {
   } else if (k === 'menu') {
     t = 'Menu';
     const onl = online();
-    h = `<div class="menu">${onl ? `<p class="sm" style="margin-top:0">🌐 Online world — saved automatically. Join code: <b>${fmtCode(NET.code)}</b></p><button class="go" data-act="invite">📋 Copy invite (code + link + how to join)</button><button data-act="players">👥 Players, teams & leaderboard <span class="dim">(Y)</span></button><button data-act="export" title="Saves this world as a file on this computer. Import it from the title screen to keep playing it offline as your own single-player world.">⬇ Download a copy to this device</button>` : `<button data-act="save">💾 Save now <span class="dim">(auto-saves every 30s)</span></button><button data-act="export">⬇ Export save file</button><button data-act="import">⬆ Import save file</button>`}<button data-act="sound">${audio.on ? '🔊 Sound: on' : '🔇 Sound: off'}</button><div class="vols">${([['music', '🎵 Music'], ['amb', '🌲 Ambience'], ['sfx', '🔨 Effects']] as [string, string][]).map(([k, l]) => `<label>${l}<input type="range" min="0" max="100" value="${Math.round((vol as any)[k] * 100)}" data-input="vol:${k}"></label>`).join('')}</div>${onl ? '' : `<button data-act="speed">⏩ Game speed: ${S.speed}×</button><button data-act="dn">${S.dayNight !== false ? '🌙 Day/night cycle: on' : '☀️ Day/night cycle: off'}</button>`}<button data-act="open:recap">📊 Run recap & timelapse</button><button data-act="timer">⏱ Run timer: ${showTimer() ? 'shown' : 'hidden'}</button>${folderBtn()}<button data-act="gfx" title="Auto lowers the 3D resolution when the game can't keep up (great for laptops and very sharp screens)">🖥 Graphics: ${gfxHook.label()}</button><button class="go" data-act="newgame">${onl ? '🚪 Leave the server' : '🏠 Save & return to title screen'}</button><p class="sm"><b>${esc(S.name || '')}</b> · ${S.mode || 'easy'} · ${S.size || 1024}² · played ${Math.floor(S.time / 60)} min · seed ${S.seed}</p></div>`;
+    h = `<div class="menu">${onl ? `<p class="sm" style="margin-top:0">🌐 Online world — saved automatically. Join code: <b>${fmtCode(NET.code)}</b></p><button class="go" data-act="invite">📋 Copy invite (code + link + how to join)</button><button data-act="players">👥 Players, teams & leaderboard <span class="dim">(Y)</span></button><button data-act="export" title="Saves this world as a file on this computer. Import it from the title screen to keep playing it offline as your own single-player world.">⬇ Download a copy to this device</button>` : `<button data-act="save">💾 Save now <span class="dim">(auto-saves every 30s)</span></button><button data-act="export">⬇ Export save file</button><button data-act="import">⬆ Import save file</button>`}<button data-act="sound">${audio.on ? '🔊 Sound: on' : '🔇 Sound: off'}</button><div class="vols">${([['music', '🎵 Music'], ['amb', '🌲 Ambience'], ['sfx', '🔨 Effects']] as [string, string][]).map(([k, l]) => `<label>${l}<input type="range" min="0" max="100" value="${Math.round((vol as any)[k] * 100)}" data-input="vol:${k}"></label>`).join('')}</div>${onl ? '' : `<button data-act="speed">⏩ Game speed: ${S.speed}×</button><button data-act="dn">${S.dayNight !== false ? '🌙 Day/night cycle: on' : '☀️ Day/night cycle: off'}</button>`}<button data-act="open:settings">⚙ Settings: interface size, colour-blind mode, keys</button><button data-act="open:recap">📊 Run recap & timelapse</button><button data-act="timer">⏱ Run timer: ${showTimer() ? 'shown' : 'hidden'}</button>${folderBtn()}<button data-act="gfx" title="Auto lowers the 3D resolution when the game can't keep up (great for laptops and very sharp screens)">🖥 Graphics: ${gfxHook.label()}</button><button class="go" data-act="newgame">${onl ? '🚪 Leave the server' : '🏠 Save & return to title screen'}</button><p class="sm"><b>${esc(S.name || '')}</b> · ${S.mode || 'easy'} · ${S.size || 1024}² · played ${Math.floor(S.time / 60)} min · seed ${S.seed}</p></div>`;
   } else if (k === 'intro') {
     t = `Welcome to ${esc(S.name || 'your world')}`;
     const mode = S.mode || 'easy';
@@ -918,15 +965,17 @@ function drawBigMap() {
   });
   G.feats.forEach((f, i) => {
     if (!G.fdisc[i] || G.S.looted.includes(f.id)) return;
-    g.font = '13px Segoe UI Emoji, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'middle';
-    g.fillText(f.kind === 'site' ? '🛸' : '💎', (f.x + f.w / 2) * k, (f.y + f.w / 2) * k);
+    const fx = (f.x + f.w / 2) * k, fy = (f.y + f.w / 2) * k;
+    g.lineWidth = 1.5; g.strokeStyle = '#111';
+    if (f.kind === 'site') { g.fillStyle = '#e8763a'; g.beginPath(); g.moveTo(fx, fy - 6); g.lineTo(fx + 6, fy + 5); g.lineTo(fx - 6, fy + 5); g.closePath(); g.fill(); g.stroke(); }
+    else { g.fillStyle = '#7ad8ff'; g.beginPath(); g.moveTo(fx, fy - 6); g.lineTo(fx + 5, fy); g.lineTo(fx, fy + 6); g.lineTo(fx - 5, fy); g.closePath(); g.fill(); g.stroke(); }
   });
   for (const p of G.pings) { g.strokeStyle = p.col; g.lineWidth = 2.5; g.beginPath(); g.arc(p.x * k, p.y * k, 7, 0, 7); g.stroke(); }
   g.textAlign = 'start'; g.textBaseline = 'alphabetic';
   for (const s of G.L.stations) { g.fillStyle = '#f0c040'; g.font = '10px Segoe UI'; g.fillText(s.name, s.x * k + 4, s.y * k); }
   g.strokeStyle = '#f5a524'; g.lineWidth = 2; g.strokeRect(HX * k - 3, HY * k - 3, 4 * k + 6, 4 * k + 6);
-  g.font = '16px Segoe UI Emoji, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'bottom'; g.fillText('🏠', (HX + 2) * k, HY * k - 3);
-  g.font = '14px Segoe UI Emoji, sans-serif'; for (const o of G.L.outposts || []) g.fillText('⛺', (o.x + 1.5) * k, (o.y + 1.5) * k + 6);
+  g.font = '600 11px Bahnschrift, Segoe UI, sans-serif'; g.textAlign = 'center'; g.textBaseline = 'bottom'; g.fillStyle = '#f5a524'; g.fillText('HUB', (HX + 2) * k, HY * k - 5);
+  for (const o of G.L.outposts || []) { const ox = (o.x + 1.5) * k, oy = (o.y + 1.5) * k; g.fillStyle = '#ffc070'; g.strokeStyle = '#111'; g.lineWidth = 1.5; g.beginPath(); g.moveTo(ox, oy - 7); g.lineTo(ox + 6, oy + 4); g.lineTo(ox - 6, oy + 4); g.closePath(); g.fill(); g.stroke(); }
   g.textAlign = 'start'; g.textBaseline = 'alphabetic';
   g.strokeStyle = '#fff'; g.lineWidth = 1.5; g.beginPath(); viewDiamond().forEach(([x, y], i) => i ? g.lineTo(x * k, y * k) : g.moveTo(x * k, y * k)); g.closePath(); g.stroke();
 }
@@ -1011,6 +1060,8 @@ function act(cmd: string, a: string, b: string) {
   switch (cmd) {
     case 'open': toggleModal(a); break;
     case 'gsel': toggleGraph(a); break;
+    case 'bnshow': { const ids = (bnGroups.get(a) || []).filter(id => G.ents.has(id)); if (!ids.length) break; const i = (bnCycle.get(a) || 0) % ids.length; bnCycle.set(a, i + 1); const en = G.ents.get(ids[i])!; closeModal(); flyTo(en.x + en.w / 2, en.y + en.h / 2); openInspect(en); break; }
+    case 'bnmap': view.showProblems = !view.showProblems; toast(view.showProblems ? 'Problem markers on: red = backed up, yellow = starved, blue = no power' : 'Problem markers off', ''); renderModal(); break;
     case 'floor': setLevel(+a); break;
     case 'gfx': gfxHook.cycle(); break;
     case 'folder': case 'folder2': (cmd === 'folder' ? chooseFolder() : reconnectFolder()).then(async ok => { if (ok) { await saveGame(); const n = await copyAllToFolder(); toast(`📁 Saving to folder <b>${esc(FS.name)}</b> (${n} world${n === 1 ? '' : 's'} copied)`, 'good'); } if (modalKind) renderModal(); }); break;

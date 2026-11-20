@@ -13,6 +13,7 @@ export const view = {
   railPlan: null as any,         // the railway route being dragged (railplan.ts), or a hovered track end to start from          // {type,x,y,rot,ok,recipe?,pairs?,belt?} drawn translucent
   sel: null as null | { x0: number; y0: number; x1: number; y1: number; col: number },
   showPower: false,
+  showProblems: false,
   inspect: null as any,
   inspectTrain: null as any,
   inspectTruck: null as any,

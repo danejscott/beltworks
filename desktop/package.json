@@ -1,0 +1,26 @@
+{
+  "name": "beltworks-desktop",
+  "productName": "Beltworks",
+  "version": "1.0.0",
+  "description": "Beltworks factory game, desktop edition",
+  "main": "main.cjs",
+  "private": true,
+  "scripts": {
+    "copy": "node -e \"require('fs').copyFileSync('../dist/index.html','app/index.html');['icon-512.png'].forEach(f=>require('fs').copyFileSync('../public/'+f,'app/'+f))\"",
+    "start": "npm run copy && electron .",
+    "dist": "npm run copy && electron-builder --win --dir",
+    "dist:installer": "npm run copy && electron-builder --win nsis"
+  },
+  "devDependencies": {
+    "electron": "^39.0.0",
+    "electron-builder": "^26.0.0"
+  },
+  "build": {
+    "appId": "com.beltworks.game",
+    "productName": "Beltworks",
+    "files": ["main.cjs", "app/**"],
+    "directories": { "output": "release" },
+    "win": { "icon": "app/icon-512.png", "target": ["dir", "nsis"] },
+    "nsis": { "oneClick": false, "allowToChangeInstallationDirectory": true }
+  }
+}

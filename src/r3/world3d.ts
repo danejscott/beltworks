@@ -19,6 +19,7 @@ import { C, screenRay } from './core';
 import { B, M, Model, std } from './mat';
 import * as MD from './models';
 import { MOUNT_X, padPose } from '../rockets';
+import { onSettings, palette, SET } from '../settings';
 /** cargo ships are drawn half again as big, so they sit at a believable scale next to trucks and harbors */
 const SHIP_K = 1.5;
 import { T3, tunnelInside, updateCuts } from './terrain3d';
@@ -346,6 +347,12 @@ function pushBelt(L: LayerLike, b: Ent, mat?: THREE.Material, prefix = '') {
     pushModel(L, prefix + 'beltFS', mdl('beltFS', MD.beltFrameStraight), m, mat);
     L.get(prefix + 'bsS:' + (mat ? 'g' : beltKey(b)), surfS().geo, mat || beltMats[beltKey(b)], false).push(m);
   }
+  if (mat) return;
+  // portals where the belt goes into a building, or comes out of one
+  const portalOK = (n: Ent | null) => !!n && !['belt', 'tunnel', 'lift', 'splitter', 'merger', 'sorter', 'pipe', 'rail', 'pole', 'decor'].includes(BLD[n.type].kind);
+  const inTo = entAt(b.x + DX[b.rot], b.y + DY[b.rot], b.z || 0);
+  if (portalOK(inTo)) pushModel(L, 'portIn', mdl('portIn', () => MD.beltPortal(false)), compose(cx, 0, cy, -b.rot * HP));
+  if (b.curve < 0) { const from = entAt(b.x - DX[b.rot], b.y - DY[b.rot], b.z || 0); if (portalOK(from) && from !== inTo) pushModel(L, 'portOut', mdl('portOut', () => MD.beltPortal(true)), compose(cx, 0, cy, -b.rot * HP)); }
 }
 /** one 2 x 2 block of track (x, y = its top-left tile); the 1-tile track models are drawn at twice the size */
 function pushRail(L: LayerLike, x: number, y: number, pairs: number, mat?: THREE.Material, prefix = '', curves?: Map<number, unknown>) {
@@ -642,8 +649,9 @@ function rebuildTrees(cx: number, cy: number, R: number) {
 }
 
 // ---------------------------------------------------------------------------
-const ST_COL: Record<string, string> = { work: '#3cff7a', starve: '#ffd23c', block: '#ff4040', idle: '#8aa0b8', nopower: '#a07aff', lowpower: '#ff9a3a', noout: '#ff4040' };
+const ST_COL: Record<string, string> = {};
 const col3: Record<string, THREE.Color> = {};
+onSettings(() => { const p = palette(); Object.assign(ST_COL, p, SET.cb ? {} : { work: '#3cff7a', starve: '#ffd23c', block: '#ff4040', idle: '#8aa0b8' }); for (const k in col3) delete col3[k]; });
 const stc = (st: string) => col3[st] || (col3[st] = new THREE.Color(ST_COL[st] || '#888888'));
 const AO: MD.AnimOut = { x: 0, y: 0, z: 0, rx: 0, ry: 0, rz: 0, s: 1 };
 const GLOW_OR = hexCol('#ff9a3a', 0.8), SMOKE_L = rgba(0.9, 0.9, 0.92, 0.45), SMOKE_D = rgba(0.28, 0.28, 0.3, 0.5);
@@ -882,6 +890,17 @@ export function update3D(time: number, real: number, dt: number, labels: Label3[
     if (close) labels.push({ x: tk.x, y: tk.y, z: 1.3, t: tk.name, c: '#ffe0b0' });
   }
   const night = nightness();
+  // your space station passing overhead at night: a bright point with its solar wings, crossing the sky every few minutes
+  const orb = G.S.orbit ? Object.values(G.S.orbit).reduce((x: number, y: any) => x + y, 0) as number : 0;
+  if (orb > 0 && night > 0.3) {
+    const ph = (real / 150) % 1, ang = ph * Math.PI * 2;
+    const sx = tgx + Math.cos(ang) * VR * 1.1, sy = tgy - VR * 0.9 + Math.sin(ang) * VR * 0.25, a = (night - 0.3) / 0.7 * Math.max(0, Math.sin(ph * Math.PI));
+    const big = Math.min(1, 0.4 + orb / 400);
+    bbAdd.add(sx, sy, 60, 2.2 * big, 2.2 * big, SPR.glow, hexCol('#e8f0ff', 0.9 * a));
+    bbAdd.add(sx - 1.4 * big, sy, 60, 1.6 * big, 0.6 * big, SPR.glow, hexCol('#8ab0ff', 0.6 * a));
+    bbAdd.add(sx + 1.4 * big, sy, 60, 1.6 * big, 0.6 * big, SPR.glow, hexCol('#8ab0ff', 0.6 * a));
+    if (Math.sin(real * 4) > 0.6) bbAdd.add(sx, sy, 60.5, 0.8, 0.8, SPR.glow, hexCol('#ff5a4a', a));
+  }
   // glowing crystals and crash-site beacons
   for (const f of visFeats) {
     const pulse = 0.5 + 0.3 * Math.sin(real * 3 + f.x);
@@ -963,6 +982,14 @@ export function update3D(time: number, real: number, dt: number, labels: Label3[
   prevWires.geometry.dispose();
   const pg = new THREE.BufferGeometry(); pg.setAttribute('position', new THREE.Float32BufferAttribute(pts, 3)); prevWires.geometry = pg;
   ZO = 0;
+  // bottleneck markers: a pin over every machine that isn't working (Stats → Show on map)
+  if (view.showProblems) for (const e of [...G.L.machines, ...G.L.miners, ...G.L.extractors] as Ent[]) {
+    const c = e.st === 'block' || e.st === 'starve' || e.st === 'nopower' || e.st === 'lowpower' ? ST_COL[e.st] : '';
+    if (!c) continue;
+    const cx = e.x + e.w / 2, cy = e.y + e.h / 2;
+    if (Math.abs(cx - tgx) > VR || Math.abs(cy - tgy) > VR) continue;
+    bbs.add(cx, cy, (e.z || 0) * LH + (TPL[tk(e)]?.height || 2) + 0.9 + Math.abs(Math.sin(real * 3 + e.id)) * 0.2, 0.8, 0.8, SPR.pin, hexCol(c));
+  }
   // tutorial marker
   const mk = view.marker;
   if (mk) {

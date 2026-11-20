@@ -1,4 +1,5 @@
 import { audioInit, sfx, startMusic } from './audio';
+import { mapKey, rebindKey } from './settings';
 import { BLD, CATS, Cost, isFluid, ITEMS, MILESTONES, RECIPES } from './data';
 import { hexCol, rgba } from './gl';
 import { ensureFresh, fluidsTouching, setRecipe } from './sim';
@@ -607,8 +608,10 @@ export function initInput(canvas: HTMLCanvasElement) {
   addEventListener('keydown', ev => {
     if (title.open) return;
     const tg = ev.target as HTMLElement;
+    if (rebindKey(ev)) { UI.renderModal(); return; }
     if (tg && (tg.tagName === 'INPUT' || tg.tagName === 'TEXTAREA' || tg.tagName === 'SELECT')) return;
-    const k = ev.key.toLowerCase();
+    const k = mapKey(ev.key.toLowerCase());
+    if (!k) return;
     if (['w', 'a', 's', 'd', 'arrowup', 'arrowdown', 'arrowleft', 'arrowright'].includes(k) && !ev.ctrlKey) { keys.add(k); ev.preventDefault(); return; }
     if (ev.repeat) return;
     audioInit();

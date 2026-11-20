@@ -364,6 +364,21 @@ export function railUse(i: number): { t: Train; pair: number; state: 'on' | 'com
 }
 /** does an order list take item k? */
 const wants = (list: string[], k: string) => list.includes('*') || list.includes(k);
+/** what each train has dropped off lately (for the line overview): [game time, item, count], last 10 minutes */
+const DL_WINDOW = 600;
+function logDelivery(t: Train, k: string, m: number) {
+  const a: [number, string, number][] = (t as any).dlog || ((t as any).dlog = []);
+  const last = a[a.length - 1];
+  if (last && last[1] === k && G.S.time - last[0] < 2) last[2] += m; else a.push([G.S.time, k, m]);
+  while (a.length && G.S.time - a[0][0] > DL_WINDOW) a.shift();
+}
+/** items per minute a set of trains has delivered over the last 10 minutes (or since they started), by item */
+export function deliveryRates(ts: Train[]): Record<string, number> {
+  const out: Record<string, number> = {};
+  const span = Math.max(60, Math.min(DL_WINDOW, G.S.time - Math.min(...ts.map(t => ((t as any).dlog?.[0]?.[0]) ?? G.S.time))));
+  for (const t of ts) for (const [tm, k, n] of ((t as any).dlog || []) as [number, string, number][]) if (G.S.time - tm <= DL_WINDOW) out[k] = (out[k] || 0) + n * 60 / span;
+  return out;
+}
 /** a stop's orders: the train's own, or the station's mode (load / unload / both) */
 export function stopOrders(t: Train, i: number, st: Ent): { u: string[]; l: string[] } {
   const o = t.orders && t.orders[i];
@@ -393,6 +408,7 @@ function transfer(t: Train, st: Ent, dt: number, ord: { u: string[]; l: string[]
     else { st.store[k] = (st.store[k] || 0) + m; st.tot += m; }
     n -= m; moved += m;
     G.S.flags.trainDelivered = (G.S.flags.trainDelivered || 0) + m;
+    logDelivery(t, k, m);
   }
   // then pick up (never something this stop drops off, so nothing goes round in circles)
   for (const k of Object.keys(st.store)) {

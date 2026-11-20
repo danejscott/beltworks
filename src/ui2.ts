@@ -1,5 +1,6 @@
 // UI for the newer systems: vehicles list, scanner, research, planner, achievements, crash sites, trucks.
 import { sfx } from './audio';
+import { setTool } from './input';
 import { copyInvite, openPlayers } from './ui3';
 import { NET, send as netSend } from './net';
 import { MP } from './teams';
@@ -8,11 +9,12 @@ import { ALT_IDS, BLD, isFluid, ITEMS, MACHINE_NAMES, RECIPES } from './data';
 import { ACHS } from './achievements';
 import { altMachineOK, altPool, analyseDrive, CRYSTAL_NAMES, discoveredCount, lootSite, pickAlt, scan, scanCol, scanName, scanRange, SCAN_TARGETS } from './explore';
 import { Feat } from './features';
-import { machineName, plan, plannableItems } from './planner';
+import { machineName, machineType, plan, plannableItems } from './planner';
 import { flowChart, FLOW_CSS } from './flowchart';
+import { BINDABLE, keyFor, rebinding, saveSettings, SET, startRebind } from './settings';
 import { FUEL_PER_LAUNCH, initPad, orbitPhase, PAYLOAD_CAP, T_CATCH, T_RETURN, T_SEP } from './rockets';
 let flowCss = false;
-import { addTrainToLine, lineOf, lineTrains, MAX_LINE_TRAINS, maxCars, trainCap } from './trains';
+import { addTrainToLine, deliveryRates, lineOf, lineTrains, MAX_LINE_TRAINS, maxCars, trainCap } from './trains';
 import { buyTruck, removeTruck, tradeVal, TRUCK_CAP, truckStations } from './trucks';
 import { buyShip, removeShip, Ship, SHIP_CAP, shipPorts } from './ships';
 import { esc, fmt, fmtR } from './util';
@@ -39,31 +41,46 @@ export function travelPoints(): { name: string; x: number; y: number; e: Ent }[]
 }
 let pendingSite: Feat | null = null;
 export function openSite(f: Feat) { pendingSite = f; openModal('site'); }
-const pl = { item: 'reinforced_plate', rate: 10, view: 'chart' };
+const pl = { targets: [{ item: 'reinforced_plate', rate: 10 }], view: 'chart', alts: false };
 
 const stTxt: Record<string, string> = { queued: 'Waiting for a free bay', moving: 'Driving', loading: 'At station', nopath: 'No route!', noschedule: 'No schedule', stopped: 'Stopped', idle: 'Planning route' };
 const vehLed = (s: string) => s === 'nopath' ? 'block' : s === 'moving' || s === 'loading' ? 'work' : 'idle';
 
 /** extra modal renderers: return [title, html] */
 export const EXTRA_MODALS: Record<string, () => [string, string]> = {
+  settings: () => {
+    let h = '<div class="sec">Interface</div>';
+    h += `<label class="row">Interface size <input type="range" min="75" max="150" step="5" value="${Math.round(SET.ui * 100)}" data-input="setui" style="flex:1"> <b>${Math.round(SET.ui * 100)}%</b></label>`;
+    h += `<label class="row" style="cursor:pointer" data-act="setcb"><input type="checkbox" ${SET.cb ? 'checked' : ''}> Colour-blind friendly colours <span class="sm dim">(status lights, problem pins: blue = working, yellow = waiting, vermilion = backed up)</span></label>`;
+    h += `<label class="row" style="cursor:pointer" data-act="setcalm"><input type="checkbox" ${SET.calm ? 'checked' : ''}> Reduce motion <span class="sm dim">(no interface animations)</span></label>`;
+    h += '<div class="sec">Keys</div><p class="sm" style="margin-top:0">Click a key, then press the new one (Esc cancels). A key can only do one thing.</p><div class="cgrid">';
+    for (const [d, n] of BINDABLE) h += `<div class="ccard" style="padding:5px 8px"><span style="flex:1">${n}</span><button class="mini ${rebinding === d ? 'go' : ''}" data-act="rebind:${d}">${rebinding === d ? 'press a key…' : `<kbd>${keyFor(d).toUpperCase()}</kbd>`}</button></div>`;
+    h += '</div><div class="row" style="margin-top:10px"><button data-act="setreset">Reset keys to default</button></div>';
+    return ['Settings', h];
+  },
   vehicles: () => {
     let h = '<p class="sm" style="margin-top:0">Every train and truck in your world. <b>View</b> flies the camera there. Quick Route lines are one-way loops, so you can run many trains on each (up to ' + MAX_LINE_TRAINS + ').</p>';
     const lines = G.S.lines.filter(l => G.ents.has(l.a) && G.ents.has(l.b));
     if (lines.length) {
-      h += '<h3 class="ch">🛤 Train lines</h3><table class="st"><tr><th>Line</th><th>Length</th><th>Trains</th><th></th></tr>';
+      h += '<h3 class="ch">🛤 Train lines</h3><table class="st"><tr><th>Line</th><th>Length</th><th>Trains</th><th>Moving</th><th>Delivers /min</th><th>Capacity</th><th></th></tr>';
       for (const l of lines) {
-        const a = G.ents.get(l.a)!, b = G.ents.get(l.b)!;
-        h += `<tr><td>${esc(a.name)} ⇄ ${esc(b.name)}</td><td>${l.cells.length} tiles</td><td>${lineTrains(l).length}</td><td><button class="mini go" data-act="lineadd:${l.id}">+ Train</button></td></tr>`;
+        const a = G.ents.get(l.a)!, b = G.ents.get(l.b)!, ts = lineTrains(l);
+        const r = deliveryRates(ts), tot = Object.values(r).reduce((x, y) => x + y, 0);
+        const moving = ts.filter(t => t.state === 'moving').length, cap = ts.reduce((s, t) => s + trainCap(t), 0);
+        const waiting = ts.filter(t => (t as any).queued).length;
+        h += `<tr><td>${esc(a.name)} ⇄ ${esc(b.name)}</td><td>${l.cells.length} tiles</td><td>${ts.length}${waiting ? ` <span class="warn sm">(${waiting} waiting)</span>` : ''}</td><td>${moving}/${ts.length}</td>`
+          + `<td>${tot > 0 ? Object.keys(r).sort((x, y) => r[y] - r[x]).slice(0, 3).map(k => `${ic(k, 14)}${fmtR(r[k])}`).join(' ') : '<span class="dim">—</span>'}</td><td>${fmt(cap)} items</td>`
+          + `<td><button class="mini" data-act="vview:t:${ts[0] ? ts[0].id : 0}" ${ts.length ? '' : 'disabled'}>View</button> <button class="mini go" data-act="lineadd:${l.id}">+ Train</button></td></tr>`;
       }
-      h += '</table>';
+      h += '</table><p class="sm dim">Delivers = items dropped off per minute over the last 10 minutes. If trains are waiting, add signals (Signal Assistant) or a second track.</p>';
     }
     h += '<h3 class="ch">🚂 Trains</h3>';
     if (!G.trains.length) h += '<div class="dim">No trains yet. Place two Train Stations and use Quick Route in one of their panels.</div>';
     else {
-      h += '<table class="st"><tr><th>Name</th><th>Status</th><th>Next stop</th><th>Cargo</th><th></th></tr>';
+      h += '<table class="st"><tr><th>Name</th><th>Status</th><th>Next stop</th><th>Cargo</th><th>Delivers /min</th><th></th></tr>';
       for (const t of G.trains) {
-        const st = G.ents.get(t.sched[t.si]);
-        h += `<tr><td>${esc(t.name)}</td><td>${status(vehLed(t.state), (t as any).queued && t.state === 'moving' ? 'Waiting in line' : stTxt[t.state] || t.state)}</td><td>${st ? esc(st.name) : '—'}</td><td>${fmt(t.tot)} / ${fmt(trainCap(t))}</td><td><button class="mini" data-act="vview:t:${t.id}">View</button></td></tr>`;
+        const st = G.ents.get(t.sched[t.si]), r = deliveryRates([t]), rk = Object.keys(r);
+        h += `<tr><td>${esc(t.name)}</td><td>${status(vehLed(t.state), (t as any).queued && t.state === 'moving' ? 'Waiting in line' : stTxt[t.state] || t.state)}</td><td>${st ? esc(st.name) : '—'}</td><td>${fmt(t.tot)} / ${fmt(trainCap(t))}</td><td>${rk.length ? rk.slice(0, 2).map(k => `${ic(k, 14)}${fmtR(r[k])}`).join(' ') : '<span class="dim">—</span>'}</td><td><button class="mini" data-act="vview:t:${t.id}">View</button></td></tr>`;
       }
       h += '</table>';
     }
@@ -114,28 +131,25 @@ export const EXTRA_MODALS: Record<string, () => [string, string]> = {
   planner: () => {
     if (!flowCss) { flowCss = true; const st = document.createElement('style'); st.textContent = FLOW_CSS; document.head.appendChild(st); }
     const items = plannableItems().sort((a, b) => ITEMS[a].n.localeCompare(ITEMS[b].n));
-    let h = `<div class="row wrap" style="gap:10px"><label>Make</label><select data-input="plitem">${items.map(k => `<option value="${k}" ${k === pl.item ? 'selected' : ''}>${ITEMS[k].n}</option>`).join('')}</select><label>at</label><input type="number" min="0.1" step="any" value="${pl.rate}" data-input="plrate" style="width:90px"><label>per minute</label>
-      <span style="margin-left:auto" class="row"><button class="${pl.view === 'chart' ? 'go' : ''}" data-act="plview:chart">Flow chart</button><button class="${pl.view === 'table' ? 'go' : ''}" data-act="plview:table">Table</button></span></div>`;
-    const p = plan(pl.item, pl.rate);
-    if (pl.view === 'chart') {
-      h += `<div class="flowwrap">${flowChart(p, pl.item, ic)}</div>`;
-      h += `<div class="row wrap" style="gap:14px;margin-top:8px"><span>⚡ <b>${fmtR(p.power)} MW</b> for machines</span><span class="dim">Raw: ${Object.keys(p.raw).map(k => `${ic(k, 14)} ${fmtR(p.raw[k])}/min`).join(' · ')}</span></div>`;
-      h += '<p class="sm dim">Standard recipes, normal nodes, 100% clock. Line thickness shows how much flows; a Mk1 belt carries 240/min. Scroll the chart to see all of it.</p>';
-      return ['📐 Production Planner', h];
-    }
-    h += '<h3 class="ch">Machines</h3><table class="st"><tr><th>Item</th><th>Recipe</th><th>Machines</th><th>Rate</th><th>Power</th></tr>';
+    const opts = (sel: string) => items.map(k => `<option value="${k}" ${k === sel ? 'selected' : ''}>${ITEMS[k].n}</option>`).join('');
+    let h = '<div class="row wrap" style="gap:10px;align-items:flex-start"><div style="display:flex;flex-direction:column;gap:4px">';
+    pl.targets.forEach((t, i) => { h += `<div class="row" style="margin:0"><label style="width:40px">${i ? 'and' : 'Make'}</label><select data-input="plitem:${i}">${opts(t.item)}</select><input type="number" min="0.1" step="any" value="${t.rate}" data-input="plrate:${i}" style="width:80px"><span>/min</span>${pl.targets.length > 1 ? `<button class="mini" data-act="pldel:${i}" title="Remove">✕</button>` : ''}</div>`; });
+    h += `<div class="row" style="margin:0"><button class="mini" data-act="pladd">+ Add a product</button><label class="row sm" style="margin:0 0 0 10px;cursor:pointer" data-act="plalt"><input type="checkbox" ${pl.alts ? 'checked' : ''}> Use my researched alternate recipes (${G.S.alts.length})</label></div></div>`;
+    h += `<span style="margin-left:auto" class="row"><button class="${pl.view === 'chart' ? 'go' : ''}" data-act="plview:chart">Flow chart</button><button class="${pl.view === 'table' ? 'go' : ''}" data-act="plview:table">Table</button></span></div>`;
+    const p = plan(pl.targets, 0, pl.alts ? G.S.alts : null);
+    const minerHint = (k: string) => !isFluid(k) && ['iron_ore', 'copper_ore', 'limestone', 'coal', 'caterium_ore', 'raw_quartz', 'bauxite', 'sulfur', 'uranium'].includes(k) ? ` <span class="dim">≈ ${fmtR(p.raw[k] / 120)} Mk1 miners</span>` : '';
+    const bys = Object.keys(p.byproducts);
+    const foot = `<div class="row wrap" style="gap:14px;margin-top:8px"><span>⚡ <b>${fmtR(p.power)} MW</b> for machines</span><span>${Object.keys(p.raw).map(k => `${ic(k, 14)} ${fmtR(p.raw[k])}/min${minerHint(k)}`).join(' · ')}</span></div>`
+      + (bys.length ? `<p class="sm warn">Byproducts to deal with: ${bys.map(k => `${ic(k, 14)} ${fmtR(p.byproducts[k])}/min`).join(', ')}</p>` : '')
+      + '<p class="sm dim">Normal nodes, 100% clock. <b>Build</b> picks up that machine with its recipe set, ready to place. Line thickness shows how much flows; a Mk1 belt carries 240/min.</p>';
+    if (pl.view === 'chart') return ['📐 Production Planner', h + `<div class="flowwrap">${flowChart(p, pl.targets.map(t => t.item), ic)}</div>` + foot];
+    h += '<h3 class="ch">Machines</h3><table class="st"><tr><th>Item</th><th>Recipe</th><th>Machines</th><th>Rate</th><th>Power</th><th></th></tr>';
     for (const s of p.steps) {
       const full = Math.ceil(s.count - 1e-6), frac = s.count - Math.floor(s.count);
       const clock = frac > 1e-3 ? ` <span class="sm dim">(or ${full} at ${Math.round(s.count / full * 100)}% clock)</span>` : '';
-      h += `<tr><td style="padding-left:${6 + s.depth * 12}px">${ic(s.item, 18)} ${ITEMS[s.item].n}</td><td>${machineName(s.machine)}</td><td><b>${fmtR(s.count)}</b>${clock}</td><td>${fmtR(s.rate)}/min</td><td>${fmtR(s.power)} MW</td></tr>`;
+      h += `<tr><td style="padding-left:${6 + s.depth * 12}px">${ic(s.item, 18)} ${ITEMS[s.item].n}</td><td>${machineName(s.machine)}${s.recipe.alt ? ` <span class="sm warn">(${esc(s.recipe.n)})</span>` : ''}</td><td><b>${fmtR(s.count)}</b>${clock}</td><td>${fmtR(s.rate)}/min</td><td>${fmtR(s.power)} MW</td><td><button class="mini" data-act="plbuild:${s.recipe.id}">Build</button></td></tr>`;
     }
-    h += '</table><h3 class="ch">Raw resources</h3><div class="chips">';
-    for (const k in p.raw) h += `<span class="chip" data-tip="item:${k}">${ic(k, 18)} ${fmtR(p.raw[k])}/min${!isFluid(k) && ['iron_ore', 'copper_ore', 'limestone', 'coal', 'caterium_ore', 'raw_quartz', 'bauxite'].includes(k) ? ` <span class="dim">≈ ${fmtR(p.raw[k] / 120)} Mk1 miners</span>` : ''}</span>`;
-    h += '</div>';
-    const bys = Object.keys(p.byproducts);
-    if (bys.length) h += `<p class="sm warn">Byproducts to deal with: ${bys.map(k => `${ic(k, 14)} ${fmtR(p.byproducts[k])}/min`).join(', ')}</p>`;
-    h += `<p>⚡ Total power: <b>${fmtR(p.power)} MW</b> (plus miners and extractors). Belts: Mk1 carries 240/min.</p><p class="sm dim">Uses standard recipes, normal nodes and 100% clock speed.</p>`;
-    return ['📐 Production Planner', h];
+    return ['📐 Production Planner', h + '</table>' + foot];
   },
   travel: () => {
     const pts = travelPoints();
@@ -179,6 +193,15 @@ export const LIVE_MODALS = new Set(['vehicles', 'research', 'ach', 'scan']);
 /** extra actions; returns true if handled */
 export function extraAct(cmd: string, a: string, b: string): boolean {
   if (cmd === 'plview') { pl.view = a; rerender(); return true; }
+  if (cmd === 'padwatch') { const e = view.inspect as Ent | null; if (e) { view.cam.x = e.x + e.w / 2; view.cam.y = e.y + e.h / 2 + 7; view.cam.s = Math.min(view.cam.s, 10); } return true; }
+  if (cmd === 'pladd') { pl.targets.push({ item: 'modular_frame', rate: 5 }); rerender(); return true; }
+  if (cmd === 'pldel') { pl.targets.splice(+a, 1); rerender(); return true; }
+  if (cmd === 'plalt') { pl.alts = !pl.alts; rerender(); return true; }
+  if (cmd === 'plbuild') { const r = RECIPES[a]; if (!r) return true; const type = machineType(r.m); if (!G.S.unlocked.has(type)) { toast(`${BLD[type].n} isn't unlocked yet`, 'bad'); return true; } closeModal(); setTool({ k: 'build', type, recipe: a }); return true; }
+  if (cmd === 'setcb') { SET.cb = !SET.cb; saveSettings(); rerender(); return true; }
+  if (cmd === 'setcalm') { SET.calm = !SET.calm; saveSettings(); rerender(); return true; }
+  if (cmd === 'rebind') { startRebind(a); rerender(); return true; }
+  if (cmd === 'setreset') { SET.keys = {}; saveSettings(); rerender(); return true; }
   const S = G.S, e = view.inspect as Ent | null, k = view.inspectTruck as Truck | null;
   switch (cmd) {
     case 'vview': {
@@ -223,9 +246,10 @@ export function extraAct(cmd: string, a: string, b: string): boolean {
 }
 /** extra form inputs; returns true if handled */
 export function extraInput(k: string, _a: string, el: HTMLInputElement, ev: Event): boolean {
+  if (k === 'setui') { SET.ui = +el.value / 100; saveSettings(); if (ev.type === 'change') rerender(); return true; }
   const e = view.inspect as Ent | null, t = view.inspectTruck as Truck | null;
-  if (k === 'plitem') { pl.item = el.value; rerender(); return true; }
-  if (k === 'plrate') { const v = parseFloat(el.value); if (v > 0 && ev.type === 'change') { pl.rate = v; rerender(); } else if (v > 0) pl.rate = v; return true; }
+  if (k === 'plitem') { const t = pl.targets[+_a || 0]; if (t) { t.item = el.value; rerender(); } return true; }
+  if (k === 'plrate') { const t = pl.targets[+_a || 0], v = parseFloat(el.value); if (t && v > 0) { t.rate = v; if (ev.type === 'change') rerender(); } return true; }
   if (k === 'truckTo' && e) { run({ k: 'set', id: e.id, f: 'truckTo', v: +el.value }); return true; }
   if (k === 'rtadd' && e && el.value && ev.type === 'change') { const r = truckRoute(e); r.push(+el.value); routeDraft.set(e.id, r); return true; }
   if (k === 'shipTo' && e) { run({ k: 'set', id: e.id, f: 'shipTo', v: +el.value }); return true; }
@@ -438,8 +462,8 @@ export function startTimelapse(base: HTMLCanvasElement | null) {
 // ---------------------------------------------------------------------------
 // Launch Pad panel
 export function padStatic(e: Ent) {
-  let h = '<div class="sec">Payload</div><div class="row wrap"><button class="go" data-act="padload">Load parts from inventory</button><button data-act="padlaunch">Launch now</button></div>';
-  h += `<label class="row sm" style="cursor:pointer"><input type="checkbox" data-act="padauto" ${e.auto === 0 ? '' : 'checked'}> Launch by itself when the bay is full (${PAYLOAD_CAP} parts)</label>`;
+  let h = '<div class="sec">Payload</div><div class="row wrap"><button class="go" data-act="padload">Load parts from inventory</button><button data-act="padlaunch">Launch now</button><button data-act="padwatch">Watch</button></div>';
+  h += `<label class="row sm" style="cursor:pointer" data-act="padauto"><input type="checkbox" ${e.auto === 0 ? '' : 'checked'}> Launch by itself when the bay is full (${PAYLOAD_CAP} parts)</label>`;
   h += '<div class="sm dim">Pipe Rocket Fuel into any side; belt Orbital Truss, Solar Arrays or Habitat Modules into any side. Each launch needs ' + FUEL_PER_LAUNCH + ' m³ of fuel. The booster lands back on the tower and flies again.</div>';
   return h;
 }

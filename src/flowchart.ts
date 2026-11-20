@@ -10,7 +10,7 @@ interface Node { id: string; item: string; col: number; row: number; raw: boolea
 const MINER_RATE = 120;
 const MINED = ['iron_ore', 'copper_ore', 'limestone', 'coal', 'caterium_ore', 'raw_quartz', 'bauxite', 'sulfur', 'uranium'];
 
-export function flowChart(p: Plan, target: string, ic: (k: string, s: number) => string): string {
+export function flowChart(p: Plan, targets: string[], ic: (k: string, s: number) => string): string {
   if (!p.steps.length) return '<div class="dim">Nothing to make.</div>';
   const maxD = Math.max(...p.steps.map(s => s.depth));
   const nodes = new Map<string, Node>();
@@ -66,8 +66,8 @@ export function flowChart(p: Plan, target: string, ic: (k: string, s: number) =>
     const s = p.steps.find(q => q.item === n.item)!;
     const full = Math.ceil(s.count - 1e-6), clock = s.count / full;
     const bys = Object.keys(s.recipe.out).filter(o => o !== s.item);
-    html += `<div class="fl-node ${n.item === target ? 'tgt' : ''}" style="left:${x}px;top:${n.y}px"><div class="fl-h">${ic(n.item, 20)}<b>${esc(it.n)}</b><span class="fl-r">${fmtR(s.rate)}/min</span></div>
-      <div class="fl-m"><b>${fmtR(s.count)}</b> × ${esc(machineName(s.machine))}</div>
+    html += `<div class="fl-node ${targets.includes(n.item) ? 'tgt' : ''}" style="left:${x}px;top:${n.y}px"><div class="fl-h">${ic(n.item, 20)}<b>${esc(it.n)}</b><span class="fl-r">${fmtR(s.rate)}/min</span></div>
+      <div class="fl-m"><b>${fmtR(s.count)}</b> × ${esc(machineName(s.machine))}${s.recipe.alt ? ' <span class="fl-alt">ALT</span>' : ''}<button class="mini fl-b" data-act="plbuild:${s.recipe.id}" title="Pick up this machine with this recipe set">Build</button></div>
       <div class="fl-s">${full} at ${Math.round(clock * 100)}% · ${fmtR(s.power)} MW${bys.length ? ` · +${bys.map(o => esc(ITEMS[o].n)).join(', ')}` : ''}</div></div>`;
   }
   return `<div class="flow" style="width:${Wd}px;height:${Ht}px"><svg width="${Wd}" height="${Ht}" class="fl-svg">${svg}</svg>${labels}${html}</div>`;
@@ -78,5 +78,6 @@ export const FLOW_CSS = `.flowwrap{overflow:auto;max-height:62vh;border:1px soli
 .fl-node.raw{border-left-color:#8a7a5a;background:#1c1b18}.fl-node.tgt{border-color:var(--accent);border-left-color:var(--accent);box-shadow:0 0 0 1px var(--accent)}
 .fl-h{display:flex;align-items:center;gap:5px;white-space:nowrap}.fl-h b{overflow:hidden;text-overflow:ellipsis;flex:1}
 .fl-r{font-variant-numeric:tabular-nums;color:#ffcf73;font-weight:600}.fl-m{color:#e8e3d6}.fl-s{color:var(--dim);font-size:11px;white-space:nowrap;overflow:hidden;text-overflow:ellipsis}
+.fl-m{display:flex;align-items:center;gap:4px}.fl-b{margin-left:auto;padding:0 6px;font-size:10px}.fl-alt{font-size:9px;color:#1a1408;background:var(--accent);padding:0 3px}
 .fl-lab{position:absolute;transform:translate(-50%,-50%);font-size:10.5px;background:#141311e6;color:#cfc7b6;padding:0 4px;border:1px solid #3a3630;white-space:nowrap;font-variant-numeric:tabular-nums;pointer-events:none}`;
 void BLD;

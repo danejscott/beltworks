@@ -1201,3 +1201,15 @@ export function launchPadStatic(): Model {
     b.cyl(0.45, 2.4, -4.2, 0.2, -1.6, M.blue, 14);
   });
 }
+
+/** where a belt enters or leaves a building: a steel portal with rubber curtain strips; the lintel band is blue for an
+ *  input and orange for an output. Local: the belt runs along +x, the portal stands on the edge at x = at. */
+export function beltPortal(out: boolean): Model {
+  const at = out ? -0.47 : 0.47;
+  return one(b => {
+    for (const z of [-0.43, 0.43]) b.box(0.1, 0.62, 0.08, at, 0.0, z, M.steelDk);
+    b.box(0.12, 0.1, 0.96, at, 0.6, 0, M.steelDk);
+    b.box(0.13, 0.05, 0.9, at, 0.55, 0, out ? M.orange : M.blue);
+    for (let i = 0; i < 6; i++) b.box(0.02, 0.26, 0.12, at + (out ? 0.03 : -0.03), 0.29, -0.33 + i * 0.132, M.rubber);
+  });
+}
